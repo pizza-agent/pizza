@@ -10,8 +10,8 @@ async function syncWindowBackground(theme: Theme) {
 	if (!isTauri()) return;
 	try {
 		const core = await import("@tauri-apps/api/core");
-		// light: #f5f4ee = (245, 244, 238), dark: #0a0a0f = (10, 10, 15)
-		const [r, g, b] = theme === "dark" ? [10, 10, 15] : [245, 244, 238];
+		// light: #ffffff = (255, 255, 255), dark: #181818 = (24, 24, 24)
+		const [r, g, b] = theme === "dark" ? [24, 24, 24] : [255, 255, 255];
 		await core.invoke("set_window_background", { r, g, b });
 	} catch {
 		// ignore

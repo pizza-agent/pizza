@@ -223,16 +223,16 @@ export default function BottomDock({
 								key={tb.id}
 								onClick={() => setActiveTabId(tb.id)}
 								className={cn(
-									"group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px] transition-colors",
+									"group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors",
 									active
 										? "bg-surface-2 text-fg"
 										: "text-muted hover:bg-surface-2/60 hover:text-fg",
 								)}
 								title={tabTitle(tb, i)}
 							>
-								<span className="uppercase tracking-wide">{tabTitle(tb, i)}</span>
+								<span>{tabTitle(tb, i)}</span>
 								{tb.panes.length > 1 && (
-									<span className="rounded bg-accent/15 px-1 text-[9px] text-accent">
+									<span className="rounded bg-surface-2 px-1 text-[9px] text-muted">
 										{tb.panes.length}
 									</span>
 								)}

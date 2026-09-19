@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
-import { PageHeader, Card, Badge, Button } from "@/components/ui";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Card, Badge, Button } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
 import { Z } from "@/lib/z-index";
-import { cn } from "@/lib/utils";
+import { cn, hasMacTrafficLights } from "@/lib/utils";
 import { PixelSelect, PixelCombobox } from "@pxlkit/ui-kit";
 import {
 	openExternal,
@@ -33,23 +33,14 @@ import {
 	type ProviderInfo,
 } from "@/lib/transport";
 import type { RpcSessionState } from "@/lib/types";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, RefreshCw } from "lucide-react";
-import type { LayoutOutletContext } from "@/components/Layout";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, RefreshCw, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
+import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
 	DEFAULT_LANGUAGE,
 	setStoredLanguage,
 	type AppLanguage,
 } from "@/i18n";
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-	return (
-		<div className="flex items-center justify-between border-b border-border/60 py-3 last:border-0">
-			<span className="text-sm text-fg">{label}</span>
-			<span className="text-sm text-muted">{children}</span>
-		</div>
-	);
-}
 
 function providerLabel(provider: { id: string; name?: string }): string {
 	return provider.name ?? provider.id;
@@ -88,15 +79,35 @@ type CustomProviderTestState =
 	| { status: "success"; result: CustomProviderTestResult }
 	| { status: "error"; result?: CustomProviderTestResult; error?: string };
 
-function GeneralTab() {
+/** Codex-style settings group: small heading + bordered card of rows. */
+function SettingsSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+	return (
+		<section className="mb-8">
+			<h2 className="mb-3 text-[15px] font-semibold tracking-tight text-fg">{title}</h2>
+			<div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-surface">
+				{children}
+			</div>
+			{description && <p className="mt-2 text-xs text-muted">{description}</p>}
+		</section>
+	);
+}
+
+/** Codex-style settings row: title + optional description on the left, control on the right. */
+function SettingsRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+	return (
+		<div className="flex items-center justify-between gap-6 px-4 py-3">
+			<div className="min-w-0">
+				<div className="text-[13px] font-medium text-fg">{title}</div>
+				{description && <div className="mt-0.5 text-xs text-muted">{description}</div>}
+			</div>
+			<div className="flex shrink-0 items-center gap-2">{children}</div>
+		</div>
+	);
+}
+
+function GeneralPage() {
 	const { t, i18n } = useTranslation();
-	// Scheduler defaults — applied to new tasks. Loaded once on mount.
-	const [schedulerPolicy, setSchedulerPolicyState] = useState<import("@/lib/types").SchedulerPolicy>({
-		concurrency: "skip",
-		timeoutMinutes: 0,
-		defaultSessionTarget: { kind: "pinned" },
-	});
-	const schedulerLoadedRef = useRef(false);
+	const theme = useTheme();
 	// Approval policy (two states: "off" auto-runs everything; "auto"/gated
 	// asks for unknown tools and dangerous commands).
 	const [approvalPolicy, setApprovalPolicyState] = useState<ApprovalPolicy>("auto");
@@ -107,6 +118,85 @@ function GeneralTab() {
 		setApprovalPolicyState(policy);
 		void setApprovalPolicy(policy).catch(() => {});
 	}, []);
+
+	const [language, setLanguage] = useState<AppLanguage>(
+		(SUPPORTED_LANGUAGES.includes(i18n.language as AppLanguage) ? i18n.language : DEFAULT_LANGUAGE) as AppLanguage,
+	);
+
+	const handleLanguageChange = useCallback((value: string) => {
+		const lang = (SUPPORTED_LANGUAGES.includes(value as AppLanguage) ? value : DEFAULT_LANGUAGE) as AppLanguage;
+		setLanguage(lang);
+		setStoredLanguage(lang);
+		void i18n.changeLanguage(lang);
+	}, [i18n]);
+
+	const languageOptions = SUPPORTED_LANGUAGES.map((lang) => ({
+		value: lang,
+		label: t(`language.${lang}`),
+	}));
+
+	return (
+		<>
+			<SettingsSection title={t("settings.general.language")}>
+				<SettingsRow title={t("settings.general.languageDescription")}>
+					<div className="w-36">
+						<PixelSelect
+							value={language}
+							options={languageOptions}
+							onChange={handleLanguageChange}
+							size="sm"
+							tone="cyan"
+						/>
+					</div>
+				</SettingsRow>
+			</SettingsSection>
+
+			<SettingsSection title={t("settings.general.theme")}>
+				<SettingsRow title={t("settings.general.themeLabel")}>
+					<div className="w-36">
+						<PixelSelect
+							value={theme}
+							options={[
+								{ value: "light", label: t("theme.light") },
+								{ value: "dark", label: t("theme.dark") },
+							]}
+							onChange={(value) => setTheme(value as Theme)}
+							size="sm"
+							tone="cyan"
+						/>
+					</div>
+				</SettingsRow>
+			</SettingsSection>
+
+			<SettingsSection title={t("settings.general.approval.title")} description={t("settings.general.approval.subtitle")}>
+				<SettingsRow title={t("settings.general.approval.policy")}>
+					<div className="w-44">
+						<PixelSelect
+							value={approvalPolicy}
+							options={[
+								{ value: "auto", label: t("composer.approvalGated") },
+								{ value: "off", label: t("composer.approvalOff") },
+							]}
+							onChange={(value) => handlePolicySelect(value as ApprovalPolicy)}
+							size="sm"
+							tone="cyan"
+						/>
+					</div>
+				</SettingsRow>
+			</SettingsSection>
+		</>
+	);
+}
+
+function SchedulerPage() {
+	const { t } = useTranslation();
+	// Scheduler defaults — applied to new tasks. Loaded once on mount.
+	const [schedulerPolicy, setSchedulerPolicyState] = useState<import("@/lib/types").SchedulerPolicy>({
+		concurrency: "skip",
+		timeoutMinutes: 0,
+		defaultSessionTarget: { kind: "pinned" },
+	});
+	const schedulerLoadedRef = useRef(false);
 	useEffect(() => {
 		getSchedulerPolicy()
 			.then((policy) => {
@@ -135,17 +225,57 @@ function GeneralTab() {
 		}
 	}, []);
 
-	const [language, setLanguage] = useState<AppLanguage>(
-		(SUPPORTED_LANGUAGES.includes(i18n.language as AppLanguage) ? i18n.language : DEFAULT_LANGUAGE) as AppLanguage,
+	return (
+		<SettingsSection title={t("settings.scheduler.title")} description={t("settings.scheduler.subtitle")}>
+			<SettingsRow title={t("settings.scheduler.defaultSessionTarget")}>
+				<div className="w-40">
+					<PixelSelect
+						value={schedulerPolicy.defaultSessionTarget.kind === "new" ? "new" : "pinned"}
+						options={[
+							{ value: "pinned", label: t("schedule.sessionPinned") },
+							{ value: "new", label: t("schedule.sessionNew") },
+						]}
+						onChange={(value) => updateScheduler({
+							...schedulerPolicy,
+							defaultSessionTarget: value === "pinned"
+								? { kind: "pinned" }
+								: { kind: "new", purpose: schedulerPolicy.defaultSessionTarget.kind === "new" ? schedulerPolicy.defaultSessionTarget.purpose : "" },
+						})}
+						size="sm"
+						tone="cyan"
+					/>
+				</div>
+			</SettingsRow>
+			<SettingsRow title={t("settings.scheduler.defaultConcurrency")}>
+				<div className="w-40">
+					<PixelSelect
+						value={schedulerPolicy.concurrency}
+						options={(["skip", "queue", "preempt"] as const).map((p) => ({ value: p, label: t(`schedule.concurrency_${p}`) }))}
+						onChange={(value) => updateScheduler({ ...schedulerPolicy, concurrency: value as import("@/lib/types").SchedulerPolicy["concurrency"] })}
+						size="sm"
+						tone="cyan"
+					/>
+				</div>
+			</SettingsRow>
+			<SettingsRow
+				title={t("settings.scheduler.defaultTimeout")}
+				description={`${t("schedule.minute")} (0 = ${t("schedule.timeoutNoLimit")})`}
+			>
+				<input
+					type="number"
+					min={0}
+					max={1440}
+					value={schedulerPolicy.timeoutMinutes}
+					onChange={(e) => updateScheduler({ ...schedulerPolicy, timeoutMinutes: Math.max(0, Number(e.target.value || 0)) })}
+					className="h-8 w-24 rounded-lg border border-border bg-bg px-2 text-sm text-fg outline-none focus:border-muted"
+				/>
+			</SettingsRow>
+		</SettingsSection>
 	);
+}
 
-	const handleLanguageChange = useCallback((value: string) => {
-		const lang = (SUPPORTED_LANGUAGES.includes(value as AppLanguage) ? value : DEFAULT_LANGUAGE) as AppLanguage;
-		setLanguage(lang);
-		setStoredLanguage(lang);
-		void i18n.changeLanguage(lang);
-	}, [i18n]);
-
+function UpdatesPage() {
+	const { t } = useTranslation();
 	// Desktop app update check (GitHub releases). Auto-runs once on mount;
 	// "Check now" re-queries on demand.
 	const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
@@ -162,177 +292,58 @@ function GeneralTab() {
 		void runUpdateCheck();
 	}, [runUpdateCheck]);
 
-	const languageOptions = SUPPORTED_LANGUAGES.map((lang) => ({
-		value: lang,
-		label: t(`language.${lang}`),
-	}));
-
 	return (
-		<div className="space-y-6">
-			<Card>
-				<div className="mb-2 text-sm font-medium text-fg">{t("settings.general.language")}</div>
-				<Row label={t("settings.general.languageDescription")}>
-					<div className="w-40">
-						<PixelSelect
-							value={language}
-							options={languageOptions}
-							onChange={handleLanguageChange}
-							size="sm"
-							tone="cyan"
-						/>
-					</div>
-				</Row>
-			</Card>
-
-			<Card>
-				<div className="mb-2 text-sm font-medium text-fg">{t("settings.update.title")}</div>
-				<Row label={t("settings.update.currentVersion")}>
-					{updateInfo ? updateInfo.currentVersion : t("settings.update.checking")}
-				</Row>
-				<Row label={t("settings.update.latestVersion")}>
+		<SettingsSection title={t("settings.update.title")}>
+			<SettingsRow title={t("settings.update.currentVersion")}>
+				<span className="text-[13px] text-muted">{updateInfo ? updateInfo.currentVersion : t("settings.update.checking")}</span>
+			</SettingsRow>
+			<SettingsRow title={t("settings.update.latestVersion")}>
+				<span className="text-[13px] text-muted">
 					{updateInfo === null
 						? t("settings.update.checking")
 						: updateInfo.error
 							? t("settings.update.checkFailed")
 							: (updateInfo.latestVersion ?? "—")}
-				</Row>
-				<Row label={t("settings.update.status")}>
+				</span>
+			</SettingsRow>
+			<SettingsRow title={t("settings.update.status")}>
+				<span className="text-[13px]">
 					{updateInfo === null ? (
-						t("settings.update.checking")
+						<span className="text-muted">{t("settings.update.checking")}</span>
 					) : updateInfo.error ? (
 						<span className="text-warning">{t("settings.update.checkFailed")}</span>
 					) : updateInfo.updateAvailable ? (
-						<span className="text-accent">
+						<span className="text-success">
 							{t("settings.update.available", { version: updateInfo.latestVersion })}
 						</span>
 					) : (
 						<span className="text-success">{t("settings.update.upToDate")}</span>
 					)}
-				</Row>
-				<div className="flex items-center gap-2 pt-3">
+				</span>
+			</SettingsRow>
+			<div className="flex items-center gap-2 px-4 py-3">
+				<Button
+					variant="soft"
+					size="sm"
+					iconLeft={<RefreshCw className={cn("h-3.5 w-3.5", updateChecking && "animate-spin")} />}
+					disabled={updateChecking}
+					onClick={() => void runUpdateCheck()}
+				>
+					{t("settings.update.checkNow")}
+				</Button>
+				{updateInfo?.updateAvailable && (
 					<Button
-						variant="soft"
 						size="sm"
-						iconLeft={<RefreshCw className={cn("h-3.5 w-3.5", updateChecking && "animate-spin")} />}
-						disabled={updateChecking}
-						onClick={() => void runUpdateCheck()}
+						iconLeft={<Download className="h-3.5 w-3.5" />}
+						onClick={() => {
+							if (updateInfo.releaseUrl) void openExternal(updateInfo.releaseUrl);
+						}}
 					>
-						{t("settings.update.checkNow")}
+						{t("settings.update.download", { version: updateInfo.latestVersion })}
 					</Button>
-					{updateInfo?.updateAvailable && (
-						<Button
-							size="sm"
-							iconLeft={<Download className="h-3.5 w-3.5" />}
-							onClick={() => {
-								if (updateInfo.releaseUrl) void openExternal(updateInfo.releaseUrl);
-							}}
-						>
-							{t("settings.update.download", { version: updateInfo.latestVersion })}
-						</Button>
-					)}
-				</div>
-			</Card>
-
-			<Card>
-				<div className="mb-2 text-sm font-medium text-fg">{t("settings.scheduler.title")}</div>
-				<div className="mb-1 text-xs text-muted">{t("settings.scheduler.subtitle")}</div>
-				<div className="space-y-3">
-					<div>
-						<div className="mb-1 text-xs text-muted">{t("settings.scheduler.defaultSessionTarget")}</div>
-						<div className="grid gap-1.5">
-							{(["pinned", "new"] as const).map((k) => (
-								<button
-									key={k}
-									type="button"
-									onClick={() => updateScheduler({
-										...schedulerPolicy,
-										defaultSessionTarget: k === "pinned"
-											? { kind: "pinned" }
-											: { kind: "new", purpose: schedulerPolicy.defaultSessionTarget.kind === "new" ? schedulerPolicy.defaultSessionTarget.purpose : "" },
-									})}
-									className={cn(
-										"flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-										schedulerPolicy.defaultSessionTarget.kind === k
-											? "border-accent bg-accent/10 text-fg"
-											: "border-border bg-surface-2 text-muted hover:bg-surface hover:text-fg",
-									)}
-								>
-									<span>{t(`schedule.session${k === "pinned" ? "Pinned" : "New"}`)}</span>
-								</button>
-							))}
-						</div>
-					</div>
-					<div>
-						<div className="mb-1 text-xs text-muted">{t("settings.scheduler.defaultConcurrency")}</div>
-						<div className="grid gap-1.5">
-							{(["skip", "queue", "preempt"] as const).map((p) => (
-								<button
-									key={p}
-									type="button"
-									onClick={() => updateScheduler({ ...schedulerPolicy, concurrency: p })}
-									className={cn(
-										"flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-										schedulerPolicy.concurrency === p
-											? "border-accent bg-accent/10 text-fg"
-											: "border-border bg-surface-2 text-muted hover:bg-surface hover:text-fg",
-									)}
-								>
-									<span>{t(`schedule.concurrency_${p}`)}</span>
-								</button>
-							))}
-						</div>
-					</div>
-					<div>
-						<div className="mb-1 text-xs text-muted">{t("settings.scheduler.defaultTimeout")}</div>
-						<div className="flex items-center gap-2">
-							<input
-								type="number"
-								min={0}
-								max={1440}
-								value={schedulerPolicy.timeoutMinutes}
-								onChange={(e) => updateScheduler({ ...schedulerPolicy, timeoutMinutes: Math.max(0, Number(e.target.value || 0)) })}
-								className="h-8 w-24 rounded-md border border-border bg-surface px-2 text-sm text-fg outline-none focus:border-accent"
-							/>
-							<span className="text-xs text-muted">{t("schedule.minute")} (0 = {t("schedule.timeoutNoLimit")})</span>
-						</div>
-					</div>
-				</div>
-			</Card>
-
-			<Card>
-				<div className="mb-2 text-sm font-medium text-fg">{t("settings.approval.title")}</div>
-				<div className="mb-3 text-xs text-muted">{t("settings.approval.subtitle")}</div>
-				<div className="space-y-3">
-					<div>
-						<div className="mb-1 text-xs text-muted">{t("settings.approval.policy")}</div>
-						<div className="grid gap-1.5">
-							{([
-								{ policy: "auto" as ApprovalPolicy, label: t("composer.approvalGated"), hint: t("composer.approvalGatedHint") },
-								{ policy: "off" as ApprovalPolicy, label: t("composer.approvalOff"), hint: t("composer.approvalOffHint") },
-							]).map(({ policy, label, hint }) => (
-								<button
-									key={policy}
-									type="button"
-									onClick={() => handlePolicySelect(policy)}
-									className={cn(
-										"flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-										approvalPolicy === policy
-											? "border-accent bg-accent/10 text-fg"
-											: "border-border bg-surface-2 text-muted hover:bg-surface hover:text-fg",
-										)}
-								>
-									<span>
-										<span className="block">{label}</span>
-										<span className="block text-[10px]">{hint}</span>
-									</span>
-									{approvalPolicy === policy && <Badge tone="accent">{t("settings.approval.current")}</Badge>}
-								</button>
-							))}
-						</div>
-					</div>
+				)}
 			</div>
-			</Card>
-		</div>
+		</SettingsSection>
 	);
 }
 
@@ -414,10 +425,10 @@ function AccountLoginDialog({
 						<a href={authUrl} target="_blank" rel="noreferrer" className="break-all text-xs text-accent underline">
 							{authUrl}
 						</a>
-						{instructions && <p className="font-mono text-[10px] text-muted">{instructions}</p>}
+						{instructions && <p className="text-xs text-muted">{instructions}</p>}
 					</div>
 				)}
-				{status && <p className="mb-3 font-mono text-[10px] text-muted">{status}</p>}
+				{status && <p className="mb-3 text-xs text-muted">{status}</p>}
 				{prompt?.type === "prompt" ? (
 					<div className="space-y-2">
 						{prompt.prompt.options ? (
@@ -585,7 +596,7 @@ function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefres
 							{showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
 						</button>
 					</div>
-					{error && <p className="font-mono text-[10px] text-danger">{error}</p>}
+					{error && <p className="text-xs text-danger">{error}</p>}
 					<div className="flex items-center gap-2">
 						<Button size="sm" tone="accent" onClick={handleSave} disabled={saving}>
 							{saving ? t("settings.provider.saving") : t("settings.provider.save")}
@@ -771,7 +782,7 @@ function AddProviderInline({
 									{showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
 								</button>
 							</div>
-							{error && <p className="font-mono text-[10px] text-danger">{error}</p>}
+							{error && <p className="text-xs text-danger">{error}</p>}
 							<div className="flex items-center gap-2">
 								<Button size="sm" tone="accent" onClick={handleSave} disabled={saving}>
 									{saving ? t("settings.provider.saving") : t("settings.provider.save")}
@@ -829,7 +840,7 @@ function AddProviderInline({
 						rows={3}
 						className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 					/>
-					{error && <p className="font-mono text-[10px] text-danger">{error}</p>}
+					{error && <p className="text-xs text-danger">{error}</p>}
 					{testState.status !== "idle" && (
 						<div className="rounded-md border border-border bg-[#0f1725] px-3 py-2 font-mono text-xs leading-6">
 							<div className="text-sky-300">{t("settings.provider.testStart", { name: customName.trim() || t("settings.provider.customProvider") })}</div>
@@ -1039,8 +1050,8 @@ function ProviderTab({
 
 				{configured.length === 0 && !showAddInline && (
 					<div className="py-6 text-center">
-						<p className="font-mono text-xs text-muted">{t("settings.provider.noProviders")}</p>
-						<p className="mt-1 font-mono text-[10px] text-muted">{t("settings.provider.noProvidersHint")}</p>
+						<p className="text-xs text-muted">{t("settings.provider.noProviders")}</p>
+						<p className="mt-1 text-xs text-muted">{t("settings.provider.noProvidersHint")}</p>
 					</div>
 				)}
 
@@ -1070,12 +1081,14 @@ function SetupBanner({ state }: { state: RpcSessionState | null }) {
 				<Key className="mt-0.5 h-5 w-5 text-accent" />
 				<div className="flex-1 space-y-1">
 					<div className="text-sm font-medium text-fg">{t("settings.setup.bannerTitle")}</div>
-					<div className="font-mono text-xs text-muted">{t("settings.setup.bannerBody")}</div>
+					<div className="text-xs text-muted">{t("settings.setup.bannerBody")}</div>
 				</div>
 			</div>
 		</Card>
 	);
 }
+
+type SettingsPageId = "general" | "scheduler" | "updates" | "provider";
 
 export default function SettingsView({
 	state,
@@ -1087,11 +1100,15 @@ export default function SettingsView({
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { sidebarCollapsed } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
+	// Settings owns the full window (the app sidebar is hidden on this route),
+	// so the top bar clears the macOS traffic lights directly.
+	const macPad = hasMacTrafficLights();
 	// First-run / unconfigured-key setup mode is signaled by ?setup=true in the
 	// URL. App.tsx redirects there when the sidecar reports state.model === undefined.
 	const isSetupMode = new URLSearchParams(location.search).get("setup") === "true";
-	const [tab, setTab] = useState<"general" | "provider">(isSetupMode ? "provider" : "general");
+	// Codex-style left nav switches the right-hand page (no tab strip).
+	const [page, setPage] = useState<SettingsPageId>(isSetupMode ? "provider" : "general");
+	const [navSearch, setNavSearch] = useState("");
 	const [restarting, setRestarting] = useState(false);
 	const [restartError, setRestartError] = useState("");
 	const handleConfigured = useCallback(async () => {
@@ -1126,6 +1143,35 @@ export default function SettingsView({
 	const canBack = histIdx > 0;
 	const canForward = histIdx < maxIdxRef.current;
 
+	const navGroups: Array<{ label: string; items: Array<{ id: SettingsPageId | "plugins"; icon: typeof Key; label: string }> }> = [
+		{
+			label: t("settings.tabs.general"),
+			items: [
+				{ id: "general", icon: SlidersHorizontal, label: t("settings.nav.general") },
+				{ id: "scheduler", icon: Clock, label: t("settings.nav.scheduler") },
+				{ id: "updates", icon: RefreshCw, label: t("settings.update.title") },
+			],
+		},
+		{
+			label: t("settings.nav.groupIntegrations"),
+			items: [
+				{ id: "provider", icon: Key, label: t("settings.tabs.provider") },
+				{ id: "plugins", icon: Puzzle, label: t("layout.plugins") },
+			],
+		},
+	];
+	// The search box filters nav entries (Codex settings pattern).
+	const q = navSearch.trim().toLowerCase();
+	const visibleGroups = navGroups
+		.map((g) => ({ ...g, items: g.items.filter((i) => !q || i.label.toLowerCase().includes(q)) }))
+		.filter((g) => g.items.length > 0);
+
+	const pageTitle =
+		page === "general" ? t("settings.nav.general")
+		: page === "scheduler" ? t("settings.nav.scheduler")
+		: page === "updates" ? t("settings.update.title")
+		: t("settings.tabs.provider");
+
 	return (
 		<div className="flex h-full flex-col">
 			{/* Top bar — sits next to the sidebar collapse button; holds back/forward nav */}
@@ -1133,7 +1179,7 @@ export default function SettingsView({
 				data-tauri-drag-region
 				className={cn(
 					"flex h-11 shrink-0 items-center gap-1 border-b border-border bg-surface/80 pr-6 backdrop-blur transition-[padding] duration-150",
-					sidebarCollapsed ? "pl-[120px]" : "pl-6",
+					macPad ? "pl-[76px]" : "pl-6",
 				)}
 			>
 				<button
@@ -1164,55 +1210,77 @@ export default function SettingsView({
 				</button>
 			</div>
 
-			{/* Scrollable content — scrollbar hidden, but still scrollable */}
-			<div className="scrollbar-hide flex-1 overflow-y-auto">
-				<div className="mx-auto max-w-5xl px-10 pb-10 pt-10">
-					<PageHeader title={isSetupMode ? t("settings.setup.title") : t("settings.title")} />
-
-					{isSetupMode && (
-						<div className="mb-6">
-							<SetupBanner state={state} />
-							{restarting && (
-								<p className="mt-2 font-mono text-xs text-muted">
-									{t("settings.setup.restarting")}
-								</p>
-							)}
-							{restartError && (
-								<p className="mt-2 font-mono text-xs text-danger">{restartError}</p>
-							)}
-						</div>
-					)}
-
-					<div className="mb-6 flex gap-1 border-b border-border">
-						<button
-							onClick={() => setTab("general")}
-							className={cn(
-								"px-4 py-2 text-sm font-medium transition-colors",
-								tab === "general"
-									? "border-b-2 border-accent text-accent"
-									: "text-muted hover:text-fg",
-							)}
-						>
-							{t("settings.tabs.general")}
-						</button>
-						<button
-							onClick={() => setTab("provider")}
-							className={cn(
-								"px-4 py-2 text-sm font-medium transition-colors",
-								tab === "provider"
-									? "border-b-2 border-accent text-accent"
-									: "text-muted hover:text-fg",
-							)}
-						>
-							{t("settings.tabs.provider")}
-						</button>
+			<div className="flex min-h-0 flex-1">
+				{/* Settings nav — Codex-style: back to app, search, grouped entries */}
+				<aside className="w-60 shrink-0 overflow-y-auto border-r border-border/60 bg-surface px-2 py-3">
+					<button
+						type="button"
+						onClick={() => navigate("/")}
+						className="mb-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium text-fg transition-colors hover:bg-surface-2"
+					>
+						<ArrowLeft className="h-4 w-4 shrink-0 text-muted" />
+						{t("settings.nav.backToApp")}
+					</button>
+					<div className="relative mb-3 mt-1 px-0.5">
+						<Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+						<input
+							value={navSearch}
+							onChange={(e) => setNavSearch(e.target.value)}
+							placeholder={t("settings.nav.search")}
+							className="h-8 w-full rounded-lg border border-border bg-bg pl-8 pr-2 text-xs text-fg outline-none placeholder:text-muted focus:border-muted"
+						/>
 					</div>
+					{visibleGroups.map((group) => (
+						<div key={group.label} className="mb-3">
+							<div className="px-2.5 pb-1 text-[11px] font-medium text-muted">{group.label}</div>
+							{group.items.map((item) => {
+								const active = page === item.id;
+								return (
+									<button
+										key={item.id}
+										type="button"
+										onClick={() => (item.id === "plugins" ? navigate("/plugins") : setPage(item.id as SettingsPageId))}
+										className={cn(
+											"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+											active ? "bg-surface-2 font-medium text-fg" : "text-fg/80 hover:bg-surface-2/60",
+										)}
+										title={item.label}
+									>
+										<item.icon className={cn("h-4 w-4 shrink-0", active ? "text-fg" : "text-muted")} />
+										<span className="truncate">{item.label}</span>
+									</button>
+								);
+							})}
+						</div>
+					))}
+				</aside>
 
-					{tab === "general" ? (
-						<GeneralTab />
-					) : (
-						<ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />
-					)}
+				{/* Page content — narrow centered column like Codex settings */}
+				<div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
+					<div className="mx-auto max-w-2xl px-10 pb-16 pt-8">
+						<h1 className="mb-6 text-xl font-semibold tracking-tight text-fg">
+							{isSetupMode ? t("settings.setup.title") : pageTitle}
+						</h1>
+
+						{isSetupMode && (
+							<div className="mb-6">
+								<SetupBanner state={state} />
+								{restarting && (
+									<p className="mt-2 text-xs text-muted">
+										{t("settings.setup.restarting")}
+									</p>
+								)}
+								{restartError && (
+									<p className="mt-2 text-xs text-danger">{restartError}</p>
+								)}
+							</div>
+						)}
+
+						{page === "general" && <GeneralPage />}
+						{page === "scheduler" && <SchedulerPage />}
+						{page === "updates" && <UpdatesPage />}
+						{page === "provider" && <ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />}
+					</div>
 				</div>
 			</div>
 		</div>

@@ -346,9 +346,8 @@ export function MiniSwitch({
 }) {
 	const onColor =
 		tone === "accent"
-			? "border-accent bg-accent/30"
-			: "border-success bg-success/30";
-	const onThumb = tone === "accent" ? "bg-accent" : "bg-success";
+			? "bg-[#3478f6] dark:bg-[#409cff]"
+			: "bg-success";
 	return (
 		<button
 			type="button"
@@ -358,17 +357,15 @@ export function MiniSwitch({
 			disabled={disabled}
 			onClick={() => onChange(!checked)}
 			className={cn(
-				"relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-				checked ? onColor : "border-border bg-surface-2",
+				"relative inline-flex h-[22px] w-10 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3478f6]/40",
+				checked ? onColor : "bg-surface-2",
 				disabled && "cursor-not-allowed opacity-50",
 			)}
 		>
 			<span
 				className={cn(
-					"absolute h-3.5 w-3.5 rounded-full transition-transform",
-					checked
-						? `translate-x-4 ${onThumb}`
-						: "translate-x-0.5 bg-muted",
+					"absolute h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform",
+					checked ? "translate-x-[19px]" : "translate-x-[2px]",
 				)}
 			/>
 		</button>
@@ -450,7 +447,7 @@ export function ContextMenu({ x, y, items, onDismiss }: ContextMenuProps) {
 
 	return (
 		<div
-			className={cn("fixed min-w-52 rounded-md border border-border bg-surface-2 py-1 shadow-lg", Z.menu)}
+			className={cn("fixed min-w-52 rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}
 			style={{ left: clampedX, top: clampedY }}
 			onMouseDown={(e) => e.stopPropagation()}
 		>
@@ -488,19 +485,19 @@ function ContextMenuRow({
 			onClick={onClick}
 			title={item.hint}
 			className={cn(
-				"flex w-full items-start gap-2 px-3 py-1.5 text-left font-mono text-xs transition-colors",
+				"flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
 				item.disabled
 					? "cursor-not-allowed text-muted/40"
 					: item.danger
 						? "text-danger hover:bg-danger/10 hover:text-danger"
-						: "text-fg hover:bg-accent/10 hover:text-accent",
+						: "text-fg hover:bg-surface-2",
 			)}
 		>
-			<Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+			<Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
 			<span className="flex min-w-0 flex-col gap-0.5">
 				<span className="truncate">{item.label}</span>
 				{item.hint && (
-					<span className="truncate text-[10px] font-normal text-muted">{item.hint}</span>
+					<span className="truncate text-[11px] font-normal text-muted">{item.hint}</span>
 				)}
 			</span>
 		</button>

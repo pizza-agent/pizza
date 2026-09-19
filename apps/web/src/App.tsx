@@ -438,12 +438,12 @@ function AppInner() {
 			refreshWorkspaces();
 		};
 		const p = (
-			<PxlKitSurfaceProvider surface="pixel">
+			<PxlKitSurfaceProvider surface="linear">
 				<ConfirmHost />
 				<div className="flex h-screen items-center justify-center bg-bg">
 					<div className="flex max-w-lg flex-col items-center gap-4 px-6 text-center">
 						<BrandIcon size={48} className="text-warning" />
-						<p className="font-mono text-sm text-fg">{t("agent.staleWorkspaceTitle")}</p>
+						<p className="text-sm text-fg">{t("agent.staleWorkspaceTitle")}</p>
 						<p className="max-w-md break-all text-sm leading-6 text-muted">{staleCwd}</p>
 						<p className="text-xs text-muted">{t("agent.staleWorkspaceBody")}</p>
 						<div className="mt-2 flex flex-wrap justify-center gap-3">
@@ -472,18 +472,18 @@ function AppInner() {
 	if (initError) {
 		const mainAgentConflict = isMainAgentConflictError(initError);
 		return (
-			<PxlKitSurfaceProvider surface="pixel">
+			<PxlKitSurfaceProvider surface="linear">
 				<div className="flex h-screen items-center justify-center bg-bg">
 					<div className="flex max-w-lg flex-col items-center gap-4 px-6 text-center">
 						<BrandIcon size={48} className="text-danger" />
-						<p className="font-mono text-sm text-fg">
+						<p className="text-sm text-fg">
 							{mainAgentConflict ? t("agent.mainConflictTitle") : t("agent.failedToStartWorkspace")}
 						</p>
 						{mainAgentConflict ? (
 							<>
 								<p className="max-w-md text-sm leading-6 text-muted">{t("agent.mainConflictBody")}</p>
 								<details className="w-full text-left">
-									<summary className="cursor-pointer font-mono text-xs text-muted">{t("agent.errorDetails")}</summary>
+									<summary className="cursor-pointer text-xs text-muted">{t("agent.errorDetails")}</summary>
 									<pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-surface-2 p-3 text-xs text-muted">
 										{initError}
 									</pre>
@@ -512,7 +512,7 @@ function AppInner() {
 							</>
 						) : (
 							<>
-								<p className="font-mono text-xs text-muted">{initError}</p>
+								<p className="text-xs text-muted">{initError}</p>
 								<button
 									type="button"
 									onClick={() => {
@@ -538,11 +538,11 @@ function AppInner() {
 	// is no live sidecar to show (first start / crashed sidecar).
 	if (waitingForWorkspace && !sidecarReady) {
 		return (
-			<PxlKitSurfaceProvider surface="pixel">
+			<PxlKitSurfaceProvider surface="linear">
 				<div className="flex h-screen items-center justify-center bg-bg">
 					<div className="flex flex-col items-center gap-4">
 						<BrandIcon size={48} className="text-accent" />
-						<p className="font-mono text-sm text-muted">{t("common.starting")}</p>
+						<p className="text-sm text-muted">{t("common.starting")}</p>
 					</div>
 				</div>
 			</PxlKitSurfaceProvider>
@@ -550,7 +550,7 @@ function AppInner() {
 	}
 
 	return (
-		<PxlKitSurfaceProvider surface="pixel">
+		<PxlKitSurfaceProvider surface="linear">
 			<ConfirmHost />
 			<Routes>
 					<Route
