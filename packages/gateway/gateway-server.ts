@@ -44,13 +44,11 @@ import type { RpcCommand, RpcResponse } from "../rpc/rpc-types.js";
  * `\\.\pipe\<socketBasename>`. The socket lives under the user config root so
  * multiple Pizza installs share one gateway.
  */
-export function gatewaySocketPath(socketBasename = "gateway"): string {
+export function gatewaySocketPath(socketBasename = "gateway", socketDirectory = join(homedir(), ".pizza")): string {
 	if (platform() === "win32") {
 		return `\\\\.\\pipe\\${socketBasename}`;
 	}
-	// Default to ~/.pizza so the gateway is shared across all agents.
-	const configRoot = join(homedir(), ".pizza");
-	return join(configRoot, `${socketBasename}.sock`);
+	return join(socketDirectory, `${socketBasename}.sock`);
 }
 
 /**

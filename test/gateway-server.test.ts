@@ -9,7 +9,7 @@ import { connect } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGatewayServer, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
+import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 import { mkdirSync, statSync } from "node:fs";
 import { platform } from "node:os";
@@ -17,7 +17,8 @@ import type { RpcCommand, RpcResponse } from "../packages/rpc/rpc-types.js";
 
 function uniqueSocketPath(): string {
 	const dir = mkdtempSync(join(tmpdir(), "pizza-gw-"));
-	return join(dir, "gateway.sock");
+	const basename = platform() === "win32" ? `pizza-gw-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : "gateway";
+	return gatewaySocketPath(basename, dir);
 }
 
 async function sendAndWait(socketPath: string, message: object, timeoutMs = 3000): Promise<string> {

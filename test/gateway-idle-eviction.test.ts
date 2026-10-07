@@ -23,7 +23,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type Socket } from "node:net";
-import { createGatewayServer, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
+import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 import type { RpcCommand, RpcResponse } from "@tomsun28/pizza-protocol";
 
@@ -68,7 +68,7 @@ class FakeAgent implements AgentConnection {
 }
 
 function uniqueSocketPath(): string {
-	return join(tmpdir(), `pizza-gw-idle-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`);
+	return gatewaySocketPath(`pizza-gw-idle-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 function tick(ms: number): Promise<void> {

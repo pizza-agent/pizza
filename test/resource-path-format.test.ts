@@ -47,6 +47,10 @@ describe("formatDisplayPath", () => {
 	it("leaves relative paths alone", () => {
 		expect(formatDisplayPath("src/index.ts", HOME)).toBe("src/index.ts");
 	});
+
+	it("abbreviates Windows home paths case-insensitively", () => {
+		expect(formatDisplayPath("C:\\Users\\Tester\\code\\app", "c:\\users\\tester")).toBe("~/code/app");
+	});
 });
 
 describe("formatContextPath", () => {

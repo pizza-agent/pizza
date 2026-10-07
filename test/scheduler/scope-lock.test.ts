@@ -58,21 +58,20 @@ describe("SchedulerScopeLock", () => {
 
 	it("refuses when a live process holds a fresh lock", () => {
 		mkdirSync(dir(), { recursive: true });
-		// pid 1 (launchd/init) is always alive but not signalable → EPERM → treated alive.
 		writeFileSync(
 			join(dir(), "engine.lock"),
-			JSON.stringify({ pid: 1, acquiredAt: Date.now(), heartbeatAt: Date.now() }),
+			JSON.stringify({ pid: process.ppid, acquiredAt: Date.now(), heartbeatAt: Date.now() }),
 		);
 		const lock = new SchedulerScopeLock(dir());
 		expect(lock.tryAcquire()).toBe(false);
-		expect(lock.holderPid()).toBe(1);
+		expect(lock.holderPid()).toBe(process.ppid);
 	});
 
 	it("takes over a stale heartbeat even when the pid is alive", () => {
 		mkdirSync(dir(), { recursive: true });
 		writeFileSync(
 			join(dir(), "engine.lock"),
-			JSON.stringify({ pid: 1, acquiredAt: 0, heartbeatAt: Date.now() - STALE_MS - 1 }),
+			JSON.stringify({ pid: process.ppid, acquiredAt: 0, heartbeatAt: Date.now() - STALE_MS - 1 }),
 		);
 		const lock = new SchedulerScopeLock(dir());
 		expect(lock.tryAcquire()).toBe(true);
@@ -118,13 +117,13 @@ describe("SchedulerScopeLock", () => {
 
 	it("exclusive create means an existing fresh lock is never overwritten", () => {
 		mkdirSync(dir(), { recursive: true });
-		const before = { pid: 1, acquiredAt: 123, heartbeatAt: Date.now() };
+		const before = { pid: process.ppid, acquiredAt: 123, heartbeatAt: Date.now() };
 		writeFileSync(join(dir(), "engine.lock"), JSON.stringify(before));
 		const lock = new SchedulerScopeLock(dir());
 		expect(lock.tryAcquire()).toBe(false);
 		// The refusal must not have modified the holder's lock file.
 		const after = JSON.parse(readFileSync(join(dir(), "engine.lock"), "utf-8")) as { pid: number; acquiredAt: number };
-		expect(after.pid).toBe(1);
+		expect(after.pid).toBe(process.ppid);
 		expect(after.acquiredAt).toBe(123);
 	});
 });
@@ -135,7 +134,7 @@ describe("engine passive mode (cross-process singleton)", () => {
 		const dir = join(home, "main", "scheduler");
 		writeFileSync(
 			join(dir, "engine.lock"),
-			JSON.stringify({ pid: 1, acquiredAt: Date.now(), heartbeatAt: Date.now() }),
+			JSON.stringify({ pid: process.ppid, acquiredAt: Date.now(), heartbeatAt: Date.now() }),
 		);
 		let fired = 0;
 		const engine = new SchedulerEngine({

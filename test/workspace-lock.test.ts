@@ -33,7 +33,7 @@ describe("workspace single-writer lock", () => {
 		// A second acquirer on the same path while the first owner (this process)
 		// is alive is rejected. (acquirePidLock treats our own pid as re-entrant,
 		// so simulate a different live owner by writing another pid.)
-		writeFileSync(lockPath, String(1)); // pid 1 is init — alive on unix
+		writeFileSync(lockPath, String(process.ppid));
 		const second = acquirePidLock(lockPath);
 		expect(second).toBeNull();
 
@@ -73,7 +73,7 @@ describe("workspace single-writer lock", () => {
 		const lock = acquireWorkspaceLock(dir);
 		expect(lock).not.toBeNull();
 		// Same path, foreign live owner → blocked.
-		writeFileSync(join(dir, ".lock"), String(1));
+		writeFileSync(join(dir, ".lock"), String(process.ppid));
 		expect(acquireWorkspaceLock(dir)).toBeNull();
 		lock!.release();
 	});

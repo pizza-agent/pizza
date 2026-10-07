@@ -855,15 +855,19 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	printTimings();
-	const exitCode = await runPrintModeWithFacade(created.facade, {
-		mode: toPrintOutputMode(appMode),
-		messages: parsed.messages,
-		initialMessage,
-		initialImages,
-	});
-	stopThemeWatcher();
-	restoreStdout();
-	if (exitCode !== 0) {
-		process.exitCode = exitCode;
+	try {
+		const exitCode = await runPrintModeWithFacade(created.facade, {
+			mode: toPrintOutputMode(appMode),
+			messages: parsed.messages,
+			initialMessage,
+			initialImages,
+		});
+		if (exitCode !== 0) {
+			process.exitCode = exitCode;
+		}
+	} finally {
+		created.facade.dispose();
+		stopThemeWatcher();
+		restoreStdout();
 	}
 }

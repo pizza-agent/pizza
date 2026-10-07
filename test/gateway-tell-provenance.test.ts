@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { connect, type Socket } from "node:net";
 import {
 	createGatewayServer,
+	gatewaySocketPath,
 	type GatewayServer,
 	type AgentConnection,
 } from "../packages/gateway/gateway-server.js";
@@ -82,10 +83,7 @@ class RecordingAgent implements AgentConnection {
 }
 
 function uniqueSocketPath(): string {
-	return join(
-		tmpdir(),
-		`pizza-gw-prov-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
-	);
+	return gatewaySocketPath(`pizza-gw-prov-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 async function sendAndWait(socketPath: string, message: object, timeoutMs = 3000): Promise<string> {

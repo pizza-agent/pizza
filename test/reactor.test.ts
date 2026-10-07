@@ -260,6 +260,7 @@ describe("Reactor (event-driven core)", () => {
 		expect(capturedPrompt).not.toContain(stale.session_id);
 
 		runtime.dispose();
+		store.close();
 	});
 
 	it("passes tool execution context through the runtime and emits updates", async () => {

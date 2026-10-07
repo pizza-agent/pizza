@@ -132,7 +132,7 @@ describe("heredoc write routing via cli", () => {
 	it("writes a file via a quoted heredoc (<<'EOF') through the cli tool", async () => {
 		const testFile = join(testDir, "soul.md");
 		const bashTool = createBashTool(testDir);
-		const command = `_write ${testFile} <<'EOF'\n---\nname: Pizza\n---\nHello, world!\nEOF`;
+		const command = `_write ${testFile.replace(/\\/g, "/")} <<'EOF'\n---\nname: Pizza\n---\nHello, world!\nEOF`;
 
 		const result = await bashTool.execute("heredoc-quoted", { command });
 		const out = (result.content ?? [])
@@ -148,7 +148,7 @@ describe("heredoc write routing via cli", () => {
 	it("writes a file via a double-quoted heredoc (<<\"EOF\") through the cli tool", async () => {
 		const testFile = join(testDir, "quoted.md");
 		const bashTool = createBashTool(testDir);
-		const command = `_write ${testFile} <<"EOF"\nline one\nline two\nEOF`;
+		const command = `_write ${testFile.replace(/\\/g, "/")} <<"EOF"\nline one\nline two\nEOF`;
 
 		await bashTool.execute("heredoc-double", { command });
 

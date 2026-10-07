@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
 
@@ -55,7 +56,7 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 	);
 
 	return await new Promise((resolvePromise, reject) => {
-		const child = spawn(process.execPath, ["--import", tsxLoaderPath, cliPath, ...args], {
+		const child = spawn(process.execPath, ["--import", pathToFileURL(tsxLoaderPath).href, cliPath, ...args], {
 			cwd: projectDir,
 			env: {
 				...process.env,

@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect, type Socket } from "node:net";
-import { createGatewayServer, type GatewayServer } from "../packages/gateway/gateway-server.js";
+import { createGatewayServer, gatewaySocketPath, type GatewayServer } from "../packages/gateway/gateway-server.js";
 import { GatewayTransport } from "../packages/gateway/channel-client.js";
 import {
 	isGatewayRequest,
@@ -22,7 +22,7 @@ import {
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 
 function uniqueSocketPath(): string {
-	return join(tmpdir(), `pizza-gw-channel-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`);
+	return gatewaySocketPath(`pizza-gw-channel-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 async function startServer(agentDir: string): Promise<{ server: GatewayServer; socketPath: string }> {
