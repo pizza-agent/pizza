@@ -36,7 +36,8 @@ export function hasMacTrafficLights(): boolean {
  * `homeDir()` + replace), so comparing raw strings is unreliable.
  */
 export function normalizePathForCompare(path: string): string {
-	return path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+	const normalized = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+	return /^[a-z]:\//i.test(normalized) || path.startsWith("\\\\") ? normalized.toLowerCase() : normalized;
 }
 
 /** True when `a` and `b` refer to the same filesystem path. */

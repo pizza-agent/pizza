@@ -438,10 +438,15 @@ fn expand_tilde(path: &str) -> String {
 }
 
 fn normalize_path_for_compare(path: &str) -> String {
-	std::fs::canonicalize(path)
+	let normalized = std::fs::canonicalize(path)
 		.unwrap_or_else(|_| PathBuf::from(path))
 		.to_string_lossy()
-		.replace('\\', "/")
+		.replace('\\', "/");
+	if cfg!(windows) {
+		normalized.to_lowercase()
+	} else {
+		normalized
+	}
 }
 
 fn persistent_chat_cwd() -> Option<String> {
@@ -2740,13 +2745,15 @@ pub async fn transcribe_audio(audio_b64: String, mime_type: String) -> Result<St
 /// Uses `/usr/bin/which` on macOS (since `which` is a shell built-in)
 /// and `which` on other platforms.
 fn which(cmd: &str) -> bool {
+	#[cfg(target_os = "windows")]
+	let (which_bin, args) = ("where", vec![cmd]);
 	#[cfg(target_os = "macos")]
-	let which_bin = "/usr/bin/which";
-	#[cfg(not(target_os = "macos"))]
-	let which_bin = "which";
+	let (which_bin, args) = ("/usr/bin/which", vec![cmd]);
+	#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+	let (which_bin, args) = ("which", vec![cmd]);
 
 	std::process::Command::new(which_bin)
-		.arg(cmd)
+		.args(args)
 		.stdout(std::process::Stdio::null())
 		.stderr(std::process::Stdio::null())
 		.status()
@@ -3583,6 +3590,16 @@ pub async fn fetch_skills_sh() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn normalizes_windows_paths_for_comparison() {
+		let normalized = normalize_path_for_compare(r"C:\Users\Tom\.pizza\main");
+		if cfg!(windows) {
+			assert_eq!(normalized, "c:/users/tom/.pizza/main");
+		} else {
+			assert_eq!(normalized, "C:/Users/Tom/.pizza/main");
+		}
+	}
 
 	#[test]
 	fn resolve_shell_path_never_empty() {
