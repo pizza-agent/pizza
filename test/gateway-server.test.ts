@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { connect } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 import { mkdirSync, statSync } from "node:fs";
@@ -156,7 +156,7 @@ describe("gateway server", () => {
 		await server.start();
 
 		// Same directory in three spellings.
-		const variants = [projectDir, `${projectDir}/`, `${projectDir}/../${projectDir.split("/").pop()}`];
+		const variants = [projectDir, `${projectDir}/`, join(projectDir, "..", basename(projectDir))];
 		for (let i = 0; i < variants.length; i++) {
 			const response = await sendAndWait(socketPath, {
 				type: "tell",

@@ -40,7 +40,7 @@ function isRunnable(task: ScheduledTask): boolean {
 	return true;
 }
 
-/** Normalize a cwd for set-membership comparisons (absolute, forward slashes). */
+/** Normalize a cwd for set-membership comparisons using the platform-native absolute form. */
 export function normalizeCwd(cwd: string): string {
 	return resolve(cwd);
 }
