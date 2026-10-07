@@ -1226,9 +1226,15 @@ export default function AgentView({
 		titleCopyTimerRef.current = setTimeout(() => setTitleCopied(false), 1500);
 	}, [sessionTitle]);
 
-	// Empty-state greeting — one of the readyPrompts strings, picked once per
-	// mount so it doesn't flicker on re-renders.
-	const [greetingIdx] = useState(() => Math.floor(Math.random() * 10));
+	// Empty-state greeting — one of the readyPrompts strings, re-rolled each
+	// time the conversation becomes empty (mount counts via the ref seed).
+	const [greetingIdx, setGreetingIdx] = useState(() => Math.floor(Math.random() * 10));
+	const emptyRef = useRef(true);
+	useEffect(() => {
+		const empty = items.length === 0;
+		if (empty && !emptyRef.current) setGreetingIdx(Math.floor(Math.random() * 10));
+		emptyRef.current = empty;
+	}, [items.length]);
 	const readyPrompts = t("agent.readyPrompts", { returnObjects: true }) as unknown;
 	const greeting =
 		Array.isArray(readyPrompts) && typeof readyPrompts[greetingIdx] === "string"
