@@ -8,7 +8,7 @@ import { confirmDialog, alertDialog } from "@/lib/confirm";
 import { BrandIcon } from "./BrandIcon";
 import WorkspacePane from "./WorkspacePane";
 import { UpdateBanner } from "./UpdateBanner";
-import { cn, isTauri, hasMacTrafficLights } from "@/lib/utils";
+import { cn, isTauri, hasMacTrafficLights, isMainChatCwd, samePath, MAIN_CHAT_CWD, pathBasename } from "@/lib/utils";
 import { deleteWorkspace, revealWorkspace } from "@/lib/transport";
 import { clearComposerDraft } from "@/lib/composer-drafts";
 import { Z } from "@/lib/z-index";
@@ -35,8 +35,7 @@ function setPinnedWorkspaces(ids: Set<string>): void {
 }
 
 function basename(path: string): string {
-	const parts = path.replace(/\/+$/, "").split("/");
-	return parts[parts.length - 1] || path;
+	return pathBasename(path);
 }
 
 function timeAgo(ts: number, t: TFunction): string {
@@ -50,13 +49,11 @@ function timeAgo(ts: number, t: TFunction): string {
 	return t("layout.timeDaysAgo", { count: days });
 }
 
-const MAIN_CHAT_CWD = "~/.pizza/main";
-
-function isMainChatCwd(cwd: string | null | undefined): boolean {
-	if (!cwd) return false;
-	if (cwd === MAIN_CHAT_CWD) return true;
-	// Match expanded path like /Users/tom/.pizza/main
-	return cwd.endsWith("/.pizza/main");
+/** True when a `_cwd`-keyed streaming set contains `path` (separator-insensitive). */
+function setHasPath(set: Set<string> | undefined, path: string): boolean {
+	if (!set) return false;
+	for (const p of set) if (samePath(p, path)) return true;
+	return false;
 }
 
 export default function Layout({
@@ -294,7 +291,7 @@ export default function Layout({
 							<span
 								className={cn(
 									"h-1.5 w-1.5 shrink-0 rounded-full",
-									state?.isStreaming || streamingCwds?.has(MAIN_CHAT_CWD) ? "bg-accent animate-pulse" : "bg-success",
+									state?.isStreaming || (streamingCwds && [...streamingCwds].some(isMainChatCwd)) ? "bg-accent animate-pulse" : "bg-success",
 								)}
 							/>
 						)}
@@ -320,7 +317,7 @@ export default function Layout({
 					{sortedWorkspaces.length > 0 ? (
 						<div className="space-y-0.5">
 							{sortedWorkspaces.map((ws) => {
-								const isActive = workspace === ws.cwd;
+								const isActive = samePath(workspace, ws.cwd);
 								const isPinned = pinned.has(ws.workspace_id);
 								const isMenuOpen = menuOpenId === ws.workspace_id;
 								return (
@@ -367,7 +364,7 @@ export default function Layout({
 													{timeAgo(ws.last_accessed_at, t)}
 												</div>
 											</div>
-											{online && (isActive || streamingCwds?.has(ws.cwd)) && (
+											{online && (isActive || setHasPath(streamingCwds, ws.cwd)) && (
 												<span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", (isActive ? state?.isStreaming : true) ? "bg-accent animate-pulse" : "bg-success")} />
 											)}
 											<MoreMenu

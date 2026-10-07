@@ -11,7 +11,7 @@ import { textMatches } from "@/lib/highlight";
 import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/components/Composer";
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
-import { cn } from "@/lib/utils";
+import { cn, samePath } from "@/lib/utils";
 import { hasGatewayTrailer, parseAgentMessage } from "@/lib/agent-messages";
 import type { LayoutOutletContext } from "@/components/Layout";
 
@@ -540,7 +540,7 @@ export default function AgentView({
 	const handleEvent = useCallback((event: TypedEvent & { _cwd?: string }) => {
 		const eventCwd = event._cwd ?? "";
 		const currentWs = workspace ?? "";
-		const isForCurrent = eventCwd === currentWs;
+		const isForCurrent = samePath(eventCwd, currentWs);
 		const activeState = stateRef.current;
 		const eventSessionId = typeof (event as unknown as { session_id?: unknown }).session_id === "string"
 			? (event as unknown as { session_id: string }).session_id

@@ -4,7 +4,7 @@ import { Search, RefreshCw, Play } from "lucide-react";
 import { getEvents, rewindToEvent, subscribeEvents } from "@/lib/transport";
 import type { RpcForensicEvent } from "@/lib/types";
 import { EmptyState, ErrorBanner, Spinner } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, samePath } from "@/lib/utils";
 
 type Category = "user" | "agent" | "tools" | "reactor" | "session" | "compaction" | "runtime";
 
@@ -135,7 +135,7 @@ export default function EventTimeline({ workspace }: { workspace?: string | null
 		let timer: ReturnType<typeof setTimeout> | null = null;
 		const unlistenP = subscribeEvents((event) => {
 			const typed = event as { _cwd?: string };
-			if (typed._cwd && workspace && typed._cwd !== workspace) return;
+			if (typed._cwd && workspace && !samePath(typed._cwd, workspace)) return;
 			if (timer) clearTimeout(timer);
 			timer = setTimeout(() => { if (!cancelled) void load(); }, 400);
 		});

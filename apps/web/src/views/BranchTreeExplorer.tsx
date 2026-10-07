@@ -11,7 +11,7 @@ import {
 } from "@/lib/transport";
 import type { RpcHistoryTreeNode } from "@/lib/types";
 import { Button, EmptyState, ErrorBanner, Field, Modal, Spinner } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, samePath } from "@/lib/utils";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui";
 
 interface ContextMenuState {
@@ -158,7 +158,7 @@ export default function BranchTreeExplorer({ workspace }: { workspace?: string |
 		let timer: ReturnType<typeof setTimeout> | null = null;
 		const unlistenP = subscribeEvents((event) => {
 			const typed = event as { type?: string; _cwd?: string };
-			if (typed._cwd && workspace && typed._cwd !== workspace) return;
+			if (typed._cwd && workspace && !samePath(typed._cwd, workspace)) return;
 			if (
 				typed.type === "SESSION_CREATED" ||
 				typed.type === "SESSION_FORKED" ||

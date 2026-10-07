@@ -13,11 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// Read an API key for a provider from ~/.pizza/agent/auth.json.
 fn read_api_key(provider: &str) -> Option<String> {
-	let home = std::env::var("HOME").ok()?;
-	let auth_path = PathBuf::from(&home)
-		.join(".pizza")
-		.join("agent")
-		.join("auth.json");
+	let auth_path = home_dir()?.join(".pizza").join("agent").join("auth.json");
 	let raw = std::fs::read_to_string(&auth_path).ok()?;
 	let parsed: Value = serde_json::from_str(&raw).ok()?;
 	let key = parsed.get(provider)?.get("key")?.as_str()?.to_string();
@@ -28,24 +24,30 @@ fn read_api_key(provider: &str) -> Option<String> {
 	}
 }
 
-const BRIDGE_LOG_PATH: &str = "/tmp/pizza-gui-bridge.log";
+/// Bridge log lives in the OS temp dir — /tmp does not exist on Windows.
+fn bridge_log_path() -> &'static PathBuf {
+	static CACHED: OnceLock<PathBuf> = OnceLock::new();
+	CACHED.get_or_init(|| std::env::temp_dir().join("pizza-gui-bridge.log"))
+}
+
 /// Rotate the bridge log once it exceeds ~10MB so it can't grow unbounded
 /// (get_state polling + per-rpc_response logging writes a lot).
 const BRIDGE_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
 
 pub(crate) fn log_file(msg: &str) {
 	use std::io::Write;
+	let log_path = bridge_log_path();
 	// Best-effort rotation: if the log is too big, move it aside and start fresh.
 	// Errors here are non-fatal — we still want the line written.
-	if let Ok(meta) = std::fs::metadata(BRIDGE_LOG_PATH) {
+	if let Ok(meta) = std::fs::metadata(log_path) {
 		if meta.len() > BRIDGE_LOG_MAX_BYTES {
-			let _ = std::fs::rename(BRIDGE_LOG_PATH, format!("{BRIDGE_LOG_PATH}.old"));
+			let _ = std::fs::rename(log_path, log_path.with_extension("log.old"));
 		}
 	}
 	if let Ok(mut f) = std::fs::OpenOptions::new()
 		.create(true)
 		.append(true)
-		.open(BRIDGE_LOG_PATH)
+		.open(log_path)
 	{
 		let _ = writeln!(f, "{}", msg);
 	}
@@ -59,8 +61,8 @@ fn find_node() -> Option<String> {
 		}
 	}
 	// Try nvm first — nvm versions are usually newer and have node:sqlite.
-	if let Ok(home) = std::env::var("HOME") {
-		let nvm_node = format!("{}/.nvm/versions/node", home);
+	if let Some(home) = home_dir() {
+		let nvm_node = home.join(".nvm").join("versions").join("node");
 		if let Ok(entries) = std::fs::read_dir(&nvm_node) {
 			let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
 			versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
@@ -407,7 +409,32 @@ async fn broadcast_to_all_channels(state: &BridgeState, command_type: &str) {
 }
 
 fn home_dir() -> Option<PathBuf> {
-	std::env::var("HOME").ok().map(PathBuf::from)
+	// Windows sets USERPROFILE, not HOME — fall back so ~/.pizza paths
+	// resolve on every platform.
+	std::env::var("HOME")
+		.or_else(|_| std::env::var("USERPROFILE"))
+		.ok()
+		.map(PathBuf::from)
+		.filter(|p| !p.as_os_str().is_empty())
+}
+
+/// Expand a leading `~` to the user's home directory. Other `~` positions
+/// (and `~user` forms) are left untouched.
+fn expand_tilde(path: &str) -> String {
+	if !path.starts_with("~") {
+		return path.to_string();
+	}
+	match home_dir() {
+		Some(home) => {
+			let rest = path[1..].trim_start_matches(['/', '\\']);
+			if rest.is_empty() {
+				home.to_string_lossy().to_string()
+			} else {
+				home.join(rest).to_string_lossy().to_string()
+			}
+		}
+		None => path.to_string(),
+	}
 }
 
 fn normalize_path_for_compare(path: &str) -> String {
@@ -452,16 +479,30 @@ fn is_process_alive(pid: u32) -> bool {
 		.unwrap_or(false)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn is_process_alive(pid: u32) -> bool {
-	let pid_arg = pid.to_string();
-	Command::new("ps")
-		.args(["-p", &pid_arg])
-		.status()
-		.map(|status| status.success())
+	// `tasklist /FI "PID eq <pid>" /FO CSV /NH` prints one CSV line per
+	// matching process, or "INFO: No tasks..." when the pid is dead.
+	Command::new("tasklist")
+		.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+		.output()
+		.map(|out| {
+			String::from_utf8_lossy(&out.stdout).lines().any(|line| {
+				line.split(',')
+					.nth(1)
+					.map(|field| field.trim_matches('"') == pid.to_string())
+					.unwrap_or(false)
+			})
+		})
 		.unwrap_or(false)
 }
 
+#[cfg(not(any(unix, windows)))]
+fn is_process_alive(_pid: u32) -> bool {
+	false
+}
+
+#[cfg(unix)]
 fn process_command(pid: u32) -> Option<String> {
 	let pid_arg = pid.to_string();
 	let output = Command::new("ps")
@@ -477,6 +518,35 @@ fn process_command(pid: u32) -> Option<String> {
 	} else {
 		Some(command)
 	}
+}
+
+#[cfg(windows)]
+fn process_command(pid: u32) -> Option<String> {
+	let output = Command::new("powershell")
+		.args([
+			"-NoProfile",
+			"-Command",
+			&format!(
+				"(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
+				pid
+			),
+		])
+		.output()
+		.ok()?;
+	if !output.status.success() {
+		return None;
+	}
+	let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
+	if command.is_empty() {
+		None
+	} else {
+		Some(command)
+	}
+}
+
+#[cfg(not(any(unix, windows)))]
+fn process_command(_pid: u32) -> Option<String> {
+	None
 }
 
 fn is_probably_pizza_main_agent(command: &str) -> bool {
@@ -546,7 +616,9 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 
 	#[cfg(not(unix))]
 	let stop_result = Command::new("taskkill")
-		.args(["/PID", &pid.to_string(), "/T"])
+		// /F is required — the pizza sidecar is a console-less child process
+		// and ignores the graceful WM_CLOSE that plain taskkill sends.
+		.args(["/PID", &pid.to_string(), "/T", "/F"])
 		.status()
 		.map(|status| status.success())
 		.unwrap_or(false);
@@ -933,25 +1005,14 @@ pub async fn init_sidecar(
 			.unwrap_or_else(|_| ".".to_string())
 	});
 	// Expand ~ to home directory.
-	let cwd = if cwd.starts_with("~") {
-		if let Ok(home) = std::env::var("HOME") {
-			format!("{}{}", home, &cwd[1..])
-		} else {
-			cwd
-		}
-	} else {
-		cwd
-	};
+	let cwd = expand_tilde(&cwd);
 	log_file(&format!("init_sidecar: cwd={}", cwd));
 
 	// The persistent Chat workspace (~/.pizza/main) is auto-created on first
 	// launch. It is the default workspace the desktop app boots into, so it
 	// must always exist — unlike user-selected project directories, which are
 	// expected to be present already.
-	let is_persistent_chat = std::env::var("HOME")
-		.ok()
-		.map(|home| cwd == format!("{}/.pizza/main", home))
-		.unwrap_or(false);
+	let is_persistent_chat = is_persistent_chat_cwd(&cwd);
 	if is_persistent_chat && !std::path::Path::new(&cwd).is_dir() {
 		log_file(&format!(
 			"init_sidecar: creating persistent Chat workspace at {}",
@@ -1657,11 +1718,7 @@ pub async fn new_workspace(app: AppHandle) -> Result<String, String> {
 /// List all workspaces from ~/.pizza/agent/workspaces/*/meta.json
 #[tauri::command]
 pub async fn list_workspaces() -> Result<Vec<Value>, String> {
-	let home = std::env::var("HOME").map_err(|_| "HOME not set")?;
-	let workspaces_dir = PathBuf::from(&home)
-		.join(".pizza")
-		.join("agent")
-		.join("workspaces");
+	let workspaces_dir = workspace_meta_root().ok_or("could not determine home directory")?;
 
 	if !workspaces_dir.exists() {
 		return Ok(Vec::new());
@@ -1723,11 +1780,8 @@ pub async fn delete_workspace(
 	state: tauri::State<'_, BridgeState>,
 	workspace_id: String,
 ) -> Result<(), String> {
-	let home = std::env::var("HOME").map_err(|_| "HOME not set")?;
-	let ws_dir = PathBuf::from(&home)
-		.join(".pizza")
-		.join("agent")
-		.join("workspaces")
+	let ws_dir = workspace_meta_root()
+		.ok_or("could not determine home directory")?
 		.join(&workspace_id);
 
 	if !ws_dir.exists() {
@@ -1770,15 +1824,7 @@ pub async fn delete_workspace(
 /// and the frontend surfaces them as <file path="..."/> references.
 #[tauri::command]
 pub async fn reveal_file(absolute_path: String) -> Result<(), String> {
-	let path = if absolute_path.starts_with("~") {
-		if let Ok(home) = std::env::var("HOME") {
-			format!("{}{}", home, &absolute_path[1..])
-		} else {
-			absolute_path.clone()
-		}
-	} else {
-		absolute_path.clone()
-	};
+	let path = expand_tilde(&absolute_path);
 
 	if !std::path::Path::new(&path).exists() {
 		return Err(format!("Path does not exist: {}", path));
@@ -1932,15 +1978,7 @@ pub async fn save_upload(
 /// Reveal a workspace's cwd in the system file manager (Finder on macOS).
 #[tauri::command]
 pub async fn reveal_workspace(cwd: String) -> Result<(), String> {
-	let path = if cwd.starts_with("~") {
-		if let Ok(home) = std::env::var("HOME") {
-			format!("{}{}", home, &cwd[1..])
-		} else {
-			cwd.clone()
-		}
-	} else {
-		cwd.clone()
-	};
+	let path = expand_tilde(&cwd);
 
 	if !std::path::Path::new(&path).exists() {
 		return Err(format!("Path does not exist: {}", path));
@@ -2003,8 +2041,9 @@ pub struct CustomProviderTestResult {
 }
 
 fn agent_dir() -> Result<PathBuf, String> {
-	let home = std::env::var("HOME").map_err(|_| "HOME not set")?;
-	Ok(PathBuf::from(&home).join(".pizza").join("agent"))
+	home_dir()
+		.map(|home| home.join(".pizza").join("agent"))
+		.ok_or_else(|| "could not determine home directory".to_string())
 }
 
 fn auth_path() -> Result<PathBuf, String> {
@@ -2860,12 +2899,7 @@ pub struct DirEntry {
 
 /// Resolve `cwd` (expanding `~`) and join `sub_path` if provided.
 fn resolve_workspace_path(cwd: &str, sub_path: Option<&str>) -> Result<PathBuf, String> {
-	let expanded = if cwd.starts_with("~") {
-		let home = std::env::var("HOME").map_err(|_| "HOME not set")?;
-		format!("{}{}", home, &cwd[1..])
-	} else {
-		cwd.to_string()
-	};
+	let expanded = expand_tilde(cwd);
 	let base = PathBuf::from(&expanded);
 	let full = match sub_path {
 		Some(s) if !s.is_empty() => base.join(s),

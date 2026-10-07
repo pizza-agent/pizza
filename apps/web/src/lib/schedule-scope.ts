@@ -7,13 +7,15 @@
  * active workspace cwd so every caller (Schedules page, composer popover)
  * asks for exactly one workspace's tasks.
  */
+import { isMainChatCwd, normalizePathForCompare } from "./platform";
+
 export interface ScheduleScope {
 	scope: "main" | "workspace";
 	workspaceId?: string;
 }
 
 export function resolveScheduleScope(workspace?: string | null): ScheduleScope {
-	const cwd = workspace?.replace(/\/+$/, "") ?? "";
-	if (cwd.endsWith("/.pizza/main")) return { scope: "main" };
+	const cwd = normalizePathForCompare(workspace ?? "");
+	if (isMainChatCwd(cwd)) return { scope: "main" };
 	return { scope: "workspace", workspaceId: cwd || undefined };
 }

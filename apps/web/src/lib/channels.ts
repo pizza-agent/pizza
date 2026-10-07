@@ -15,6 +15,7 @@
  */
 
 import { listWorkspaces } from "./transport";
+import { pathBasename } from "./platform";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -202,7 +203,7 @@ export async function testChannel(id: string): Promise<ChannelTestResult> {
 export async function workspaceOptions(): Promise<{ value: string; label: string; hint: string }[]> {
 	const workspaces = await listWorkspaces();
 	return workspaces.map((ws) => {
-		const name = ws.cwd.replace(/\/+$/, "").split("/").pop() ?? ws.cwd;
+		const name = pathBasename(ws.cwd);
 		return { value: ws.cwd, label: name, hint: ws.cwd };
 	});
 }

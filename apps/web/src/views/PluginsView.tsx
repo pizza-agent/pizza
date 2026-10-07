@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, Badge, Button, MoreMenu } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
-import { cn } from "@/lib/utils";
+import { cn, pathBasename } from "@/lib/utils";
 import {
 	fetchSkillsSh,
 	getSkills,
@@ -839,7 +839,7 @@ function ChannelCard({
 	const statusTone =
 		channel.status === "connected" ? "success" : channel.status === "error" ? "danger" : "neutral";
 	const statusKey = channel.enabled ? channel.status : "disconnected";
-	const wsName = channel.workspace ? channel.workspace.replace(/\/+$/, "").split("/").pop() ?? channel.workspace : "";
+	const wsName = channel.workspace ? pathBasename(channel.workspace) : "";
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
