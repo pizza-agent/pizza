@@ -6,10 +6,13 @@
  * projections through EventSourcedRuntime.
  */
 
+import { readFileSync } from "node:fs";
 import type { Model } from "@earendil-works/pi-ai/compat";
 import type { EventBase, ImageContent, FileAttachment } from "./event-store/types.js";
 import type { SubscribeOptions } from "./event-store/store.js";
-import type { ExtensionRunner } from "./extensions/runner.js";
+import type { ExtensionRunner, ResolvedCommand } from "./extensions/index.js";
+import { expandPromptTemplate } from "./prompt-templates.js";
+import { stripFrontmatter } from "../utils/frontmatter.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { ResourceLoader } from "./resource-loader.js";
 import type { SessionProjection } from "./projection/session-projection.js";
@@ -67,16 +70,118 @@ export class SessionFacade {
 		return this.runtime.subscribe(listener, options);
 	}
 
-	prompt(text: string, images?: ImageContent[], files?: FileAttachment[]): Promise<void> {
-		return this.runtime.prompt(text, images, files);
+	/**
+	 * `/<name> [args]` interception — the pre-event-sourced AgentSession ran
+	 * this inside prompt()/steer()/followUp() and it was dropped in the
+	 * refactor, so `/computer install`-style extension commands reached the
+	 * model as plain text. Order matches the original:
+	 *   1. extension commands execute in-process (no LLM turn)
+	 *   2. the `input` extension event may transform or swallow the input
+	 *   3. `/skill:<name>` and prompt templates expand to their file content
+	 */
+	async prompt(text: string, images?: ImageContent[], files?: FileAttachment[]): Promise<void> {
+		if (await this.executeExtensionCommand(text)) return;
+
+		let currentText = text;
+		let currentImages = images;
+		const runner = this.extensionRunner;
+		if (runner?.hasHandlers("input")) {
+			// The event-store and pi-ai ImageContent types describe the same
+			// blocks but differ in the mime field name — cast at the boundary.
+			const inputResult = await runner.emitInput(
+				currentText,
+				currentImages as unknown as import("@earendil-works/pi-ai/compat").ImageContent[] | undefined,
+				"interactive",
+			);
+			if (inputResult.action === "handled") return;
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = (inputResult.images ?? currentImages) as unknown as ImageContent[] | undefined;
+			}
+		}
+
+		return this.runtime.prompt(this.expandSlashText(currentText), currentImages, files);
 	}
 
 	steer(text: string, images?: ImageContent[], files?: FileAttachment[]): void {
-		this.runtime.steer(text, images, files);
+		// Extension commands cannot be queued behind a running turn — execute
+		// them immediately instead of steering the raw "/name" text into it.
+		if (this.resolveExtensionCommand(text)) {
+			void this.executeExtensionCommand(text);
+			return;
+		}
+		this.runtime.steer(this.expandSlashText(text), images, files);
 	}
 
 	followUp(text: string, images?: ImageContent[], files?: FileAttachment[]): void {
-		this.runtime.followUp(text, images, files);
+		if (this.resolveExtensionCommand(text)) {
+			void this.executeExtensionCommand(text);
+			return;
+		}
+		this.runtime.followUp(this.expandSlashText(text), images, files);
+	}
+
+	/** Resolve `/name` (first token) to a registered extension command. */
+	private resolveExtensionCommand(text: string): ResolvedCommand | undefined {
+		const runner = this.extensionRunner;
+		if (!runner || !text.startsWith("/")) return undefined;
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		return runner.getCommand(commandName);
+	}
+
+	/** Execute an extension command in-process. True when the input matched one. */
+	private async executeExtensionCommand(text: string): Promise<boolean> {
+		const command = this.resolveExtensionCommand(text);
+		const runner = this.extensionRunner;
+		if (!command || !runner) return false;
+		const spaceIndex = text.indexOf(" ");
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+		try {
+			await command.handler(args, runner.createCommandContext());
+		} catch (error) {
+			runner.emitError({
+				extensionPath: `command:${command.name}`,
+				event: "command",
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+		return true;
+	}
+
+	/** Expand `/skill:<name>` into its `<skill>` block; pass through when unknown. */
+	private expandSkillCommand(text: string): string {
+		if (!text.startsWith("/skill:")) return text;
+		const loader = this.resourceLoader;
+		if (!loader) return text;
+		const spaceIndex = text.indexOf(" ");
+		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		const skill = loader.getSkills().skills.find((s) => s.name === skillName);
+		if (!skill) return text;
+		try {
+			const body = stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim();
+			const block = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+			return args ? `${block}\n\n${args}` : block;
+		} catch (error) {
+			this.extensionRunner?.emitError({
+				extensionPath: skill.filePath,
+				event: "skill_expansion",
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return text;
+		}
+	}
+
+	/** Expand `/skill:` commands and `/name` prompt templates in user input. */
+	private expandSlashText(text: string): string {
+		if (!text.startsWith("/")) return text;
+		let expanded = this.expandSkillCommand(text);
+		const templates = this.resourceLoader?.getPrompts().prompts;
+		if (templates && templates.length > 0) {
+			expanded = expandPromptTemplate(expanded, [...templates]);
+		}
+		return expanded;
 	}
 
 	/** Queued steer/follow-up texts (for pending-message display). Empty when idle. */
