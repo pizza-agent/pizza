@@ -466,6 +466,31 @@ export async function getExtensions(): Promise<ExtensionInfo[]> {
 	}
 }
 
+/** A theme known to the agent (user dir, project dir, or extension-contributed), as returned by get_themes. */
+export interface WebThemeInfo {
+	name: string;
+	label?: string;
+	path?: string;
+	source?: string;
+	builtin: boolean;
+	web?: {
+		label?: string;
+		mode: "light" | "dark";
+		/** CSS custom-property overrides keyed without the "--" prefix. */
+		tokens: Record<string, string>;
+	};
+}
+
+/** List themes the agent resolved (user ~/.pizza/agent/themes, project .pizza/themes, extension themePaths). */
+export async function listThemes(): Promise<WebThemeInfo[]> {
+	try {
+		const r = await sendCommandAwait<{ themes: WebThemeInfo[] }>({ type: "get_themes" }, 10000);
+		return r.data?.themes ?? [];
+	} catch {
+		return [];
+	}
+}
+
 /** Enable or disable a built-in extension. Returns whether a reload is required. */
 export async function setExtensionEnabled(id: string, enabled: boolean): Promise<boolean> {
 	const r = await sendCommandAwait<{ requiresReload: boolean }>(

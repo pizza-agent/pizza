@@ -60,7 +60,7 @@ export default function RightDock({ workspace }: { workspace?: string | null }) 
 						className={cn(
 							"flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
 							activeTab === id
-								? "bg-surface-2 text-fg"
+								? "bg-surface-2 text-accent"
 								: "text-muted hover:bg-surface-2/60 hover:text-fg",
 						)}
 						title={label}

@@ -49,7 +49,9 @@ import type {
 	RpcSlashCommand,
 	RpcExtensionInfo,
 	RpcSkillInfo,
+	RpcThemeInfo,
 } from "./rpc-types.js";
+import { getThemesDir } from "../../src/config.js";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
 
 // Re-export types for consumers
@@ -341,6 +343,30 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 		}
 		return a.id.localeCompare(b.id);
 	});
+	return infos;
+}
+
+/**
+ * Build the theme list for the `get_themes` RPC: every theme the resource
+ * loader resolved (user themes dir, project dirs, extension-contributed
+ * themePaths), restricted to themes that expose web/desktop tokens.
+ */
+function buildThemeInfos(facade: SessionFacade): RpcThemeInfo[] {
+	const builtinDir = getThemesDir();
+	const themes = facade.resourceLoader?.getThemes().themes ?? [];
+	const infos: RpcThemeInfo[] = [];
+	for (const theme of themes) {
+		if (!theme.name || !theme.web) continue;
+		infos.push({
+			name: theme.name,
+			label: theme.web.label ?? theme.name,
+			path: theme.sourcePath,
+			source: theme.sourceInfo?.source,
+			builtin: !theme.sourcePath || theme.sourcePath.startsWith(builtinDir),
+			web: theme.web,
+		});
+	}
+	infos.sort((a, b) => a.name.localeCompare(b.name));
 	return infos;
 }
 
@@ -1278,6 +1304,11 @@ export async function runRpcModeWithFacade(
 		case "get_extensions": {
 			const extensions = await buildExtensionInfos(facade);
 			return success(id, "get_extensions", { extensions });
+		}
+
+		case "get_themes": {
+			const themes = buildThemeInfos(facade);
+			return success(id, "get_themes", { themes });
 		}
 
 		case "set_extension_enabled": {

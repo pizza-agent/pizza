@@ -145,7 +145,7 @@ export function MentionMenu({
 			{rows.map((row) => {
 				if (row.kind === "header") {
 					return (
-						<div key={row.key} className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted">
+						<div key={row.key} className="px-2 py-1 text-[11px] font-medium text-muted">
 							{t(CATEGORY_KEY[row.category])}
 						</div>
 					);

@@ -19,6 +19,7 @@ export {
 	type RpcForensicEvent,
 	type RpcSkillInfo,
 	type RpcExtensionInfo,
+	type RpcThemeInfo,
 	type RpcExtensionPermissionKind,
 	type RpcExtensionPermissionInfo,
 	type RpcExtensionPermissionState,
@@ -31,6 +32,7 @@ import type {
 	RpcHistoryTreeResult,
 	RpcForensicEvent,
 	RpcSkillInfo,
+	RpcThemeInfo,
 	ScheduledTaskSummary,
 	ScheduledTaskRun,
 	SessionTarget,
@@ -133,6 +135,7 @@ export type RpcResponse =
 			data: { name: string; enabled: boolean; requiresReload: boolean };
 	  }
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
+	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 
 	// Scheduled tasks
 	| { id?: string; type: "response"; command: "schedule_list"; success: true; data: { tasks: ScheduledTaskSummary[] } }

@@ -290,6 +290,7 @@ export type RpcCommand =
 	| { id?: string; type: "set_skill_enabled"; skillName: string; enabled: boolean }
 	| { id?: string; type: "delete_skill"; skillName: string }
 	| { id?: string; type: "get_extensions" }
+	| { id?: string; type: "get_themes" }
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
 	| { id?: string; type: "install_extension"; extensionId: string }
 	| { id?: string; type: "uninstall_extension"; extensionId: string }
@@ -402,6 +403,27 @@ export interface RpcExtensionInfo {
 	commandCount: number;
 	/** Number of dynamic built-in cli commands this extension registers (e.g. computer-use's `_computer_use`). */
 	builtinCommandCount: number;
+}
+
+/** A theme known to the agent (built-in, user dir, or extension-contributed), as returned by get_themes. */
+export interface RpcThemeInfo {
+	/** Theme name (unique key). */
+	name: string;
+	/** Display label for UI pickers (defaults to name). */
+	label?: string;
+	/** Absolute path of the theme JSON, when loaded from disk. */
+	path?: string;
+	/** Where the theme comes from (e.g. "builtin", "user", an extension/package name). */
+	source?: string;
+	/** Whether the theme ships with Pizza. */
+	builtin: boolean;
+	/** Resolved web/desktop UI contribution, when the theme provides one. */
+	web?: {
+		label?: string;
+		mode: "light" | "dark";
+		/** CSS custom-property overrides keyed without the "--" prefix. */
+		tokens: Record<string, string>;
+	};
 }
 
 export type RpcExtensionPermissionKind = "accessibility" | "screenRecording";
@@ -558,6 +580,7 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
+	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
 	| { id?: string; type: "response"; command: "uninstall_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }

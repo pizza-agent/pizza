@@ -90,6 +90,19 @@ const ThemeJsonSchema = Type.Object({
 			infoBg: Type.Optional(ColorValueSchema),
 		}),
 	),
+	/**
+	 * Optional web/desktop UI contribution. `tokens` maps CSS custom-property
+	 * names (without the "--" prefix, e.g. "bg", "surface", "accent",
+	 * "syn-keyword", "retro-card") to CSS values. Values may reference `vars`
+	 * entries just like `colors` values.
+	 */
+	web: Type.Optional(
+		Type.Object({
+			label: Type.Optional(Type.String()),
+			mode: Type.Optional(Type.Union([Type.Literal("light"), Type.Literal("dark")])),
+			tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
+		}),
+	),
 });
 
 type ThemeJson = Static<typeof ThemeJsonSchema>;
@@ -152,6 +165,18 @@ export type ThemeBg =
 	| "toolErrorBg";
 
 type ColorMode = "truecolor" | "256color";
+
+/**
+ * Web/desktop UI contribution resolved from a theme JSON: a light/dark mode
+ * plus CSS custom-property tokens ("bg" → "--bg"). Derived automatically from
+ * `colors` where a sensible mapping exists; an explicit `web.tokens` block
+ * overrides derived entries.
+ */
+export interface WebThemeSpec {
+	label?: string;
+	mode: "light" | "dark";
+	tokens: Record<string, string>;
+}
 
 // ============================================================================
 // Color Utilities
@@ -347,15 +372,18 @@ export class Theme {
 	private bgColors: Map<ThemeBg, string>;
 	private mode: ColorMode;
 
+	readonly web?: WebThemeSpec;
+
 	constructor(
 		fgColors: Record<ThemeColor, string | number>,
 		bgColors: Record<ThemeBg, string | number>,
 		mode: ColorMode,
-		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo } = {},
+		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo; web?: WebThemeSpec } = {},
 	) {
 		this.name = options.name;
 		this.sourcePath = options.sourcePath;
 		this.sourceInfo = options.sourceInfo;
+		this.web = options.web;
 		this.mode = mode;
 		this.fgColors = new Map();
 		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
@@ -578,6 +606,64 @@ function loadThemeJson(name: string): ThemeJson {
 	return parseThemeJsonContent(name, content);
 }
 
+/**
+ * TUI color keys that map cleanly onto web CSS custom properties. Themes
+ * without an explicit `web` block still get a reasonable web presence from
+ * this mapping; `web.tokens` entries override these.
+ */
+const TUI_TO_WEB_TOKENS: Record<string, string> = {
+	accent: "accent",
+	text: "fg",
+	muted: "muted",
+	border: "border",
+	success: "success",
+	warning: "warning",
+	error: "danger",
+	mdLink: "link",
+	syntaxComment: "syn-comment",
+	syntaxKeyword: "syn-keyword",
+	syntaxFunction: "syn-func",
+	syntaxVariable: "syn-var",
+	syntaxString: "syn-string",
+	syntaxNumber: "syn-number",
+	syntaxType: "syn-type",
+	syntaxPunctuation: "syn-punct",
+};
+
+/**
+ * Resolve a web token value: var references resolve through `vars` (256-color
+ * indices become hex), literal CSS values (hex, rgb(), ...) pass through.
+ */
+function resolveWebToken(value: string, vars: Record<string, ColorValue>): string | undefined {
+	if (value === "") return undefined;
+	if (value.startsWith("#") || !(value in vars)) return value;
+	const resolved = resolveVarRefs(value, vars);
+	if (resolved === "") return undefined;
+	if (typeof resolved === "number") return ansi256ToHex(resolved);
+	return resolved;
+}
+
+function buildWebSpec(themeJson: ThemeJson, resolvedColors: Record<string, string | number>): WebThemeSpec | undefined {
+	const vars = themeJson.vars ?? {};
+	const tokens: Record<string, string> = {};
+	for (const [colorKey, token] of Object.entries(TUI_TO_WEB_TOKENS)) {
+		const value = resolvedColors[colorKey];
+		if (typeof value === "string" && value.startsWith("#")) {
+			tokens[token] = value;
+		} else if (typeof value === "number") {
+			tokens[token] = ansi256ToHex(value);
+		}
+	}
+	const explicit = themeJson.web?.tokens ?? {};
+	for (const [key, value] of Object.entries(explicit)) {
+		const resolved = resolveWebToken(value, vars);
+		if (resolved !== undefined) tokens[key] = resolved;
+	}
+	if (!themeJson.web && Object.keys(tokens).length === 0) return undefined;
+	const mode = themeJson.web?.mode ?? (/light/i.test(themeJson.name) ? "light" : "dark");
+	return { label: themeJson.web?.label, mode, tokens };
+}
+
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? detectColorMode();
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
@@ -601,6 +687,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,
 		sourcePath,
+		web: buildWebSpec(themeJson, resolvedColors),
 	});
 }
 

@@ -125,7 +125,7 @@ function MarkdownImpl({
 							// (used when running as a plain web app).
 						};
 						return (
-							<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-accent underline underline-offset-2 hover:opacity-80">
+							<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-link underline underline-offset-2 hover:opacity-80">
 								{highlight ? highlightNodes(c as ReactNode, highlight, !!highlightActive) : (c as ReactNode)}
 							</a>
 						);

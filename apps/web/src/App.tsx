@@ -5,8 +5,8 @@ import { PxlKitSurfaceProvider } from "@pxlkit/ui-kit";
 import Layout from "@/components/Layout";
 import AgentView from "@/views/AgentView";
 import SettingsView from "@/views/SettingsView";
-import PluginsView from "@/views/PluginsView";
 import { subscribeSidecarExit, subscribeEvents, initSidecar, sendCommandAwait, listWorkspaces, deleteWorkspace, restartSidecar, stopMainAgent, setRpcWorkspace } from "@/lib/transport";
+import { refreshCustomThemes } from "@/lib/theme";
 import { BrandIcon } from "@/components/BrandIcon";
 import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
@@ -123,6 +123,7 @@ function AppInner() {
 				setState(initialState as unknown as RpcSessionState);
 			}
 			setSidecarReady(true);
+			void refreshCustomThemes().catch(() => {});
 			// For already-running sidecar, request state explicitly.
 			if (!hasState) {
 				void sendCommandAwait<RpcSessionState>({ type: "get_state" })
@@ -403,7 +404,7 @@ function AppInner() {
 		// Read the path off `window` rather than `useLocation` on purpose: we
 		// deliberately do NOT want this effect re-running on every navigation,
 		// otherwise an unconfigured user gets yanked back here the moment they
-		// try to visit /plugins or anywhere else.
+		// try to visit the plugins page or anywhere else.
 		if (!window.location.pathname.startsWith("/settings")) {
 			navigate("/settings?setup=true", { replace: true });
 		}
@@ -610,7 +611,6 @@ function AppInner() {
 								}}
 							/>
 						} />
-					<Route path="/plugins" element={<PluginsView />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 					</Route>
 			</Routes>

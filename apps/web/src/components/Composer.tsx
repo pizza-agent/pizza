@@ -1061,7 +1061,7 @@ ${insert}`;
 			<div className="mx-auto max-w-3xl">
 				<div
 					className={cn(
-						"relative rounded-3xl border border-border bg-bg px-4 pt-3 pb-2 shadow-[0_1px_6px_rgb(0_0_0/0.04)] transition-colors focus-within:border-muted/70",
+						"relative rounded-2xl border border-border bg-bg px-4 pt-3 pb-2 shadow-[0_1px_6px_rgb(0_0_0/0.04)] transition-colors focus-within:border-muted/70",
 						!sidecarReady && "opacity-60",
 						isDragOver && "border-accent ring-2 ring-accent/40",
 					)}
@@ -1071,7 +1071,7 @@ ${insert}`;
 					onDrop={onDrop}
 				>
 					{isDragOver && (
-						<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-3xl bg-accent/10">
+						<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-accent/10">
 							<div className="rounded-full border border-accent/40 bg-surface px-4 py-2 text-xs font-medium text-accent shadow-md">
 								{t("composer.dropFiles")}
 							</div>

@@ -1,5 +1,26 @@
 @import "tailwindcss";
 @import "@pxlkit/ui-kit/styles.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Nerd Font icon subset — only PUA icon ranges, used as a per-glyph fallback
+   after the text fonts so powerline/prompt icons render without Nerd Font
+   installed. Never wins for normal text (its unicode coverage is icons only). */
+@font-face {
+	font-family: "Pizza Nerd Icons";
+	src: url("./assets/fonts/nerd-icons-Regular.woff2") format("woff2");
+	font-weight: 100 500;
+	font-style: normal;
+	font-display: block;
+	unicode-range: U+E000-F8FF, U+F0000-FFFFD, U+100000-10FFFD;
+}
+@font-face {
+	font-family: "Pizza Nerd Icons";
+	src: url("./assets/fonts/nerd-icons-Bold.woff2") format("woff2");
+	font-weight: 501 900;
+	font-style: normal;
+	font-display: block;
+	unicode-range: U+E000-F8FF, U+F0000-FFFFD, U+100000-10FFFD;
+}
 
 @source "../node_modules/@pxlkit/ui-kit";
 @source "../node_modules/@pxlkit/core";
@@ -19,12 +40,13 @@
 	--color-warning: var(--warning);
 	--color-danger: var(--danger);
 
-	/* Codex-style type: native system sans for UI, monospace only for code. */
-	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-		Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB",
-		"Microsoft YaHei", sans-serif;
-	--font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
-		"Liberation Mono", monospace;
+	/* JetBrains Mono (bundled via fontsource) for UI + code. The variable
+	   build covers weights 100-800. Glyphs it lacks (CJK) fall through to
+	   the system fonts listed after it. */
+	--font-sans: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
+		"SF Mono", SFMono-Regular, Menlo, Consolas, "PingFang SC",
+		"Hiragino Sans GB", "Microsoft YaHei", monospace;
+	--font-mono: var(--font-sans);
 	/* Legacy token — the pixel font is gone; map it to the UI stack so any
 	   leftover kit usage still renders as normal text. */
 	--font-pixel: var(--font-sans);
@@ -40,12 +62,12 @@
 	--border: #e6e6e6;
 	--fg: #0d0d0d;
 	--muted: #8f8f92;
-	--accent: #0d0d0d;
+	--accent: #1a7f37;
 	--accent-fg: #ffffff;
 	--success: #34c759;
 	--warning: #d97706;
 	--danger: #e03131;
-	--link: #3478f6;
+	--link: #1a7f37;
 
 	/* ---------------------------------------------------------------------
 	 * @pxlkit/ui-kit palette override (imported above). The kit renders all
@@ -62,13 +84,13 @@
 	--retro-border-strong: #d4d4d4;
 	--retro-primary: #0d0d0d;
 	--retro-secondary: #d97706;
-	--retro-accent: #3478f6;
+	--retro-accent: #1a7f37;
 	--retro-muted: #8f8f92;
 
 	--retro-green: #34c759;
 	--retro-green-hover: #2db14e;
-	/* The app maps its "accent" tone to the kit's cyan; ink keeps it monochrome. */
-	--retro-cyan: #0d0d0d;
+	/* The kit's cyan is used for accent selects/buttons; map it to the app accent. */
+	--retro-cyan: #1a7f37;
 	--retro-red: #e03131;
 	--retro-gold: #d97706;
 	--retro-purple: #7048e8;
@@ -86,11 +108,11 @@
 	--color-retro-border-strong: #d4d4d4;
 	--color-retro-primary: #0d0d0d;
 	--color-retro-secondary: #d97706;
-	--color-retro-accent: #3478f6;
+	--color-retro-accent: #1a7f37;
 	--color-retro-muted: #8f8f92;
 	--color-retro-green: #34c759;
 	--color-retro-green-hover: #2db14e;
-	--color-retro-cyan: #0d0d0d;
+	--color-retro-cyan: #1a7f37;
 	--color-retro-red: #e03131;
 	--color-retro-gold: #d97706;
 	--color-retro-purple: #7048e8;
@@ -106,12 +128,12 @@
 	--border: #2e2e2e;
 	--fg: #ececec;
 	--muted: #8e8e93;
-	--accent: #ececec;
+	--accent: #30d158;
 	--accent-fg: #181818;
 	--success: #30d158;
 	--warning: #fbbf24;
 	--danger: #ff6363;
-	--link: #6cb0ff;
+	--link: #56d364;
 
 	--retro-bg: #181818;
 	--retro-surface: #212121;
@@ -121,12 +143,12 @@
 	--retro-border-strong: #444444;
 	--retro-primary: #ececec;
 	--retro-secondary: #fbbf24;
-	--retro-accent: #409cff;
+	--retro-accent: #30d158;
 	--retro-muted: #8e8e93;
 
 	--retro-green: #30d158;
 	--retro-green-hover: #2db84e;
-	--retro-cyan: #ececec;
+	--retro-cyan: #30d158;
 	--retro-red: #ff6363;
 	--retro-gold: #fbbf24;
 	--retro-purple: #9775fa;
@@ -144,11 +166,11 @@
 	--color-retro-border-strong: #444444;
 	--color-retro-primary: #ececec;
 	--color-retro-secondary: #fbbf24;
-	--color-retro-accent: #409cff;
+	--color-retro-accent: #30d158;
 	--color-retro-muted: #8e8e93;
 	--color-retro-green: #30d158;
 	--color-retro-green-hover: #2db84e;
-	--color-retro-cyan: #ececec;
+	--color-retro-cyan: #30d158;
 	--color-retro-red: #ff6363;
 	--color-retro-gold: #fbbf24;
 	--color-retro-purple: #9775fa;
@@ -271,6 +293,22 @@
 }
 .btn-retro:active {
 	transform: scale(0.98) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Dropdown listboxes (PixelSelect / PixelCombobox inline popups and our own
+ * Select) are trigger-width by default, so long option labels truncate to
+ * nothing. Let them grow to their content — like native <select> popups —
+ * anchored to the trigger's right edge so they widen leftwards (all our
+ * selects sit at the right edge of settings rows / composer popovers), capped
+ * at a sane max so labels still truncate inside a reasonable bound.
+ * --------------------------------------------------------------------------- */
+[role="listbox"] {
+	right: 0;
+	left: auto;
+	width: max-content;
+	min-width: 100%;
+	max-width: min(26rem, calc(100vw - 2rem));
 }
 
 @layer components {

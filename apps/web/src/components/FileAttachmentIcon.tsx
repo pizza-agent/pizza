@@ -38,7 +38,7 @@ export function FileAttachmentIcon({
 	return (
 		<div
 			className={cn(
-				"relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[9px] font-bold uppercase leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]",
+				"relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[9px] font-bold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]",
 				pick.tone,
 				className,
 			)}

@@ -12,6 +12,7 @@
 		"lint:fix": "eslint . --fix"
 	},
 	"dependencies": {
+		"@fontsource-variable/jetbrains-mono": "^5.3.0",
 		"@pxlkit/ui-kit": "^2.0.1",
 		"@tauri-apps/api": "^2.1.1",
 		"@tauri-apps/plugin-dialog": "^2.7.1",

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
-import { PageHeader, Card, Badge, Button, MoreMenu } from "@/components/ui";
+import { Card, Badge, Button, MoreMenu } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
 import { cn } from "@/lib/utils";
 import {
@@ -23,8 +22,7 @@ import {
 	type ExtensionPermissionKind,
 	type ExtensionPermissionState,
 } from "@/lib/transport";
-import { ArrowLeft, ArrowRight, Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck } from "lucide-react";
-import type { LayoutOutletContext } from "@/components/Layout";
+import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck } from "lucide-react";
 import { ChannelDialog } from "@/components/ChannelDialog";
 import {
 	listChannels,
@@ -1047,81 +1045,37 @@ function ChannelsTab() {
 	);
 }
 
-export default function PluginsView() {
+// Plugins page content — rendered inside the Settings shell (left nav +
+// page title) at /settings?page=plugins. Own chrome lives in SettingsView.
+export function PluginsContent() {
 	const { t } = useTranslation();
-	const navigate = useNavigate();
-	const location = useLocation();
-	const { sidebarCollapsed } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
 	const [tab, setTab] = useState<PluginTab>("skills");
 
-	const histIdx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-	const canBack = histIdx > 0;
-	const canForward = histIdx > 0 && location.key !== "";
-
 	return (
-		<div className="flex h-full flex-col">
-			<div
-				data-tauri-drag-region
-				className={cn(
-					"flex h-11 shrink-0 items-center gap-1 border-b border-border bg-surface/80 pr-6 backdrop-blur transition-[padding] duration-150",
-					sidebarCollapsed ? "pl-[120px]" : "pl-6",
-				)}
-			>
-				<button
-					data-no-drag
-					type="button"
-					onClick={() => navigate(-1)}
-					disabled={!canBack}
-					className={cn(
-						"flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-						canBack ? "text-muted hover:bg-surface-2 hover:text-fg" : "text-muted/30",
-					)}
-					title={t("common.back")}
-				>
-					<ArrowLeft className="h-4 w-4" />
-				</button>
-				<button
-					data-no-drag
-					type="button"
-					onClick={() => navigate(1)}
-					disabled={!canForward}
-					className={cn(
-						"flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-						canForward ? "text-muted hover:bg-surface-2 hover:text-fg" : "text-muted/30",
-					)}
-					title={t("common.forward")}
-				>
-					<ArrowRight className="h-4 w-4" />
-				</button>
+		<>
+			<p className="-mt-2 mb-6 text-sm text-muted">{t("plugins.description")}</p>
+
+			<div className="mb-6 flex gap-1 border-b border-border">
+				{TABS.map(({ key, icon: Icon }) => (
+					<button
+						key={key}
+						onClick={() => setTab(key)}
+						className={cn(
+							"flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors",
+							tab === key
+								? "border-b-2 border-accent text-accent"
+								: "text-muted hover:text-fg",
+						)}
+					>
+						<Icon className="h-3.5 w-3.5" />
+						{t(`plugins.tabs.${key}`)}
+					</button>
+				))}
 			</div>
 
-			<div className="scrollbar-hide flex-1 overflow-y-auto">
-				<div className="mx-auto max-w-5xl px-10 pb-10 pt-10">
-					<PageHeader title={t("plugins.title")} description={t("plugins.description")} />
-
-					<div className="mb-6 flex gap-1 border-b border-border">
-						{TABS.map(({ key, icon: Icon }) => (
-							<button
-								key={key}
-								onClick={() => setTab(key)}
-								className={cn(
-									"flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors",
-									tab === key
-										? "border-b-2 border-accent text-accent"
-										: "text-muted hover:text-fg",
-								)}
-							>
-								<Icon className="h-3.5 w-3.5" />
-								{t(`plugins.tabs.${key}`)}
-							</button>
-						))}
-					</div>
-
-					{tab === "skills" && <SkillsTab />}
-					{tab === "extensions" && <ExtensionsTab />}
-					{tab === "channels" && <ChannelsTab />}
-				</div>
-			</div>
-		</div>
+			{tab === "skills" && <SkillsTab />}
+			{tab === "extensions" && <ExtensionsTab />}
+			{tab === "channels" && <ChannelsTab />}
+		</>
 	);
 }

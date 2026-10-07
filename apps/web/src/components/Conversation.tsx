@@ -161,7 +161,7 @@ function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: 
 		<div className="relative">
 			<pre
 				className={cn(
-					"overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed",
+					"overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2/40 px-3 py-2 font-mono text-xs leading-relaxed",
 					isError ? "text-danger" : "text-muted",
 				)}
 			>
@@ -552,7 +552,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 		>
 			<div
 				className={cn(
-					"max-w-[85%] rounded-3xl bg-accent px-4 py-2.5 text-accent-fg",
+					"max-w-[85%] rounded-2xl bg-surface-2 px-4 py-2.5 text-fg",
 					item.queued && "opacity-60",
 				)}
 			>
