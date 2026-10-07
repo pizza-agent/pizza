@@ -62,7 +62,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		expect(processKillSpy).not.toHaveBeenCalled();
 	});
 
-	test("keeps the process alive while suspended and restores the TUI on SIGCONT", () => {
+	test.skipIf(process.platform === "win32")("keeps the process alive while suspended and restores the TUI on SIGCONT", () => {
 		const ui: FakeUi = {
 			start: vi.fn(),
 			stop: vi.fn(),
@@ -112,7 +112,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		expect(ui.requestRender).toHaveBeenCalledWith(true);
 	});
 
-	test("cleans up the temporary handlers if suspension fails", () => {
+	test.skipIf(process.platform === "win32")("cleans up the temporary handlers if suspension fails", () => {
 		const ui: FakeUi = {
 			start: vi.fn(),
 			stop: vi.fn(),

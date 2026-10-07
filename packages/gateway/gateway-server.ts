@@ -20,7 +20,7 @@ import { type Server, type Socket, connect, createServer } from "node:net";
 import { chmodSync, unlinkSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { platform } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { RpcClient } from "../rpc/rpc-client.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
@@ -44,13 +44,11 @@ import type { RpcCommand, RpcResponse } from "../rpc/rpc-types.js";
  * `\\.\pipe\<socketBasename>`. The socket lives under the user config root so
  * multiple Pizza installs share one gateway.
  */
-export function gatewaySocketPath(socketBasename = "gateway"): string {
+export function gatewaySocketPath(socketBasename = "gateway", socketDirectory = join(homedir(), ".pizza")): string {
 	if (platform() === "win32") {
 		return `\\\\.\\pipe\\${socketBasename}`;
 	}
-	// Default to ~/.pizza so the gateway is shared across all agents.
-	const configRoot = join(homedir(), ".pizza");
-	return join(configRoot, `${socketBasename}.sock`);
+	return join(socketDirectory, `${socketBasename}.sock`);
 }
 
 /**
@@ -300,7 +298,7 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		const workspaces = listKnownWorkspaces(agentDir);
 		const lower = trimmed.toLowerCase();
 		for (const ws of workspaces) {
-			const lastComponent = ws.cwd.replace(/\/+$/, "").split("/").pop() ?? ws.cwd;
+			const lastComponent = basename(normalizeCwd(ws.cwd));
 			if (lastComponent.toLowerCase() === lower) {
 				return normalizeCwd(ws.cwd);
 			}

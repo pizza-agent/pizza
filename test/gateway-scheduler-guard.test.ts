@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGatewayServer, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
+import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { scheduledCwdsOnDisk, normalizeCwd } from "../packages/gateway/scheduler-guard.js";
 import { writeTasks } from "../src/core/scheduler/index.js";
 import type { ScheduledTask } from "../src/core/scheduler/index.js";
@@ -48,7 +48,7 @@ class FakeAgent implements AgentConnection {
 }
 
 function uniqueSocketPath(): string {
-	return join(tmpdir(), `pizza-gw-sched-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`);
+	return gatewaySocketPath(`pizza-gw-sched-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 function tick(ms: number): Promise<void> {

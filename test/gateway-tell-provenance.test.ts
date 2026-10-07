@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { connect, type Socket } from "node:net";
 import {
 	createGatewayServer,
+	gatewaySocketPath,
 	type GatewayServer,
 	type AgentConnection,
 } from "../packages/gateway/gateway-server.js";
@@ -82,10 +83,7 @@ class RecordingAgent implements AgentConnection {
 }
 
 function uniqueSocketPath(): string {
-	return join(
-		tmpdir(),
-		`pizza-gw-prov-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
-	);
+	return gatewaySocketPath(`pizza-gw-prov-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 async function sendAndWait(socketPath: string, message: object, timeoutMs = 3000): Promise<string> {
@@ -302,8 +300,10 @@ describe("gateway tell provenance", () => {
 	});
 
 	it("relays the told agent's final answer back to the sender automatically", async () => {
-		const targetCwd = "/proj/web";
-		const senderCwd = "/proj/pizza";
+		const dir = mkdtempSync(join(tmpdir(), "pizza-gw-prov-"));
+		dirs.push(dir);
+		const targetCwd = join(dir, "web");
+		const senderCwd = join(dir, "pizza");
 		const target = new RecordingAgent(targetCwd);
 		const sender = new RecordingAgent(senderCwd);
 		target.holdTurn = true;
@@ -311,8 +311,6 @@ describe("gateway tell provenance", () => {
 
 		const socketPath = uniqueSocketPath();
 		sockets.push(socketPath);
-		const dir = mkdtempSync(join(tmpdir(), "pizza-gw-prov-"));
-		dirs.push(dir);
 		server = createGatewayServer({
 			socketPath,
 			agentDir: dir,
@@ -344,7 +342,7 @@ describe("gateway tell provenance", () => {
 		}
 		expect(sender.received).toHaveLength(1);
 		const relayed = sender.received[0]!;
-		expect(relayed).toContain('<message from="agent:/proj/web"');
+		expect(relayed).toContain(`<message from="agent:${targetCwd}"`);
 		expect(relayed).toContain("the answer");
 		// Loop guard: the relayed turn is never relayed again (no reply back to
 		// the target, and the sender's block does not promise auto-relay).

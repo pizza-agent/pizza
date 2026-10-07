@@ -27,3 +27,38 @@ export function isMac(): boolean {
 export function hasMacTrafficLights(): boolean {
 	return isTauri() && isMac();
 }
+
+/**
+ * Normalize a filesystem path for equality checks across platforms:
+ * `\` → `/`, collapse duplicate separators, drop trailing separators.
+ * On Windows the same workspace can appear as `C:\Users\x\.pizza\main`
+ * (Rust-side `~` expansion) or `C:\Users\x/.pizza/main` (JS-side
+ * `homeDir()` + replace), so comparing raw strings is unreliable.
+ */
+export function normalizePathForCompare(path: string): string {
+	const normalized = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+	return /^[a-z]:\//i.test(normalized) || path.startsWith("\\\\") ? normalized.toLowerCase() : normalized;
+}
+
+/** True when `a` and `b` refer to the same filesystem path. */
+export function samePath(a: string | null | undefined, b: string | null | undefined): boolean {
+	if (a == null || b == null) return a === b;
+	return normalizePathForCompare(a) === normalizePathForCompare(b);
+}
+
+/** The persistent Chat workspace is always `~/.pizza/main`. */
+export const MAIN_CHAT_CWD = "~/.pizza/main";
+
+/** True when `cwd` refers to the persistent Chat workspace (`~/.pizza/main`),
+ * whether still tilde-prefixed or already expanded to an absolute path. */
+export function isMainChatCwd(cwd: string | null | undefined): boolean {
+	if (!cwd) return false;
+	if (cwd === MAIN_CHAT_CWD) return true;
+	return normalizePathForCompare(cwd).endsWith("/.pizza/main");
+}
+
+/** Last path component, tolerating both `/` and `\` separators. */
+export function pathBasename(path: string): string {
+	const parts = path.replace(/[/\\]+$/, "").split(/[/\\]/);
+	return parts[parts.length - 1] || path;
+}

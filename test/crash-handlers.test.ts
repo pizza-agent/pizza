@@ -10,11 +10,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 describe("installCrashHandlers", () => {
 	const testDir = join(tmpdir(), `pizza-crash-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-	const modulePath = join(process.cwd(), "src/core/crash-handlers.ts");
+	const modulePath = pathToFileURL(join(process.cwd(), "src/core/crash-handlers.ts")).href;
 
 	afterEach(() => {
 		if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });

@@ -35,8 +35,12 @@ export function isPackageSource(sourceInfo?: SourceInfo): boolean {
 
 /** Abbreviate the user's home directory to `~`. */
 export function formatDisplayPath(p: string, homeDir: string = os.homedir()): string {
-	if (p.startsWith(homeDir)) {
-		return `~${p.slice(homeDir.length)}`;
+	const windowsPath = /^[a-z]:[\\/]/i.test(p) || /^[a-z]:[\\/]/i.test(homeDir) || p.startsWith("\\\\") || homeDir.startsWith("\\\\");
+	const candidate = windowsPath ? p.toLowerCase() : p;
+	const home = windowsPath ? homeDir.toLowerCase() : homeDir;
+	if (candidate === home) return "~";
+	if (candidate.startsWith(`${home}${windowsPath ? "\\" : "/"}`)) {
+		return `~${p.slice(homeDir.length).replace(/\\/g, "/")}`;
 	}
 	return p;
 }
@@ -57,14 +61,16 @@ function isContainedRelativePath(relativePath: string): boolean {
  * fall back to the `~`-abbreviated absolute path.
  */
 export function formatContextPath(p: string, cwd: string, homeDir?: string): string {
-	const resolvedCwd = path.resolve(cwd);
-	const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(resolvedCwd, p);
-	const relativePath = path.relative(resolvedCwd, absolutePath);
+	const windowsPath = /^[a-z]:[\\/]/i.test(cwd) || cwd.startsWith("\\\\");
+	const pathApi = windowsPath ? path.win32 : path.posix;
+	const resolvedCwd = pathApi.resolve(cwd);
+	const absolutePath = pathApi.isAbsolute(p) ? pathApi.resolve(p) : pathApi.resolve(resolvedCwd, p);
+	const relativePath = pathApi.relative(resolvedCwd, absolutePath);
 	const isInsideCwd =
 		relativePath === "" ||
 		(!relativePath.startsWith("..") &&
-			!relativePath.startsWith(`..${path.sep}`) &&
-			!path.isAbsolute(relativePath));
+			!relativePath.startsWith(`..${pathApi.sep}`) &&
+			!pathApi.isAbsolute(relativePath));
 
 	if (isInsideCwd) {
 		return relativePath || ".";

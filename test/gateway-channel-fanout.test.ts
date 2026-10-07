@@ -15,12 +15,12 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGatewayServer, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
+import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { GatewayTransport } from "../packages/gateway/channel-client.js";
 import type { RpcCommand, RpcResponse } from "../packages/rpc/rpc-types.js";
 
 function uniqueSocketPath(): string {
-	return join(tmpdir(), `pizza-gw-fanout-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`);
+	return gatewaySocketPath(`pizza-gw-fanout-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tmpdir());
 }
 
 /** A fake workspace agent: records sent commands, lets the test emit events. */

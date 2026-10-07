@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { cn, isTauri } from "@/lib/utils";
+import { cn, isTauri, samePath, pathBasename } from "@/lib/utils";
 import {
 	loadFileAttachment,
 	loadPathAttachments,
@@ -454,7 +454,7 @@ export function Composer({
 
 		// Workspaces.
 		for (const ws of workspaces ?? []) {
-			const name = ws.cwd.replace(/\/+$/, "").split("/").pop() ?? ws.cwd;
+			const name = pathBasename(ws.cwd);
 			items.push({
 				category: "workspace",
 				label: name,
@@ -936,7 +936,7 @@ ${insert}`;
 	useEffect(() => {
 		const onPrefill = (e: Event) => {
 			const detail = (e as CustomEvent<ComposerPrefillDetail>).detail;
-			if (!detail || detail.workspace !== (workspace ?? "")) return;
+			if (!detail || !samePath(detail.workspace, workspace ?? "")) return;
 			setInput((prev) => (prev.trim() ? prev.trimEnd() + " " : "") + detail.text);
 			requestAnimationFrame(() => textareaRef.current?.focus());
 		};

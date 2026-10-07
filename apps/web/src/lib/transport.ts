@@ -14,7 +14,7 @@ import type {
 	RpcForensicEvent,
 } from "./types";
 
-import { isTauri } from "./platform";
+import { isTauri, samePath } from "./platform";
 
 /**
  * Open an external URL in the system browser. In Tauri this routes through
@@ -126,7 +126,7 @@ export async function sendCommandAwait<T = unknown>(
 				// one active when this command was issued is dropped; the correct
 				// response (or the timeout) resolves this promise instead.
 				const responseCwd = (payload as RpcResponse<T> & { _cwd?: string })._cwd;
-				if (expectedCwd && responseCwd && responseCwd !== expectedCwd) return;
+				if (expectedCwd && responseCwd && !samePath(responseCwd, expectedCwd)) return;
 				finish(() => {
 					if (payload.success) {
 						resolve(payload);

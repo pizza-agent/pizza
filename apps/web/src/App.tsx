@@ -11,7 +11,7 @@ import { BrandIcon } from "@/components/BrandIcon";
 import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
-import { isTauri } from "@/lib/utils";
+import { isTauri, isMainChatCwd, samePath } from "@/lib/utils";
 
 function isMainAgentConflictError(message: string): boolean {
 	return message.includes("Another main agent instance is already running");
@@ -62,7 +62,7 @@ function AppInner() {
 		try {
 			const list = await listWorkspaces();
 			// Filter out the Chat workspace (~/.pizza/main) — it's shown separately as Chat.
-			setWorkspaces(list.filter((ws) => !ws.cwd.endsWith("/.pizza/main")));
+			setWorkspaces(list.filter((ws) => !isMainChatCwd(ws.cwd)));
 		} catch (e) {
 			console.error("[workspaces] list error:", e);
 		}
@@ -187,7 +187,7 @@ function AppInner() {
 				restartTimerRef.current = setTimeout(() => {
 					restartTimerRef.current = null;
 					setWorkspace((current) => {
-						if (current === cwd) void startWithWorkspace(cwd);
+						if (samePath(current, cwd)) void startWithWorkspace(cwd);
 						return current;
 					});
 				}, delay);
@@ -226,7 +226,7 @@ function AppInner() {
 	}, [startWithWorkspace, t]);
 
 	const handleSelectWorkspace = useCallback(async (cwd: string) => {
-		if (workspace === cwd && sidecarReady) return;
+		if (samePath(workspace, cwd) && sidecarReady) return;
 		// Navigate back to agent page when selecting a workspace.
 		navigate("/");
 		// startWithWorkspace sets workspace AFTER initSidecar completes,
@@ -269,7 +269,7 @@ function AppInner() {
 		(async () => {
 			const un1 = await subscribeSidecarExit((code, cwd) => {
 				// Only act if the exited sidecar was the active one.
-				if (!cwd || cwd === workspace) {
+				if (!cwd || samePath(cwd, workspace)) {
 					if (code === null) {
 						// Gateway channel drop (bridge emits code:null) — the
 						// agent process is still alive in the gateway pool.
@@ -281,7 +281,7 @@ function AppInner() {
 						restartTimerRef.current = setTimeout(() => {
 							restartTimerRef.current = null;
 							setWorkspace((current) => {
-								if (current === (cwd ?? workspace)) void reconnectWorkspace(current!);
+								if (samePath(current, cwd ?? workspace)) void reconnectWorkspace(current!);
 								return current;
 							});
 						}, delay);
@@ -303,7 +303,7 @@ function AppInner() {
 							restartTimerRef.current = null;
 							// Guard against the user having switched workspaces in the meantime.
 							setWorkspace((current) => {
-								if (current === cwdToRestart) {
+								if (samePath(current, cwdToRestart)) {
 									void startWithWorkspace(cwdToRestart);
 								}
 								return current;
@@ -333,7 +333,7 @@ function AppInner() {
 					});
 				}
 				// Only process state updates for the active workspace.
-				if (typed._cwd && typed._cwd !== workspace) return;
+				if (typed._cwd && !samePath(typed._cwd, workspace)) return;
 				// Refresh state on model/thinking changes, and when the agent
 				// turn starts (isStreaming → true) or completes (isStreaming → false).
 				// Skip intermediate AGENT_TURN_END/REQUESTED during multi-tool turns
@@ -425,7 +425,7 @@ function AppInner() {
 
 	// Stale-workspace dialog: directory missing → offer removal, keep UI.
 	if (staleCwd) {
-		const staleWs = workspaces.find((ws) => ws.cwd === staleCwd);
+		const staleWs = workspaces.find((ws) => samePath(ws.cwd, staleCwd));
 		const removeStale = async () => {
 			if (staleWs) {
 				try {
