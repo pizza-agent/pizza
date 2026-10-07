@@ -57,7 +57,7 @@ describe("formatContextPath", () => {
 	const cwd = "/Users/tester/project";
 
 	it("renders paths inside the cwd as relative", () => {
-		expect(formatContextPath(`${cwd}/src/main.ts`, cwd, HOME)).toBe(path.join("src", "main.ts"));
+		expect(formatContextPath(`${cwd}/src/main.ts`, cwd, HOME)).toBe("src/main.ts");
 	});
 
 	it("renders the cwd itself as \".\"", () => {
@@ -69,7 +69,7 @@ describe("formatContextPath", () => {
 	});
 
 	it("resolves relative input against the cwd", () => {
-		expect(formatContextPath("src/main.ts", cwd, HOME)).toBe(path.join("src", "main.ts"));
+		expect(formatContextPath("src/main.ts", cwd, HOME)).toBe("src/main.ts");
 	});
 });
 

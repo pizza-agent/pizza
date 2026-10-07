@@ -42,7 +42,7 @@ function isRunnable(task: ScheduledTask): boolean {
 
 /** Normalize a cwd for set-membership comparisons (absolute, forward slashes). */
 export function normalizeCwd(cwd: string): string {
-	return resolve(cwd).replace(/\\/g, "/");
+	return resolve(cwd);
 }
 
 /**

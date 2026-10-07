@@ -39,6 +39,8 @@ export interface EventSourcedRuntimeConfig {
 	storagePath?: string;
 	/** Pre-configured EventStore (optional, will create if not provided) */
 	store?: EventStore;
+	/** Close the configured store when this runtime is disposed. */
+	ownsStore?: boolean;
 	/** Thread ID for event isolation. When set, every appended event carries the current thread id. */
 	threadId?: string | (() => string | undefined);
 	/** Pre-configured SessionManager (optional, will create if not provided) */
@@ -108,6 +110,7 @@ export class EventSourcedRuntime {
 	private reactor: Reactor | null = null;
 	private config: EventSourcedRuntimeConfig;
 	private readonly ownsStore: boolean;
+	private readonly rawStore: EventStore;
 
 	/** Working directory for this runtime */
 	get cwd(): string { return this.config.cwd; }
@@ -125,7 +128,7 @@ export class EventSourcedRuntime {
 	private _resolveSettled: (() => void) | undefined;
 	constructor(config: EventSourcedRuntimeConfig) {
 		this.config = config;
-		this.ownsStore = !config.store;
+		this.ownsStore = config.ownsStore ?? !config.store;
 
 		// 1. Create or use provided EventStore
 		const workspaceId = deriveWorkspaceId(config.cwd);
@@ -133,6 +136,7 @@ export class EventSourcedRuntime {
 			workspaceId,
 			config.storagePath ?? getEventDatabasePath(workspaceId, config.agentDir),
 		);
+		this.rawStore = rawStore;
 		this.store = config.threadId ? new ThreadScopedStore(rawStore, config.threadId) : rawStore;
 
 		this.runtimeAdapter = config.runtimeAdapter ?? new LocalRuntimeAdapter({
@@ -817,7 +821,7 @@ export class EventSourcedRuntime {
 		this._idleCompactionAbort?.abort();
 		this.sessionManager?.dispose();
 		if (this.ownsStore) {
-			(this.store as { close?: () => void }).close?.();
+			(this.rawStore as { close?: () => void }).close?.();
 		}
 	}
 }

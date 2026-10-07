@@ -367,6 +367,7 @@ export async function createSessionFacade(
 		cwd,
 		agentDir,
 		store,
+		ownsStore: true,
 		sessionManager,
 		threadId: currentThreadId,
 		toolRegistry: createToolRegistry(tools),
