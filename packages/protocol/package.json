@@ -1,6 +1,6 @@
 {
 	"name": "@tomsun28/pizza-protocol",
-	"version": "0.3.2",
+	"version": "0.3.3",
 	"private": true,
 	"description": "RPC protocol types shared between Pizza agent and UI consumers",
 	"type": "module",
