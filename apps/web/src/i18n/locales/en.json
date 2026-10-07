@@ -7,6 +7,7 @@
     "save": "Save",
     "delete": "Delete",
     "copy": "Copy",
+    "copied": "Copied",
     "settings": "Settings",
     "error": "Error",
     "starting": "Starting...",
@@ -64,7 +65,19 @@
     "stopOldAndRestart": "Stop old agent and restart",
     "restartingMainAgent": "Restarting...",
     "retryStart": "Retry start",
-    "errorDetails": "Error details"
+    "errorDetails": "Error details",
+    "readyPrompts": [
+      "Ready. Ask anything about this project.",
+      "What are we working on today?",
+      "Describe the task — I'll take it from here.",
+      "Ask a question, or tell me what to change.",
+      "Point me at a problem.",
+      "What's on your mind?",
+      "Let's ship something.",
+      "Drop a task, I'll handle the rest.",
+      "Stuck on something? Ask away.",
+      "Your move."
+    ]
   },
   "composer": {
     "placeholder": "Type anything",

@@ -232,11 +232,12 @@ export default function Layout({
 			>
 				{/* Top bar — aligns with the macOS traffic lights; holds the collapse button */}
 				<div
-					data-tauri-drag-region
+					data-tauri-drag-region="deep"
 					className={cn("flex h-11 shrink-0 items-center pr-2", macPad ? "pl-[76px]" : "pl-2")}
 				>
 					<button
 						data-no-drag
+						data-tauri-drag-region="false"
 						onClick={toggleCollapsed}
 						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted/50 transition-colors hover:bg-surface-2 hover:text-muted active:bg-surface-2"
 						title={t("layout.hideSidebar")}
@@ -245,21 +246,15 @@ export default function Layout({
 					</button>
 				</div>
 				<div
-					data-tauri-drag-region
+					data-tauri-drag-region="deep"
 					className="flex items-center gap-3 px-5 pb-2 pt-1"
 				>
 					<BrandIcon size={26} className="shrink-0 text-fg" />
-					<div className="leading-tight" data-tauri-drag-region>
-						<div
-							data-tauri-drag-region
-							className="text-[15px] font-semibold tracking-tight text-fg"
-						>
+					<div className="leading-tight">
+						<div className="text-[15px] font-semibold tracking-tight text-fg">
 							Pizza
 						</div>
-						<div
-							data-tauri-drag-region
-							className="text-[11px] text-muted"
-						>
+						<div className="text-[11px] text-muted">
 							{t("layout.brandTagline")}
 						</div>
 					</div>

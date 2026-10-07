@@ -1190,7 +1190,7 @@ export default function SettingsView({
 		<div className="flex h-full flex-col">
 			{/* Top bar — sits next to the sidebar collapse button; holds back/forward nav */}
 			<div
-				data-tauri-drag-region
+				data-tauri-drag-region="deep"
 				className={cn(
 					"flex h-11 shrink-0 items-center gap-1 border-b border-border bg-surface/80 pr-6 backdrop-blur transition-[padding] duration-150",
 					macPad ? "pl-[76px]" : "pl-6",
@@ -1198,6 +1198,7 @@ export default function SettingsView({
 			>
 				<button
 					data-no-drag
+					data-tauri-drag-region="false"
 					type="button"
 					onClick={() => navigate(-1)}
 					disabled={!canBack}
@@ -1211,6 +1212,7 @@ export default function SettingsView({
 				</button>
 				<button
 					data-no-drag
+					data-tauri-drag-region="false"
 					type="button"
 					onClick={() => navigate(1)}
 					disabled={!canForward}

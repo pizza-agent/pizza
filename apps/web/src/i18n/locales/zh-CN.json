@@ -7,6 +7,7 @@
     "save": "保存",
     "delete": "删除",
     "copy": "复制",
+    "copied": "已复制",
     "settings": "设置",
     "error": "错误",
     "starting": "启动中...",
@@ -64,7 +65,19 @@
     "stopOldAndRestart": "停止旧助手并重启",
     "restartingMainAgent": "正在重启...",
     "retryStart": "重试启动",
-    "errorDetails": "错误详情"
+    "errorDetails": "错误详情",
+    "readyPrompts": [
+      "准备好了，这个项目有什么想问的？",
+      "今天要做点什么？",
+      "描述一下任务，剩下的交给我。",
+      "问个问题，或者告诉我要改什么。",
+      "给我指个问题吧。",
+      "在想什么？",
+      "来搞点东西吧。",
+      "丢个任务过来，我搞定剩下的。",
+      "卡在哪了？尽管问。",
+      "该你了。"
+    ]
   },
   "composer": {
     "placeholder": "随心输入",

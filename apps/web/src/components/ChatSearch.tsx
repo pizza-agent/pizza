@@ -53,8 +53,11 @@ export function ChatSearch({
 	return (
 		<div
 			// Render above the drag region / scroll area; stop pointer events from
-			// being treated as window-drag.
+			// being treated as window-drag. data-tauri-drag-region="false" is the
+			// opt-out Tauri's drag.js actually reads; data-no-drag only reaches
+			// the Chromium app-region CSS layer.
 			data-no-drag
+			data-tauri-drag-region="false"
 			className={cn(
 				"absolute right-4 top-11 flex items-center gap-1 rounded-lg border border-border bg-surface px-1.5 py-1 shadow-lg",
 				Z.chrome,

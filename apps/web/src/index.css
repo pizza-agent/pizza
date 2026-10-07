@@ -312,13 +312,22 @@
 }
 
 @layer components {
-	[data-tauri-drag-region] {
+	/* Tauri's drag.js treats a bare data-tauri-drag-region as self-only —
+	   clicks on descendants do not drag. Containers therefore use
+	   ="deep" (whole subtree drags); non-draggable spots opt out with
+	   ="false" (data-no-drag alone is not recognized by the JS). The
+	   -webkit-app-region rules below are the Chromium/WebView2 layer and
+	   must mirror that opt-out. */
+	[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
 		-webkit-app-region: drag;
 	}
 	[data-tauri-drag-region] button,
 	[data-tauri-drag-region] a,
 	[data-tauri-drag-region] input,
-	[data-tauri-drag-region] [data-no-drag] {
+	[data-tauri-drag-region] [data-no-drag],
+	[data-tauri-drag-region] [data-no-drag] *,
+	[data-tauri-drag-region="false"],
+	[data-tauri-drag-region="false"] * {
 		-webkit-app-region: no-drag;
 	}
 
