@@ -52,7 +52,7 @@ export function DiffViewer({
 							</td>
 							<td
 								className={cn(
-									"pl-1 pr-3 align-top",
+									"select-text pl-1 pr-3 align-top",
 									wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
 									row.kind === "hunk" ? "font-semibold" : "text-fg",
 								)}

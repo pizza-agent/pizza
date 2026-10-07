@@ -94,7 +94,7 @@ function MarkdownImpl({
 	// (CodeBlock, inline code, links) read `highlight`/`highlightActive` here.
 	const highlightComponents: Components = highlight ? makeHighlightComponents(highlight, !!highlightActive) : {};
 	return (
-		<div className={cn("md", className)}>
+		<div className={cn("md select-text", className)}>
 			<ReactMarkdown
 				remarkPlugins={[remarkGfm]}
 				components={{

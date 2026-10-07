@@ -850,7 +850,7 @@ function AddProviderInline({
 					/>
 					{error && <p className="text-xs text-danger">{error}</p>}
 					{testState.status !== "idle" && (
-						<div className="rounded-md border border-border bg-[#0f1725] px-3 py-2 font-mono text-xs leading-6">
+						<div className="select-text rounded-md border border-border bg-[#0f1725] px-3 py-2 font-mono text-xs leading-6">
 							<div className="text-sky-300">{t("settings.provider.testStart", { name: customName.trim() || t("settings.provider.customProvider") })}</div>
 							<div className="text-slate-300">{t("settings.provider.testAuthType")}</div>
 							<div className={testState.status === "error" ? "text-danger" : "text-success"}>
