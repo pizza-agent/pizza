@@ -372,6 +372,8 @@
     "toggleRight": "Toggle side panel"
   },
   "theme": {
+    "light": "Light",
+    "dark": "Dark",
     "switchToLight": "Switch to light",
     "switchToDark": "Switch to dark"
   },
@@ -530,6 +532,13 @@
       "general": "General",
       "provider": "Provider"
     },
+    "nav": {
+      "general": "General",
+      "backToApp": "Back to app",
+      "search": "Search settings...",
+      "scheduler": "Scheduled tasks",
+      "groupIntegrations": "Integrations"
+    },
     "general": {
       "compaction": "Compaction",
       "autoCompaction": "Auto Compaction",
@@ -537,6 +546,8 @@
       "compacting": "Compacting...",
       "language": "Language",
       "languageDescription": "Interface display language",
+      "theme": "Theme",
+      "themeLabel": "Appearance theme",
       "safeMode": "Safe Mode",
       "safeModeLabel": "Require approval",
       "safeModeHint": "When on, risky tool calls (file writes, edits, deletes, dangerous shell) pause for your approval before running.",

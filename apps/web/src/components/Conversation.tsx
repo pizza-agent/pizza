@@ -161,8 +161,8 @@ function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: 
 		<div className="relative">
 			<pre
 				className={cn(
-					"overflow-x-auto whitespace-pre-wrap break-words rounded-md px-3 py-2 font-mono text-xs leading-relaxed",
-					isError ? "bg-danger/5 text-danger" : "bg-bg/60 text-muted",
+					"overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed",
+					isError ? "text-danger" : "text-muted",
 				)}
 			>
 				{highlight ? highlightText(shown, highlight, highlightActive) : shown}
@@ -172,7 +172,7 @@ function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: 
 				<button
 					type="button"
 					onClick={() => setExpanded((e) => !e)}
-					className="mt-1 font-mono text-[10px] uppercase tracking-widest text-accent hover:opacity-80"
+					className="mt-1 text-[11px] text-muted transition-colors hover:text-fg"
 				>
 					{expanded ? t("conversation.showLess") : t("conversation.showMore")}
 				</button>
@@ -190,9 +190,9 @@ function Thinking({ text, streaming, highlight, highlightActive }: { text: strin
 			<button
 				type="button"
 				onClick={() => setOpen((o) => !o)}
-				className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted transition-colors hover:text-fg"
+				className="flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-fg"
 			>
-				<Brain className={cn("h-3.5 w-3.5", streaming && "animate-pulse text-accent")} />
+				<Brain className={cn("h-3.5 w-3.5", streaming && "animate-pulse")} />
 				<span>{streaming ? t("conversation.thinking") : t("conversation.thoughtProcess")}</span>
 				<ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
 			</button>
@@ -240,10 +240,10 @@ function ApprovalSection({
 	const { t } = useTranslation();
 	const pending = approval.status === "pending";
 	return (
-		<div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2.5">
+		<div className="rounded-xl border border-warning/30 bg-warning/5 px-3 py-2.5">
 			<div className="flex flex-wrap items-center gap-2">
 				<ShieldAlert className="h-3.5 w-3.5 shrink-0 text-warning" />
-				<span className="text-[11px] font-semibold uppercase tracking-wide text-warning">
+				<span className="text-xs font-semibold text-warning">
 					{t("approval.title")}
 				</span>
 				{approval.risk && (
@@ -280,11 +280,11 @@ function ApprovalSection({
 					</Button>
 				</div>
 			) : approval.status === "approved" ? (
-				<span className="mt-1.5 block font-mono text-[11px] uppercase tracking-widest text-accent">
+				<span className="mt-1.5 block text-[11px] font-medium text-success">
 					{t("approval.approved")}
 				</span>
 			) : approval.status === "rejected" ? (
-				<span className="mt-1.5 block font-mono text-[11px] uppercase tracking-widest text-danger">
+				<span className="mt-1.5 block text-[11px] font-medium text-danger">
 					{t("approval.rejected")}
 				</span>
 			) : null}
@@ -313,7 +313,7 @@ function ToolImage({ src, index, count }: { src: string; index: number; count: n
 					<img src={src} alt={`tool image ${index + 1}/${count}`} className="max-h-full max-w-full rounded-md object-contain" />
 					<button
 						type="button"
-						className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1.5 font-mono text-xs text-white hover:bg-white/20"
+						className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/20"
 						onClick={() => setZoom(false)}
 					>
 						✕
@@ -337,6 +337,8 @@ const ToolCard = memo(function ToolCard({
 }) {
 	const { t } = useTranslation();
 	const [argsExpanded, setArgsExpanded] = useState(false);
+	const [collapsed, setCollapsed] = useState(false);
+	const [copied, copy] = useCopy();
 	const command = formatToolArgs(item.toolArgs);
 	// Routed `_tell` commands get a dedicated header ("tell → <workspace>") so
 	// cross-workspace traffic reads as messaging, not as a raw shell call.
@@ -348,19 +350,32 @@ const ToolCard = memo(function ToolCard({
 	const awaitingApproval = approval?.status === "pending";
 	// Tool name + title are matched by search too; highlight them when active.
 	const toolTitle = highlight ? highlightText(item.toolName || item.title, highlight, highlightActive) : (item.toolName || item.title);
+	const hasBody = !!(
+		(command && (!collapsed || commandClamped)) ||
+		approval ||
+		(item.toolImages && item.toolImages.length > 0) ||
+		item.toolResult ||
+		(running && !item.toolResult)
+	);
 	return (
 		<div className="my-4 flex justify-start">
 			<div
 				className={cn(
-					"w-full max-w-full overflow-hidden rounded-xl border bg-surface-2/40",
-					item.isError ? "border-danger/30" : awaitingApproval ? "border-warning/40" : "border-border",
+					"w-full max-w-full overflow-hidden rounded-2xl border",
+					item.isError ? "border-danger/30 bg-danger/[0.03]" : awaitingApproval ? "border-warning/40 bg-warning/[0.03]" : "border-border/70 bg-surface",
 				)}
 			>
-				<div className="flex items-center justify-between gap-3 px-3.5 py-2">
-					<span className="flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-fg">
+				<div
+					className={cn(
+						"flex items-center justify-between gap-3 px-3.5 py-2.5",
+						hasBody && "cursor-pointer select-none",
+					)}
+					onClick={() => hasBody && setCollapsed((c) => !c)}
+				>
+					<span className="flex items-center gap-2 text-[13px] font-medium text-fg">
 						{tellInfo ? (
 							<>
-								<Waypoints className="h-3.5 w-3.5 shrink-0 text-accent" />
+								<Waypoints className="h-3.5 w-3.5 shrink-0 text-muted" />
 								<span>
 									{tellInfo.action === "list"
 										? t("conversation.tell.list")
@@ -368,7 +383,7 @@ const ToolCard = memo(function ToolCard({
 											<>
 												{t("conversation.tell.send")}
 												{tellToName && (
-													<span className="ml-1.5 rounded-md bg-surface px-1.5 py-0.5 normal-case" title={tellInfo.to}>
+													<span className="ml-1.5 rounded-md bg-surface-2 px-1.5 py-0.5 font-normal text-muted" title={tellInfo.to}>
 														{highlight ? highlightText(tellToName, highlight, highlightActive) : tellToName}
 													</span>
 												)}
@@ -381,61 +396,94 @@ const ToolCard = memo(function ToolCard({
 								{awaitingApproval ? (
 									<ShieldAlert className="h-3.5 w-3.5 text-warning" />
 								) : (
-									<Terminal className="h-3.5 w-3.5 text-accent" />
+									<Terminal className="h-3.5 w-3.5 text-muted" />
 								)}
 								{toolTitle}
 							</>
 						)}
 					</span>
-					<span
-						className={cn(
-							"flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest",
-							item.isError ? "text-danger" : awaitingApproval ? "text-warning" : running ? "text-accent" : "text-muted",
+					<span className="flex shrink-0 items-center gap-1">
+						<span
+							className={cn(
+								"flex items-center gap-1 text-[11px]",
+								item.isError ? "text-danger" : awaitingApproval ? "text-warning" : running ? "text-muted" : "text-muted/70",
+							)}
+						>
+							{running && <Loader2 className="h-3 w-3 animate-spin" />}
+							{item.isError && <AlertCircle className="h-3 w-3" />}
+							{item.status}
+						</span>
+						{(command || item.toolResult) && (
+							<button
+								type="button"
+								onClick={(e) => {
+									e.stopPropagation();
+									copy(item.toolResult || command || "");
+								}}
+								className="flex h-6 w-6 items-center justify-center rounded-md text-muted/70 transition-colors hover:bg-surface-2 hover:text-fg"
+								title={t("common.copy")}
+							>
+								{copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+							</button>
 						)}
-					>
-						{running && <Loader2 className="h-3 w-3 animate-spin" />}
-						{item.isError && <AlertCircle className="h-3 w-3" />}
-						{item.status}
+						{hasBody && (
+							<button
+								type="button"
+								onClick={(e) => {
+									e.stopPropagation();
+									setCollapsed((c) => !c);
+								}}
+								className="flex h-6 w-6 items-center justify-center rounded-md text-muted/70 transition-colors hover:bg-surface-2 hover:text-fg"
+								title={collapsed ? t("conversation.showMore") : t("conversation.showLess")}
+							>
+								<ChevronRight className={cn("h-3.5 w-3.5 transition-transform", !collapsed && "rotate-90")} />
+							</button>
+						)}
 					</span>
 				</div>
-				<div className="space-y-2 px-3.5 pb-3">
-					{command && (
-						<div className="rounded-md bg-bg/60 px-3 py-2 font-mono text-xs leading-relaxed text-fg">
-							<span className="mr-1.5 select-none text-accent">$</span>
-							<span className="whitespace-pre-wrap break-words">{highlight ? highlightText(commandShown, highlight, highlightActive) : commandShown}</span>
-							{commandClamped && (
-								<button
-									type="button"
-									onClick={() => setArgsExpanded((e) => !e)}
-									className="mt-1 block font-mono text-[10px] uppercase tracking-widest text-accent hover:opacity-80"
-								>
-									{argsExpanded ? t("conversation.showLess") : t("conversation.showMore")}
-								</button>
-							)}
-						</div>
-					)}
-					{approval && (
-						<ApprovalSection
-							approval={approval}
-							onResolve={
-								onResolveApproval
-									? (approved) => onResolveApproval(approval.intentEventId, item.id, approved)
-									: undefined
-							}
-						/>
-					)}
-					{item.toolImages && item.toolImages.length > 0 && (
-						<div className="flex flex-wrap gap-2">
-							{item.toolImages.map((src, i) => (
-								<ToolImage key={i} src={src} index={i} count={item.toolImages!.length} />
-							))}
-						</div>
-					)}
-					{item.toolResult && <CollapsibleCode text={item.toolResult} isError={item.isError} highlight={highlight} highlightActive={highlightActive} />}
-					{running && !item.toolResult && (
-						<span className="font-mono text-xs text-accent">{t("conversation.running")}</span>
-					)}
-				</div>
+				{!collapsed && (
+					<div className="space-y-2 px-3.5 pb-3">
+						{command && (
+							<div className="font-mono text-xs leading-relaxed text-fg/90">
+								<span className="whitespace-pre-wrap break-words">{highlight ? highlightText(commandShown, highlight, highlightActive) : commandShown}</span>
+								{commandClamped && (
+									<button
+										type="button"
+										onClick={() => setArgsExpanded((e) => !e)}
+										className="mt-1 block text-[11px] text-muted transition-colors hover:text-fg"
+									>
+										{argsExpanded ? t("conversation.showLess") : t("conversation.showMore")}
+									</button>
+								)}
+							</div>
+						)}
+						{approval && (
+							<ApprovalSection
+								approval={approval}
+								onResolve={
+									onResolveApproval
+										? (approved) => onResolveApproval(approval.intentEventId, item.id, approved)
+										: undefined
+								}
+							/>
+						)}
+						{item.toolImages && item.toolImages.length > 0 && (
+							<div className="flex flex-wrap gap-2">
+								{item.toolImages.map((src, i) => (
+									<ToolImage key={i} src={src} index={i} count={item.toolImages!.length} />
+								))}
+							</div>
+						)}
+						{item.toolResult && (
+							<div className="border-t border-border/60 pt-2">
+								<CollapsibleCode text={item.toolResult} isError={item.isError} highlight={highlight} highlightActive={highlightActive} />
+							</div>
+						)}
+						{running && !item.toolResult && (
+							<span className="text-xs text-muted">{t("conversation.running")}</span>
+						)}
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -484,7 +532,7 @@ function AssistantActions({ text, visible, timestamp }: { text: string; visible:
 				<ThumbsDown className="h-3.5 w-3.5" />
 			</button>
 			{time && (
-				<span className="ml-1 font-mono text-[10px] text-muted" title={new Date(timestamp!).toLocaleString()}>
+				<span className="ml-1 text-[11px] text-muted" title={new Date(timestamp!).toLocaleString()}>
 					{time}
 				</span>
 			)}
@@ -504,7 +552,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 		>
 			<div
 				className={cn(
-					"max-w-[85%] rounded-2xl rounded-br-md bg-surface-2 px-4 py-2.5",
+					"max-w-[85%] rounded-3xl bg-accent px-4 py-2.5 text-accent-fg",
 					item.queued && "opacity-60",
 				)}
 			>
@@ -515,7 +563,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 								key={i}
 								src={src}
 								alt={t("conversation.attachment")}
-								className="max-h-48 rounded-md border border-border object-contain"
+								className="max-h-48 rounded-md border border-current/20 object-contain"
 							/>
 						))}
 					</div>
@@ -525,14 +573,14 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 						{item.files.map((f) => (
 							<div
 								key={f.absolutePath}
-								className="flex h-9 w-48 items-center gap-2 overflow-hidden rounded-lg border border-border bg-surface-2 px-2.5 text-xs"
+								className="flex h-9 w-48 items-center gap-2 overflow-hidden rounded-lg border border-current/15 bg-current/10 px-2.5 text-xs"
 								title={f.absolutePath}
 							>
 								<FileAttachmentIcon name={f.name} mimeType={f.mimeType} />
 								<div className="flex min-w-0 flex-1 flex-col">
-									<span className="truncate text-fg">{f.name}</span>
+									<span className="truncate">{f.name}</span>
 									{f.size > 0 && (
-										<span className="truncate text-[10px] text-muted">{formatFileSize(f.size)}</span>
+										<span className="truncate text-[10px] opacity-60">{formatFileSize(f.size)}</span>
 									)}
 								</div>
 							</div>
@@ -540,13 +588,13 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 					</div>
 				)}
 				{item.text && (
-					<div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-fg">
+					<div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
 						{highlight ? highlightText(item.text, highlight, highlightActive) : item.text}
 					</div>
 				)}
 			</div>
 			{item.queued ? (
-				<span className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-widest text-muted">
+				<span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted">
 					<Loader2 className="h-3 w-3 animate-spin" />
 					{t("conversation.queued")}
 				</span>
@@ -568,7 +616,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 						</button>
 						{formatMessageTime(item.timestamp) && (
 							<span
-								className="ml-1 font-mono text-[10px] text-muted"
+								className="ml-1 text-[11px] text-muted"
 								title={new Date(item.timestamp!).toLocaleString()}
 							>
 								{formatMessageTime(item.timestamp)}
@@ -610,21 +658,21 @@ const AgentMessageCard = memo(function AgentMessageCard({
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
 		>
-			<div className="w-full max-w-[85%] overflow-hidden rounded-2xl rounded-bl-md border border-accent/25 bg-surface-2/50">
-				<div className="flex items-center gap-2 border-b border-border/70 bg-surface/40 px-3.5 py-2">
-					<Waypoints className="h-3.5 w-3.5 shrink-0 text-accent" />
-					<span className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-muted">
+			<div className="w-full max-w-[85%] overflow-hidden rounded-2xl border border-border bg-surface">
+				<div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2">
+					<Waypoints className="h-3.5 w-3.5 shrink-0 text-muted" />
+					<span className="shrink-0 text-[11px] font-medium text-muted">
 						{t("conversation.agentMessage.title")}
 					</span>
 					<span
-						className="truncate rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs font-semibold text-fg"
+						className="truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-medium text-fg"
 						title={am.from}
 					>
 						{highlight ? highlightText(am.fromName, highlight, highlightActive) : am.fromName}
 					</span>
 					{am.autoRelay && (
 						<span
-							className="flex shrink-0 items-center gap-0.5 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+							className="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted"
 							title={t("conversation.agentMessage.autoRelayHint")}
 						>
 							<ArrowUpRight className="h-3 w-3" />
@@ -632,7 +680,7 @@ const AgentMessageCard = memo(function AgentMessageCard({
 						</span>
 					)}
 					{am.id && (
-						<span className="ml-auto truncate font-mono text-[10px] text-muted/70" title={am.id}>
+						<span className="ml-auto truncate text-[10px] text-muted/70" title={am.id}>
 							{am.id}
 						</span>
 					)}
@@ -665,7 +713,7 @@ const AgentMessageCard = memo(function AgentMessageCard({
 					{copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
 				</button>
 				{time && (
-					<span className="ml-1 font-mono text-[10px] text-muted" title={new Date(item.timestamp!).toLocaleString()}>
+					<span className="ml-1 text-[11px] text-muted" title={new Date(item.timestamp!).toLocaleString()}>
 						{time}
 					</span>
 				)}
@@ -680,7 +728,7 @@ const SystemNotice = memo(function SystemNotice({ item }: { item: TimelineItem }
 	return (
 		<div className="my-3 flex items-center justify-center gap-2 text-[11px] text-muted">
 			<span className="h-px flex-1 bg-border/60" />
-			<span className="rounded-full border border-border bg-surface-2 px-2.5 py-0.5 font-mono">
+			<span className="rounded-full border border-border bg-surface px-2.5 py-0.5">
 				{item.title}
 			</span>
 			{ts && <span className="text-muted/70">{ts}</span>}

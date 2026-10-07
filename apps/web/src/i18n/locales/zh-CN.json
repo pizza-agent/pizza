@@ -372,6 +372,8 @@
     "toggleRight": "切换侧边面板"
   },
   "theme": {
+    "light": "浅色",
+    "dark": "深色",
     "switchToLight": "切换到浅色",
     "switchToDark": "切换到深色"
   },
@@ -530,6 +532,13 @@
       "general": "通用",
       "provider": "服务商"
     },
+    "nav": {
+      "general": "常规",
+      "backToApp": "返回应用",
+      "search": "搜索设置...",
+      "scheduler": "定时任务",
+      "groupIntegrations": "集成"
+    },
     "general": {
       "compaction": "上下文压缩",
       "autoCompaction": "自动压缩",
@@ -537,6 +546,8 @@
       "compacting": "压缩中...",
       "language": "语言",
       "languageDescription": "界面显示语言",
+      "theme": "主题",
+      "themeLabel": "外观主题",
       "safeMode": "安全模式",
       "safeModeLabel": "需要审批",
       "safeModeHint": "开启后，有风险的工具调用（文件写入、编辑、删除、危险命令）在执行前会暂停等待你确认。",

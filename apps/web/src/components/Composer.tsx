@@ -1057,11 +1057,11 @@ ${insert}`;
 		sidecarReady && (!!input.trim() || images.length > 0 || files.length > 0);
 
 	return (
-		<div className="bg-surface px-6 py-4">
+		<div className="bg-bg px-6 py-4">
 			<div className="mx-auto max-w-3xl">
 				<div
 					className={cn(
-						"relative rounded-3xl border border-border bg-surface-2 px-4 pt-3 pb-2 shadow-sm transition-colors focus-within:border-accent/60",
+						"relative rounded-3xl border border-border bg-bg px-4 pt-3 pb-2 shadow-[0_1px_6px_rgb(0_0_0/0.04)] transition-colors focus-within:border-muted/70",
 						!sidecarReady && "opacity-60",
 						isDragOver && "border-accent ring-2 ring-accent/40",
 					)}
@@ -1308,7 +1308,7 @@ ${insert}`;
 										{skills.length > 0 && (
 											<>
 												<div className="my-1 border-t border-border/60" />
-												<div className="px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted">
+												<div className="px-2.5 py-1 text-[11px] font-medium text-muted">
 													{t("composer.skills")}
 												</div>
 												<div className="max-h-52 overflow-y-auto">
@@ -1432,7 +1432,7 @@ ${insert}`;
 												>
 													<span className="min-w-0 flex-1">
 														<span className="block truncate text-fg">{m.name}</span>
-														<span className="block truncate font-mono text-[10px] text-muted">
+														<span className="block truncate text-[10px] text-muted">
 															{m.provider}
 														</span>
 													</span>
@@ -1444,7 +1444,7 @@ ${insert}`;
 										})}
 									{/* Thinking level — controls reasoning effort for the current model */}
 									<div className="mt-1 border-t border-border/60 pt-1">
-										<div className="px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-muted">
+										<div className="px-2.5 py-1 text-[11px] font-medium text-muted">
 											{t("composer.thinkingLevel")}
 										</div>
 										<div className="flex flex-wrap gap-1 px-1.5 pb-1">
@@ -1536,7 +1536,7 @@ ${insert}`;
 						</div>
 					</div>
 				</div>
-				<div className="mt-2 text-center font-mono text-[10px] uppercase tracking-widest text-muted">
+				<div className="mt-2 text-center text-[11px] text-muted">
 					{t("composer.sendHint")}
 				</div>
 			</div>

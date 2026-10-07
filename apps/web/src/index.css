@@ -19,39 +19,140 @@
 	--color-warning: var(--warning);
 	--color-danger: var(--danger);
 
-	--font-sans: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-	--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-	--font-pixel: "Press Start 2P", "JetBrains Mono", monospace;
+	/* Codex-style type: native system sans for UI, monospace only for code. */
+	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+		Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB",
+		"Microsoft YaHei", sans-serif;
+	--font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+		"Liberation Mono", monospace;
+	/* Legacy token — the pixel font is gone; map it to the UI stack so any
+	   leftover kit usage still renders as normal text. */
+	--font-pixel: var(--font-sans);
 }
 
 :root {
 	color-scheme: light;
-	--bg: #f5f4ee;
-	--surface: #fffdf8;
-	--surface-2: #efece3;
-	--border: #d6d2c7;
-	--fg: #1f1e1b;
-	--muted: #6b685f;
-	--accent: #d97757;
-	--accent-fg: #fffdf8;
-	--success: #6b7a3a;
-	--warning: #d4a017;
-	--danger: #b42318;
+	/* Codex light palette: white canvas, pale gray chrome, hairline borders,
+	   near-black ink. */
+	--bg: #ffffff;
+	--surface: #f7f7f8;
+	--surface-2: #ececed;
+	--border: #e6e6e6;
+	--fg: #0d0d0d;
+	--muted: #8f8f92;
+	--accent: #0d0d0d;
+	--accent-fg: #ffffff;
+	--success: #34c759;
+	--warning: #d97706;
+	--danger: #e03131;
+	--link: #3478f6;
+
+	/* ---------------------------------------------------------------------
+	 * @pxlkit/ui-kit palette override (imported above). The kit renders all
+	 * buttons/badges/modals from these tokens, so they must follow the app
+	 * theme. `--color-retro-*` is re-declared alongside `--retro-*` because
+	 * Tailwind v4 @theme registers it as an inherited computed property —
+	 * overriding only the source var would not update utility classes.
+	 * --------------------------------------------------------------------- */
+	--retro-bg: #ffffff;
+	--retro-surface: #f7f7f8;
+	--retro-card: #ffffff;
+	--retro-text: #0d0d0d;
+	--retro-border: #e6e6e6;
+	--retro-border-strong: #d4d4d4;
+	--retro-primary: #0d0d0d;
+	--retro-secondary: #d97706;
+	--retro-accent: #3478f6;
+	--retro-muted: #8f8f92;
+
+	--retro-green: #34c759;
+	--retro-green-hover: #2db14e;
+	/* The app maps its "accent" tone to the kit's cyan; ink keeps it monochrome. */
+	--retro-cyan: #0d0d0d;
+	--retro-red: #e03131;
+	--retro-gold: #d97706;
+	--retro-purple: #7048e8;
+	--retro-pink: #c2255c;
+
+	--retro-shadow-green: rgb(0 0 0 / 0.08);
+	--retro-shadow-green-lg: rgb(0 0 0 / 0.06);
+	--retro-shadow-gold: rgb(0 0 0 / 0.08);
+
+	--color-retro-bg: #ffffff;
+	--color-retro-surface: #f7f7f8;
+	--color-retro-card: #ffffff;
+	--color-retro-text: #0d0d0d;
+	--color-retro-border: #e6e6e6;
+	--color-retro-border-strong: #d4d4d4;
+	--color-retro-primary: #0d0d0d;
+	--color-retro-secondary: #d97706;
+	--color-retro-accent: #3478f6;
+	--color-retro-muted: #8f8f92;
+	--color-retro-green: #34c759;
+	--color-retro-green-hover: #2db14e;
+	--color-retro-cyan: #0d0d0d;
+	--color-retro-red: #e03131;
+	--color-retro-gold: #d97706;
+	--color-retro-purple: #7048e8;
+	--color-retro-pink: #c2255c;
 }
 
 .dark {
 	color-scheme: dark;
-	--bg: #0a0a0f;
-	--surface: #12121a;
-	--surface-2: #1a1a2e;
-	--border: #2a2a3e;
-	--fg: #dcd8d0;
-	--muted: #8888aa;
-	--accent: #d97757;
-	--accent-fg: #fffdf8;
-	--success: #00cc6a;
-	--warning: #d4a82b;
-	--danger: #ff5c68;
+	/* Codex dark palette: neutral charcoal (no blue cast), soft elevation. */
+	--bg: #181818;
+	--surface: #212121;
+	--surface-2: #2a2a2a;
+	--border: #2e2e2e;
+	--fg: #ececec;
+	--muted: #8e8e93;
+	--accent: #ececec;
+	--accent-fg: #181818;
+	--success: #30d158;
+	--warning: #fbbf24;
+	--danger: #ff6363;
+	--link: #6cb0ff;
+
+	--retro-bg: #181818;
+	--retro-surface: #212121;
+	--retro-card: #212121;
+	--retro-text: #ececec;
+	--retro-border: #2e2e2e;
+	--retro-border-strong: #444444;
+	--retro-primary: #ececec;
+	--retro-secondary: #fbbf24;
+	--retro-accent: #409cff;
+	--retro-muted: #8e8e93;
+
+	--retro-green: #30d158;
+	--retro-green-hover: #2db84e;
+	--retro-cyan: #ececec;
+	--retro-red: #ff6363;
+	--retro-gold: #fbbf24;
+	--retro-purple: #9775fa;
+	--retro-pink: #f06595;
+
+	--retro-shadow-green: rgb(0 0 0 / 0.4);
+	--retro-shadow-green-lg: rgb(0 0 0 / 0.3);
+	--retro-shadow-gold: rgb(0 0 0 / 0.4);
+
+	--color-retro-bg: #181818;
+	--color-retro-surface: #212121;
+	--color-retro-card: #212121;
+	--color-retro-text: #ececec;
+	--color-retro-border: #2e2e2e;
+	--color-retro-border-strong: #444444;
+	--color-retro-primary: #ececec;
+	--color-retro-secondary: #fbbf24;
+	--color-retro-accent: #409cff;
+	--color-retro-muted: #8e8e93;
+	--color-retro-green: #30d158;
+	--color-retro-green-hover: #2db84e;
+	--color-retro-cyan: #ececec;
+	--color-retro-red: #ff6363;
+	--color-retro-gold: #fbbf24;
+	--color-retro-purple: #9775fa;
+	--color-retro-pink: #f06595;
 }
 
 @layer base {
@@ -67,17 +168,8 @@
 		-webkit-font-smoothing: antialiased;
 		text-rendering: optimizeLegibility;
 	}
-	h1,
-	h2,
-	.font-pixel {
-		font-family: var(--font-pixel);
-		letter-spacing: 0.05em;
-	}
-	img {
-		image-rendering: pixelated;
-	}
 	::selection {
-		background: color-mix(in srgb, var(--accent) 25%, transparent);
+		background: color-mix(in srgb, var(--link) 25%, transparent);
 	}
 }
 
@@ -93,18 +185,18 @@
 /* Scrollbar — kept outside @layer base so it isn't overridden by Tailwind utilities */
 * {
 	scrollbar-width: thin;
-	scrollbar-color: var(--border) var(--bg);
+	scrollbar-color: var(--border) transparent;
 }
 *::-webkit-scrollbar {
 	width: 6px;
 	height: 6px;
-	background: var(--bg);
+	background: transparent;
 	-webkit-appearance: none;
 }
 *::-webkit-scrollbar-track,
 *::-webkit-scrollbar-track-piece,
 *::-webkit-scrollbar-corner {
-	background: var(--bg);
+	background: transparent;
 	-webkit-appearance: none;
 }
 *::-webkit-scrollbar-thumb {
@@ -118,7 +210,7 @@
 /* Dark mode — explicit overrides to guarantee no white bleed in WKWebView */
 .dark,
 .dark * {
-	scrollbar-color: #2a2a3e #0a0a0f;
+	scrollbar-color: #3a3a3a #181818;
 }
 .dark::-webkit-scrollbar,
 .dark *::-webkit-scrollbar,
@@ -128,15 +220,57 @@
 .dark *::-webkit-scrollbar-track-piece,
 .dark::-webkit-scrollbar-corner,
 .dark *::-webkit-scrollbar-corner {
-	background: #0a0a0f;
+	background: #181818;
 }
 .dark::-webkit-scrollbar-thumb,
 .dark *::-webkit-scrollbar-thumb {
-	background: #2a2a3e;
+	background: #3a3a3a;
 }
 .dark::-webkit-scrollbar-thumb:hover,
 .dark *::-webkit-scrollbar-thumb:hover {
-	background: #8888aa;
+	background: #5a5a5a;
+}
+
+/* ---------------------------------------------------------------------------
+ * pxlkit "pixel" surface neutralization.
+ *
+ * The kit ships staircase clip-path corners and hard offset shadows from its
+ * retro look. Most components read the `linear` surface from
+ * PxlKitSurfaceProvider, but a few hardcode the pixel utility classes — these
+ * unlayered overrides win the cascade and flatten them to Codex-style soft
+ * rounded chrome everywhere.
+ * --------------------------------------------------------------------------- */
+.pxl-corner-sm,
+.pxl-corner-md,
+.pxl-corner-lg,
+.pixel-corners {
+	clip-path: none;
+	border-radius: 0.625rem;
+}
+.pxl-shadow {
+	filter: none;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+.pxl-shadow-hover:hover {
+	filter: none;
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+	transform: none;
+}
+.pxl-shadow-active:active {
+	filter: none;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+	transform: scale(0.98);
+}
+.pixel-border {
+	box-shadow: inset 0 0 0 1px var(--border);
+}
+.btn-retro,
+.btn-retro:hover {
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+	transform: none !important;
+}
+.btn-retro:active {
+	transform: scale(0.98) !important;
 }
 
 @layer components {
@@ -150,17 +284,6 @@
 		-webkit-app-region: no-drag;
 	}
 
-	.btn-retro,
-	.btn-retro:hover {
-		box-shadow:
-			0 1px 2px rgb(0 0 0 / 0.08),
-			0 1px 1px rgb(0 0 0 / 0.04) !important;
-		transform: none !important;
-	}
-	.btn-retro:active {
-		transform: translateY(1px) !important;
-	}
-
 	.card {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -172,15 +295,13 @@
 		font-size: 0.75rem;
 		font-weight: 500;
 		color: var(--muted);
-		font-family: var(--font-mono);
-		letter-spacing: 0.04em;
 	}
 }
 
 /* Markdown-rendered content (agent responses) */
 .md {
 	font-size: 0.875rem;
-	line-height: 1.65;
+	line-height: 1.7;
 	color: var(--fg);
 	word-break: break-word;
 	overflow-wrap: anywhere;
@@ -189,14 +310,13 @@
 .md > *:last-child { margin-bottom: 0; }
 .md p { margin: 0.6em 0; }
 .md h1, .md h2, .md h3, .md h4 {
-	font-family: var(--font-sans);
-	font-weight: 700;
+	font-weight: 650;
 	line-height: 1.3;
-	margin: 1.1em 0 0.5em;
-	letter-spacing: 0;
+	margin: 1.2em 0 0.5em;
+	letter-spacing: -0.01em;
 }
-.md h1 { font-size: 1.35em; }
-.md h2 { font-size: 1.2em; }
+.md h1 { font-size: 1.3em; }
+.md h2 { font-size: 1.15em; }
 .md h3 { font-size: 1.05em; }
 .md h4 { font-size: 0.95em; }
 .md ul, .md ol { margin: 0.6em 0; padding-left: 1.4em; }
@@ -204,8 +324,8 @@
 .md ol { list-style: decimal; }
 .md li { margin: 0.25em 0; }
 .md li > ul, .md li > ol { margin: 0.25em 0; }
-.md a { color: var(--accent); }
-.md strong { font-weight: 700; }
+.md a { color: var(--link); }
+.md strong { font-weight: 650; }
 .md em { font-style: italic; }
 .md hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
 .md blockquote {
@@ -226,7 +346,7 @@
 	padding: 0.4em 0.7em;
 	text-align: left;
 }
-.md th { background: var(--surface-2); font-weight: 700; }
+.md th { background: var(--surface); font-weight: 600; }
 .md img { max-width: 100%; border-radius: 0.5rem; }
 
 /* ---------------------------------------------------------------------------
@@ -255,11 +375,11 @@
 	--syn-keyword: #c678dd;
 	--syn-string: #98c379;
 	--syn-number: #d19a66;
-	--syn-comment: #5c6370;
+	--syn-comment: #7f848e;
 	--syn-func: #61afef;
 	--syn-type: #e5c07b;
 	--syn-var: #e06c75;
-	--syn-punct: #8888aa;
+	--syn-punct: #8e8e93;
 	--diff-add-bg: color-mix(in srgb, var(--success) 16%, transparent);
 	--diff-del-bg: color-mix(in srgb, var(--danger) 16%, transparent);
 	--diff-hunk-bg: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -327,7 +447,7 @@
 .diff-hunk { background: var(--diff-hunk-bg); color: var(--accent); }
 /* Chat search (⌘/ctrl+F) match highlighting. Non-active matches use a soft
    yellow tint that works in both themes; the active (focused) match uses the
-   accent color so it stands out while navigating prev/next. */
+   link color so it stands out while navigating prev/next. */
 .chat-search-mark {
 	background: color-mix(in srgb, var(--warning) 38%, transparent);
 	color: inherit;
@@ -338,8 +458,8 @@
 	background: color-mix(in srgb, var(--warning) 45%, transparent);
 }
 .chat-search-mark-active {
-	background: var(--accent);
-	color: var(--accent-fg);
+	background: var(--link);
+	color: #ffffff;
 	border-radius: 2px;
 	padding: 0 1px;
 }

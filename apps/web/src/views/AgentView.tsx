@@ -1255,7 +1255,7 @@ export default function AgentView({
 						{loadingHistory || waitingForWorkspace ? (
 							<div className="flex flex-col items-center gap-3">
 								<Spinner />
-								<p className="font-mono text-xs text-muted">{t("common.loadingHistory")}</p>
+								<p className="text-xs text-muted">{t("common.loadingHistory")}</p>
 							</div>
 						) : (
 							<EmptyState
@@ -1300,7 +1300,7 @@ export default function AgentView({
 								key={q.id}
 								className="group flex items-center gap-2 rounded-md border border-border/60 bg-surface-2/60 px-3 py-1.5"
 							>
-								<span className="shrink-0 rounded-sm bg-accent/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-accent">
+								<span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
 									{t("conversation.queued")}
 								</span>
 								<span className="min-w-0 flex-1 truncate text-sm text-muted" title={q.text}>
