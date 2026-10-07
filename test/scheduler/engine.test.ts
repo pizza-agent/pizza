@@ -588,7 +588,11 @@ describe("setTimeout overflow protection", () => {
 	// monthly task whose next fire is >24.8 days out (or a distant startAt)
 	// must NOT fire immediately — the engine chunks the wait instead.
 	it("far-future startAt does not fire immediately (chunked wait)", async () => {
-		vi.useFakeTimers();
+		// Fake setTimeout/Date only — NOT setInterval. The scope lock's 30s
+		// heartbeat is a setInterval; faking it would make the 25-day
+		// advanceTimersByTimeAsync below execute ~72k real fs writes and
+		// time out on slow CI runners.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 		try {
 			const fired: number[] = [];
 			const engine = new SchedulerEngine({
