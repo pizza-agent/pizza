@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { useTheme, type Theme } from "@/lib/theme";
+import { useTheme, useThemeId, type Theme } from "@/lib/theme";
 
 /**
  * Terminal — a real interactive terminal (xterm.js) backed by a local PTY
@@ -24,55 +24,71 @@ import { useTheme, type Theme } from "@/lib/theme";
  * updates the xterm colors live without restarting the shell.
  */
 
-/** xterm.js theme derived from the app's CSS tokens. */
-function xtermTheme(theme: Theme): Record<string, string> {
-	if (theme === "dark") {
-		return {
-			background: "#0a0a0f",
-			foreground: "#dcd8d0",
-			cursor: "#dcd8d0",
-			cursorAccent: "#0a0a0f",
-			selectionBackground: "#1a1a2e",
-			black: "#0a0a0f",
-			red: "#ff5c68",
-			green: "#7ee787",
-			yellow: "#e3b341",
-			blue: "#6cb6ff",
-			magenta: "#d2a8ff",
-			cyan: "#76e3ea",
-			white: "#dcd8d0",
-			brightBlack: "#8888aa",
-			brightRed: "#ff8b96",
-			brightGreen: "#9bf2a0",
-			brightYellow: "#f0c674",
-			brightBlue: "#9cc4ff",
-			brightMagenta: "#e6c2ff",
-			brightCyan: "#a0f0f7",
-			brightWhite: "#fffdf8",
-		};
+/** Probe element used to resolve var()/color-mix() to concrete colors for xterm. */
+let colorProbe: HTMLSpanElement | null = null;
+function cssColor(expr: string): string | null {
+	if (!colorProbe) {
+		colorProbe = document.createElement("span");
+		colorProbe.style.display = "none";
+		document.documentElement.appendChild(colorProbe);
 	}
+	colorProbe.style.color = "";
+	colorProbe.style.color = expr;
+	const c = getComputedStyle(colorProbe).color;
+	// Unresolvable expressions compute to the inherited/default color or "";
+	// treat transparent as unresolved too.
+	return c && c !== "rgba(0, 0, 0, 0)" ? c : null;
+}
+const cssVar = (name: string, fallback: string): string => cssColor(`var(--${name})`) ?? fallback;
+
+/** xterm.js theme derived live from the app's CSS tokens — follows built-in and custom themes. */
+function xtermTheme(theme: Theme): Record<string, string> {
+	const dark = theme === "dark";
+	// Bright ANSI shades nudge the base color toward white (dark) or black (light).
+	const bright = (base: string, fallback: string) =>
+		cssColor(`color-mix(in srgb, ${base} 82%, ${dark ? "#ffffff" : "#000000"})`) ?? fallback;
+	const bg = cssVar("bg", dark ? "#181818" : "#ffffff");
+	const fg = cssVar("fg", dark ? "#ececec" : "#0d0d0d");
+	const muted = cssVar("muted", dark ? "#8e8e93" : "#8f8f92");
+	// Light mode: wash the chromatic ANSI colors 20% toward white so prompt
+	// segments read as soft tints instead of saturated blocks; the contrast
+	// floor keeps fg text legible on both roles.
+	const chroma = (token: string, fallback: string): string =>
+		dark
+			? cssVar(token, fallback)
+			: (cssColor(`color-mix(in srgb, var(--${token}) 80%, #ffffff)`) ?? cssVar(token, fallback));
+	const danger = chroma("danger", dark ? "#ff6363" : "#e03131");
+	const success = chroma("success", dark ? "#30d158" : "#34c759");
+	const warning = chroma("warning", dark ? "#fbbf24" : "#d97706");
+	const accent = chroma("accent", dark ? "#30d158" : "#1a7f37");
+	const link = chroma("link", dark ? "#56d364" : "#1a7f37");
+	const purple = chroma("retro-purple", dark ? "#9775fa" : "#7048e8");
 	return {
-		background: "#f5f4ee",
-		foreground: "#1f1e1b",
-		cursor: "#1f1e1b",
-		cursorAccent: "#f5f4ee",
-		selectionBackground: "#d6d2c7",
-		black: "#1f1e1b",
-		red: "#b42318",
-		green: "#1a7f37",
-		yellow: "#9a6700",
-		blue: "#0969da",
-		magenta: "#8250df",
-		cyan: "#1b7c83",
-		white: "#6b685f",
-		brightBlack: "#6b685f",
-		brightRed: "#d1242f",
-		brightGreen: "#2da44e",
-		brightYellow: "#bf8700",
-		brightBlue: "#218bff",
-		brightMagenta: "#a371f7",
-		brightCyan: "#3192aa",
-		brightWhite: "#1f1e1b",
+		background: bg,
+		foreground: fg,
+		cursor: fg,
+		cursorAccent: bg,
+		selectionBackground: cssVar("surface-2", dark ? "#2a2a2a" : "#ececed"),
+		// ANSI "black" doubles as fg and bg; soften it off the pure extremes so
+		// prompt segments (bg=color + fg=black) stay readable in both modes.
+		black: cssColor(`color-mix(in srgb, var(--fg) ${dark ? 38 : 65}%, var(--bg))`) ?? muted,
+		red: danger,
+		green: success,
+		yellow: warning,
+		blue: accent,
+		magenta: purple,
+		cyan: link,
+		white: dark ? fg : muted,
+		brightBlack: muted,
+		brightRed: bright(danger, danger),
+		brightGreen: bright(success, success),
+		brightYellow: bright(warning, warning),
+		brightBlue: bright(accent, accent),
+		brightMagenta: bright(purple, purple),
+		brightCyan: bright(link, link),
+		// brightWhite is the conventional "text on colored segment" color —
+		// keep it near-white even in light mode so powerline-style prompts work.
+		brightWhite: cssColor(`color-mix(in srgb, #ffffff ${dark ? 15 : 92}%, var(--fg))`) ?? fg,
 	};
 }
 
@@ -87,6 +103,7 @@ export default function Terminal({
 }) {
 	const { t } = useTranslation();
 	const theme = useTheme();
+	const themeId = useThemeId();
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const xtermRef = useRef<XTerm | null>(null);
 	const fitRef = useRef<FitAddon | null>(null);
@@ -104,11 +121,17 @@ export default function Terminal({
 		if (!container) return;
 
 		const term = new XTerm({
-			fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+			fontFamily:
+				'"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, "Pizza Nerd Icons", monospace',
 			fontSize: 12,
+			fontWeight: 500,
+			lineHeight: 1.15,
 			cursorBlink: true,
 			scrollback: 5000,
 			allowProposedApi: true,
+			// Prompt segments often pair a saturated bg with an arbitrary fg —
+			// xterm lifts the fg toward WCAG AA contrast against its cell bg.
+			minimumContrastRatio: 4.5,
 			theme: xtermTheme(theme),
 		});
 		const fit = new FitAddon();
@@ -203,11 +226,12 @@ export default function Terminal({
 
 	// Apply theme changes live to the existing xterm instance without
 	// restarting the shell. xterm picks up `options.theme` on assignment.
+	// themeId covers same-mode switches between two custom themes.
 	useEffect(() => {
 		const term = xtermRef.current;
 		if (!term) return;
 		term.options.theme = xtermTheme(theme) as unknown as typeof term.options.theme;
-	}, [theme]);
+	}, [theme, themeId]);
 
 	// Re-fit when the pane becomes visible again (e.g. switching back to its
 	// tab). While hidden the container has zero size, so we must wait until it

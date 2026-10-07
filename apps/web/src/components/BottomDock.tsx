@@ -225,7 +225,7 @@ export default function BottomDock({
 								className={cn(
 									"group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors",
 									active
-										? "bg-surface-2 text-fg"
+										? "bg-surface-2 font-medium text-accent"
 										: "text-muted hover:bg-surface-2/60 hover:text-fg",
 								)}
 								title={tabTitle(tb, i)}

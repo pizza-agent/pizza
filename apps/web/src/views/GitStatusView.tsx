@@ -401,7 +401,7 @@ export default function GitStatusView({ workspace }: { workspace?: string | null
 									<span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted">
 										{selection.path.includes("/") ? selection.path.slice(0, selection.path.lastIndexOf("/")) : ""}
 									</span>
-									<span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">
+									<span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
 										{t(`git.mode.${selection.mode}`)}
 									</span>
 									<IconButton
@@ -418,7 +418,7 @@ export default function GitStatusView({ workspace }: { workspace?: string | null
 									<span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted" title={selection.subject}>
 										{selection.subject}
 									</span>
-									<span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted">
+									<span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
 										{t("git.commit")}
 									</span>
 								</>
@@ -486,7 +486,7 @@ function StatusGroup({
 			{/* Sticky group header so the section stays identifiable while scrolling. */}
 			<button
 				onClick={onToggle}
-				className="sticky top-0 z-10 flex w-full items-center gap-1 bg-surface px-2 py-1 text-left font-mono text-[10px] uppercase tracking-wide text-muted transition-colors hover:text-fg"
+				className="sticky top-0 z-10 flex w-full items-center gap-1 bg-surface px-2 py-1 text-left text-[11px] font-medium text-muted transition-colors hover:text-fg"
 			>
 				{collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
 				<span>{label}</span>
@@ -578,7 +578,7 @@ function CommitsGroup({
 		<div>
 			<button
 				onClick={onToggle}
-				className="sticky top-0 z-10 flex w-full items-center gap-1 bg-surface px-2 py-1 text-left font-mono text-[10px] uppercase tracking-wide text-muted transition-colors hover:text-fg"
+				className="sticky top-0 z-10 flex w-full items-center gap-1 bg-surface px-2 py-1 text-left text-[11px] font-medium text-muted transition-colors hover:text-fg"
 			>
 				{collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
 				<span>{t("git.commits")}</span>
@@ -704,7 +704,7 @@ const BranchMenu = forwardRef<HTMLDivElement, {
 										{b.name}
 									</span>
 									{b.is_current && (
-										<span className="shrink-0 rounded bg-accent/15 px-1 text-[9px] uppercase tracking-wide text-accent">HEAD</span>
+										<span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-accent">HEAD</span>
 									)}
 									{/* The only write affordance: hand it to the agent via chat. */}
 									<button

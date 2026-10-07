@@ -313,6 +313,29 @@
 				}
 			},
 			"additionalProperties": false
+		},
+		"web": {
+			"type": "object",
+			"description": "Optional web/desktop UI theme. Token keys map to CSS custom properties (--bg, --surface, --accent, --syn-*, --retro-*, ...); values may reference vars entries.",
+			"properties": {
+				"label": {
+					"type": "string",
+					"description": "Display name shown in the web UI theme picker"
+				},
+				"mode": {
+					"type": "string",
+					"enum": ["light", "dark"],
+					"description": "Which base palette the tokens extend (default: inferred from theme name)"
+				},
+				"tokens": {
+					"type": "object",
+					"description": "CSS custom-property overrides, keyed without the -- prefix",
+					"additionalProperties": {
+						"type": "string"
+					}
+				}
+			},
+			"additionalProperties": false
 		}
 	},
 	"additionalProperties": false,

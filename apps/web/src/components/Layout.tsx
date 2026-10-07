@@ -85,6 +85,9 @@ export default function Layout({
 	// docks are hidden and the settings view provides its own "back to app".
 	const location = useLocation();
 	const isSettingsRoute = location.pathname.startsWith("/settings");
+	const isPluginsActive =
+		location.pathname === "/settings" &&
+		new URLSearchParams(location.search).get("page") === "plugins";
 	// macOS overlay title bar needs left padding so the collapse/expand
 	// buttons clear the traffic lights; other platforms have a normal title
 	// bar and need no reserved space. Evaluated once — platform never changes.
@@ -116,6 +119,7 @@ export default function Layout({
 	const clearHoverTimer = useCallback(() => {
 		if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
 	}, []);
+	useEffect(() => clearHoverTimer, [clearHoverTimer]);
 
 	const showSidebar = !collapsed || hovered;
 	const floating = collapsed && hovered;
@@ -203,11 +207,17 @@ export default function Layout({
 				</button>
 			)}
 
-			{/* Left-edge hover strip: reveals the sidebar as a floating overlay while collapsed */}
+			{/* Left-edge hover strip: reveals the sidebar as a floating overlay while
+			    collapsed — but only after the cursor dwells on the edge (~1s), so a
+			    passing swipe does not pop the menu open. */}
 			{!isSettingsRoute && collapsed && (
 				<div
 					className={cn("fixed inset-y-0 left-0 w-2", Z.overlay)}
-					onMouseEnter={() => { clearHoverTimer(); setHovered(true); }}
+					onMouseEnter={() => {
+						clearHoverTimer();
+						hoverTimerRef.current = setTimeout(() => setHovered(true), 500);
+					}}
+					onMouseLeave={() => clearHoverTimer()}
 				/>
 			)}
 			<aside
@@ -222,11 +232,12 @@ export default function Layout({
 			>
 				{/* Top bar — aligns with the macOS traffic lights; holds the collapse button */}
 				<div
-					data-tauri-drag-region
+					data-tauri-drag-region="deep"
 					className={cn("flex h-11 shrink-0 items-center pr-2", macPad ? "pl-[76px]" : "pl-2")}
 				>
 					<button
 						data-no-drag
+						data-tauri-drag-region="false"
 						onClick={toggleCollapsed}
 						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted/50 transition-colors hover:bg-surface-2 hover:text-muted active:bg-surface-2"
 						title={t("layout.hideSidebar")}
@@ -235,21 +246,15 @@ export default function Layout({
 					</button>
 				</div>
 				<div
-					data-tauri-drag-region
+					data-tauri-drag-region="deep"
 					className="flex items-center gap-3 px-5 pb-2 pt-1"
 				>
 					<BrandIcon size={26} className="shrink-0 text-fg" />
-					<div className="leading-tight" data-tauri-drag-region>
-						<div
-							data-tauri-drag-region
-							className="text-[15px] font-semibold tracking-tight text-fg"
-						>
-							pizza
+					<div className="leading-tight">
+						<div className="text-[15px] font-semibold tracking-tight text-fg">
+							Pizza
 						</div>
-						<div
-							data-tauri-drag-region
-							className="text-[11px] text-muted"
-						>
+						<div className="text-[11px] text-muted">
 							{t("layout.brandTagline")}
 						</div>
 					</div>
@@ -269,7 +274,7 @@ export default function Layout({
 						<MessageSquare
 							className={cn(
 								"h-4 w-4 shrink-0",
-								isMainChat ? "text-fg" : "text-muted",
+								isMainChat ? "text-accent" : "text-muted",
 							)}
 						/>
 						<div className="min-w-0 flex-1">
@@ -342,9 +347,9 @@ export default function Layout({
 											title={ws.dir_exists === false ? t("layout.staleWorkspaceTitle", { cwd: ws.cwd }) : ws.cwd}
 										>
 											{isPinned ? (
-												<Pin className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-fg" : "text-muted")} />
+												<Pin className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent" : "text-muted")} />
 											) : (
-												<Folder className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-fg" : "text-muted")} />
+												<Folder className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent" : "text-muted")} />
 											)}
 											<div className="min-w-0 flex-1">
 												<div
@@ -355,7 +360,7 @@ export default function Layout({
 												>
 													{basename(ws.cwd)}
 													{ws.dir_exists === false && (
-														<span className="ml-1 text-[10px] uppercase tracking-wide text-warning">{t("layout.staleWorkspaceBadge")}</span>
+														<span className="ml-1 text-[10px] font-medium text-warning">{t("layout.staleWorkspaceBadge")}</span>
 													)}
 												</div>
 												<div className="truncate text-[11px] text-muted">
@@ -397,7 +402,7 @@ export default function Layout({
 				{/* Plugins nav */}
 				<div className="border-t border-border px-3 pt-2 pb-1">
 					<NavLink
-						to="/plugins"
+						to="/settings?page=plugins"
 						className={({ isActive }) => cn(
 							"flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
 							isActive
@@ -406,9 +411,9 @@ export default function Layout({
 						)}
 						title={t("plugins.title")}
 					>
-						<Puzzle className={cn("h-4 w-4 shrink-0 text-muted")} />
+						<Puzzle className={cn("h-4 w-4 shrink-0", isPluginsActive ? "text-accent" : "text-muted")} />
 						<div className="min-w-0 flex-1">
-							<div className="truncate text-[13px] font-medium text-fg">
+							<div className={cn("truncate text-[13px]", isPluginsActive ? "font-medium text-fg" : "font-medium text-fg/90")}>
 								{t("layout.plugins")}
 							</div>
 							<div className="truncate text-[11px] text-muted">

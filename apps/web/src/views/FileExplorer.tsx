@@ -316,7 +316,7 @@ export default function FileExplorer({ workspace }: { workspace?: string | null 
 								{selectedFile.includes("/") ? selectedFile.slice(0, selectedFile.lastIndexOf("/")) : ""}
 							</span>
 							<div className="flex shrink-0 items-center gap-1.5 pr-1 font-mono text-[10px] text-muted">
-								{lang !== "plaintext" && <span className="uppercase tracking-wide">{lang}</span>}
+								{lang !== "plaintext" && <span>{lang}</span>}
 								{selectedNode && selectedNode.size > 0 && <span>{formatSize(selectedNode.size)}</span>}
 							</div>
 							<IconButton

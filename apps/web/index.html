@@ -4,18 +4,25 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Pizza</title>
-		<link rel="preconnect" href="https://fonts.googleapis.com" />
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link
-			href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-			rel="stylesheet"
-		/>
 		<script>
 			(function () {
 				try {
 					var saved = localStorage.getItem("pizza-theme");
-					if (saved === "dark") {
+					var mode =
+						localStorage.getItem("pizza-theme-mode") ||
+						(saved === "dark" ? "dark" : "light");
+					if (mode === "dark") {
 						document.documentElement.classList.add("dark");
+					}
+					if (saved && saved !== "light" && saved !== "dark") {
+						document.documentElement.dataset.theme = saved;
+					}
+					var css = localStorage.getItem("pizza-theme-css");
+					if (css) {
+						var style = document.createElement("style");
+						style.id = "pizza-custom-theme";
+						style.textContent = css;
+						document.head.appendChild(style);
 					}
 				} catch (e) {}
 			})();

@@ -85,7 +85,7 @@ export function CodeViewer({
 			>
 				{gutter}
 			</pre>
-			<pre className={cn("min-w-0 flex-1 px-3 py-3 text-fg", wrap && "whitespace-pre-wrap break-words")}>
+			<pre className={cn("min-w-0 flex-1 select-text px-3 py-3 text-fg", wrap && "whitespace-pre-wrap break-words")}>
 				{html !== null ? (
 					<code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
 				) : (

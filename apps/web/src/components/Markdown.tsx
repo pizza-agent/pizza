@@ -94,7 +94,7 @@ function MarkdownImpl({
 	// (CodeBlock, inline code, links) read `highlight`/`highlightActive` here.
 	const highlightComponents: Components = highlight ? makeHighlightComponents(highlight, !!highlightActive) : {};
 	return (
-		<div className={cn("md", className)}>
+		<div className={cn("md select-text", className)}>
 			<ReactMarkdown
 				remarkPlugins={[remarkGfm]}
 				components={{
@@ -125,7 +125,7 @@ function MarkdownImpl({
 							// (used when running as a plain web app).
 						};
 						return (
-							<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-accent underline underline-offset-2 hover:opacity-80">
+							<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-link underline underline-offset-2 hover:opacity-80">
 								{highlight ? highlightNodes(c as ReactNode, highlight, !!highlightActive) : (c as ReactNode)}
 							</a>
 						);

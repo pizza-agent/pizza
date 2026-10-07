@@ -33,8 +33,9 @@ import {
 	type ProviderInfo,
 } from "@/lib/transport";
 import type { RpcSessionState } from "@/lib/types";
+import { PluginsContent } from "@/views/PluginsView";
 import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, RefreshCw, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
-import { setTheme, useTheme, type Theme } from "@/lib/theme";
+import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
 	DEFAULT_LANGUAGE,
@@ -84,7 +85,9 @@ function SettingsSection({ title, description, children }: { title: string; desc
 	return (
 		<section className="mb-8">
 			<h2 className="mb-3 text-[15px] font-semibold tracking-tight text-fg">{title}</h2>
-			<div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-surface">
+			{/* No overflow-hidden: PixelSelect popups render inline and must
+			    not be clipped at the rounded corners. */}
+			<div className="divide-y divide-border/60 rounded-xl border border-border bg-surface">
 				{children}
 			</div>
 			{description && <p className="mt-2 text-xs text-muted">{description}</p>}
@@ -107,7 +110,11 @@ function SettingsRow({ title, description, children }: { title: string; descript
 
 function GeneralPage() {
 	const { t, i18n } = useTranslation();
-	const theme = useTheme();
+	const themeId = useThemeId();
+	const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
+	useEffect(() => {
+		refreshCustomThemes().then(setCustomThemes).catch(() => {});
+	}, []);
 	// Approval policy (two states: "off" auto-runs everything; "auto"/gated
 	// asks for unknown tools and dangerous commands).
 	const [approvalPolicy, setApprovalPolicyState] = useState<ApprovalPolicy>("auto");
@@ -155,12 +162,13 @@ function GeneralPage() {
 				<SettingsRow title={t("settings.general.themeLabel")}>
 					<div className="w-36">
 						<PixelSelect
-							value={theme}
+							value={themeId}
 							options={[
 								{ value: "light", label: t("theme.light") },
 								{ value: "dark", label: t("theme.dark") },
+								...customThemes.map((ct) => ({ value: ct.name, label: ct.label })),
 							]}
-							onChange={(value) => setTheme(value as Theme)}
+							onChange={(value) => setTheme(value)}
 							size="sm"
 							tone="cyan"
 						/>
@@ -422,7 +430,7 @@ function AccountLoginDialog({
 				</div>
 				{authUrl && (
 					<div className="mb-3 space-y-1">
-						<a href={authUrl} target="_blank" rel="noreferrer" className="break-all text-xs text-accent underline">
+						<a href={authUrl} target="_blank" rel="noreferrer" className="break-all text-xs text-link underline">
 							{authUrl}
 						</a>
 						{instructions && <p className="text-xs text-muted">{instructions}</p>}
@@ -842,7 +850,7 @@ function AddProviderInline({
 					/>
 					{error && <p className="text-xs text-danger">{error}</p>}
 					{testState.status !== "idle" && (
-						<div className="rounded-md border border-border bg-[#0f1725] px-3 py-2 font-mono text-xs leading-6">
+						<div className="select-text rounded-md border border-border bg-[#0f1725] px-3 py-2 font-mono text-xs leading-6">
 							<div className="text-sky-300">{t("settings.provider.testStart", { name: customName.trim() || t("settings.provider.customProvider") })}</div>
 							<div className="text-slate-300">{t("settings.provider.testAuthType")}</div>
 							<div className={testState.status === "error" ? "text-danger" : "text-success"}>
@@ -1088,7 +1096,8 @@ function SetupBanner({ state }: { state: RpcSessionState | null }) {
 	);
 }
 
-type SettingsPageId = "general" | "scheduler" | "updates" | "provider";
+type SettingsPageId = "general" | "scheduler" | "updates" | "provider" | "plugins";
+const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "scheduler", "updates", "provider", "plugins"];
 
 export default function SettingsView({
 	state,
@@ -1106,8 +1115,12 @@ export default function SettingsView({
 	// First-run / unconfigured-key setup mode is signaled by ?setup=true in the
 	// URL. App.tsx redirects there when the sidecar reports state.model === undefined.
 	const isSetupMode = new URLSearchParams(location.search).get("setup") === "true";
-	// Codex-style left nav switches the right-hand page (no tab strip).
-	const [page, setPage] = useState<SettingsPageId>(isSetupMode ? "provider" : "general");
+	// The selected page lives in the URL (?page=) so refreshes, deep links and
+	// the top bar's back/forward buttons all agree on what is shown.
+	const pageParam = new URLSearchParams(location.search).get("page");
+	const page: SettingsPageId = SETTINGS_PAGE_IDS.includes(pageParam as SettingsPageId)
+		? (pageParam as SettingsPageId)
+		: isSetupMode ? "provider" : "general";
 	const [navSearch, setNavSearch] = useState("");
 	const [restarting, setRestarting] = useState(false);
 	const [restartError, setRestartError] = useState("");
@@ -1170,13 +1183,14 @@ export default function SettingsView({
 		page === "general" ? t("settings.nav.general")
 		: page === "scheduler" ? t("settings.nav.scheduler")
 		: page === "updates" ? t("settings.update.title")
+		: page === "plugins" ? t("layout.plugins")
 		: t("settings.tabs.provider");
 
 	return (
 		<div className="flex h-full flex-col">
 			{/* Top bar — sits next to the sidebar collapse button; holds back/forward nav */}
 			<div
-				data-tauri-drag-region
+				data-tauri-drag-region="deep"
 				className={cn(
 					"flex h-11 shrink-0 items-center gap-1 border-b border-border bg-surface/80 pr-6 backdrop-blur transition-[padding] duration-150",
 					macPad ? "pl-[76px]" : "pl-6",
@@ -1184,6 +1198,7 @@ export default function SettingsView({
 			>
 				<button
 					data-no-drag
+					data-tauri-drag-region="false"
 					type="button"
 					onClick={() => navigate(-1)}
 					disabled={!canBack}
@@ -1197,6 +1212,7 @@ export default function SettingsView({
 				</button>
 				<button
 					data-no-drag
+					data-tauri-drag-region="false"
 					type="button"
 					onClick={() => navigate(1)}
 					disabled={!canForward}
@@ -1239,7 +1255,12 @@ export default function SettingsView({
 									<button
 										key={item.id}
 										type="button"
-										onClick={() => (item.id === "plugins" ? navigate("/plugins") : setPage(item.id as SettingsPageId))}
+										onClick={() => {
+											if (item.id === page) return;
+											const next = new URLSearchParams(location.search);
+											next.set("page", item.id);
+											navigate({ pathname: "/settings", search: next.toString() });
+										}}
 										className={cn(
 											"flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
 											active ? "bg-surface-2 font-medium text-fg" : "text-fg/80 hover:bg-surface-2/60",
@@ -1255,9 +1276,10 @@ export default function SettingsView({
 					))}
 				</aside>
 
-				{/* Page content — narrow centered column like Codex settings */}
+				{/* Page content — centered column; the plugins page keeps the
+				    wider card-grid layout it was designed for. */}
 				<div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
-					<div className="mx-auto max-w-2xl px-10 pb-16 pt-8">
+					<div className={cn("mx-auto px-10 pb-16 pt-8", page === "plugins" ? "max-w-5xl" : "max-w-4xl")}>
 						<h1 className="mb-6 text-xl font-semibold tracking-tight text-fg">
 							{isSetupMode ? t("settings.setup.title") : pageTitle}
 						</h1>
@@ -1280,6 +1302,7 @@ export default function SettingsView({
 						{page === "scheduler" && <SchedulerPage />}
 						{page === "updates" && <UpdatesPage />}
 						{page === "provider" && <ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />}
+						{page === "plugins" && <PluginsContent />}
 					</div>
 				</div>
 			</div>

@@ -161,7 +161,7 @@ function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: 
 		<div className="relative">
 			<pre
 				className={cn(
-					"overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed",
+					"select-text overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2/40 px-3 py-2 font-mono text-xs leading-relaxed",
 					isError ? "text-danger" : "text-muted",
 				)}
 			>
@@ -198,7 +198,7 @@ function Thinking({ text, streaming, highlight, highlightActive }: { text: strin
 			</button>
 			{open && (
 				<div className="mt-2 border-l-2 border-border pl-3 text-xs italic leading-relaxed text-muted">
-					<div className="whitespace-pre-wrap break-words">{highlight ? highlightText(text, highlight, highlightActive) : text}</div>
+					<div className="select-text whitespace-pre-wrap break-words">{highlight ? highlightText(text, highlight, highlightActive) : text}</div>
 				</div>
 			)}
 		</div>
@@ -445,7 +445,7 @@ const ToolCard = memo(function ToolCard({
 					<div className="space-y-2 px-3.5 pb-3">
 						{command && (
 							<div className="font-mono text-xs leading-relaxed text-fg/90">
-								<span className="whitespace-pre-wrap break-words">{highlight ? highlightText(commandShown, highlight, highlightActive) : commandShown}</span>
+								<span className="select-text whitespace-pre-wrap break-words">{highlight ? highlightText(commandShown, highlight, highlightActive) : commandShown}</span>
 								{commandClamped && (
 									<button
 										type="button"
@@ -552,7 +552,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 		>
 			<div
 				className={cn(
-					"max-w-[85%] rounded-3xl bg-accent px-4 py-2.5 text-accent-fg",
+					"max-w-[85%] rounded-2xl bg-surface-2 px-4 py-2.5 text-fg",
 					item.queued && "opacity-60",
 				)}
 			>
@@ -588,7 +588,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 					</div>
 				)}
 				{item.text && (
-					<div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+					<div className="select-text whitespace-pre-wrap break-words text-sm leading-relaxed">
 						{highlight ? highlightText(item.text, highlight, highlightActive) : item.text}
 					</div>
 				)}
@@ -685,7 +685,7 @@ const AgentMessageCard = memo(function AgentMessageCard({
 						</span>
 					)}
 				</div>
-				<div className="whitespace-pre-wrap break-words px-4 py-3 text-sm leading-relaxed text-fg">
+				<div className="select-text whitespace-pre-wrap break-words px-4 py-3 text-sm leading-relaxed text-fg">
 					{highlight ? highlightText(am.body, highlight, highlightActive) : am.body}
 				</div>
 				{item.gatewayTrailer && (

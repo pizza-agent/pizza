@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, EllipsisVertical, X } from "lucide-react";
 import {
@@ -346,7 +347,7 @@ export function MiniSwitch({
 }) {
 	const onColor =
 		tone === "accent"
-			? "bg-[#3478f6] dark:bg-[#409cff]"
+			? "bg-[var(--accent)]"
 			: "bg-success";
 	return (
 		<button
@@ -357,7 +358,7 @@ export function MiniSwitch({
 			disabled={disabled}
 			onClick={() => onChange(!checked)}
 			className={cn(
-				"relative inline-flex h-[22px] w-10 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3478f6]/40",
+				"relative inline-flex h-[22px] w-10 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/40",
 				checked ? onColor : "bg-surface-2",
 				disabled && "cursor-not-allowed opacity-50",
 			)}
@@ -445,7 +446,10 @@ export function ContextMenu({ x, y, items, onDismiss }: ContextMenuProps) {
 	const clampedY =
 		y + estHeight <= window.innerHeight - 8 ? y : Math.max(8, y - estHeight);
 
-	return (
+	// Portal to <body>: the menu is fixed-positioned in viewport coords, and
+	// rendering it inline would trap its z-index inside ancestor stacking
+	// contexts (e.g. @container cards), letting later siblings paint over it.
+	return createPortal(
 		<div
 			className={cn("fixed min-w-52 rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}
 			style={{ left: clampedX, top: clampedY }}
@@ -466,7 +470,8 @@ export function ContextMenu({ x, y, items, onDismiss }: ContextMenuProps) {
 					/>
 				)
 			))}
-		</div>
+		</div>,
+		document.body,
 	);
 }
 
