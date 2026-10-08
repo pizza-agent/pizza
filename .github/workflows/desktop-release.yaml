@@ -165,16 +165,29 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Extract release body
-        run: |
-          awk '/^## Quick Start$/{flag=1} /^---$/{flag=0} flag' README.md > RELEASE_BODY.md
-          cat RELEASE_BODY.md
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
-          body_path: RELEASE_BODY.md
+          body: |
+            ## Quick Start
+
+            ### Desktop
+
+            Download the installer for your platform (macOS / Linux / Windows), install and launch.
+
+            **For macOS users**: Since the app is unsigned, you may see "Pizza.app is damaged and can't be opened." Run the following command in Terminal to fix this:
+
+            ```bash
+            xattr -cr /Applications/Pizza.app
+            ```
+
+            ### CLI
+
+            ```bash
+            npm install -g @tomsun28/pizza
+            pizza
+            ```
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.deb
