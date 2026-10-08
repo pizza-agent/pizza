@@ -12,6 +12,7 @@ import type { SessionDescriptor, SessionSourceRef, BuildContextOptions, BuiltCon
 import type { TimelineEntry, TimelineEntryKind } from "./timeline-projection.js";
 import { eventsToMessages } from "./event-to-message.js";
 import { sanitizeToolPairing } from "./context-sanitizer.js";
+import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolResultEvents } from "../compaction/tool-result-masking.js";
 
 // ============================================================================
 // Constants
@@ -95,7 +96,7 @@ export class SessionProjection {
 		if (this.descriptor.summary_event_id) {
 			const summaryAlreadyInRange = events.some((event) => event.event_id === this.descriptor.summary_event_id);
 			const summaryEvent = this.store.get(this.descriptor.summary_event_id);
-			if (!summaryAlreadyInRange && summaryEvent && summaryEvent.type === "COMPACTION_END") {
+			if (!summaryAlreadyInRange && summaryEvent && summaryEvent.type === "COMPACTION_END" && !isMaskCompaction(summaryEvent)) {
 				const summaryPayload = summaryEvent.payload as {
 					summary: string;
 					tokens_before: number;
@@ -216,21 +217,32 @@ export class SessionProjection {
 
 	private _applyCompactionBoundary(events: EventBase[]): EventBase[] {
 		let latestCompaction: EventBase | undefined;
+		let maskBeforeSequence = -1;
+		let maskMinChars = DEFAULT_MASK_MIN_CHARS;
 		for (const event of events) {
-			if (event.type === "COMPACTION_END") {
+			if (event.type !== "COMPACTION_END") continue;
+			if (!isMaskCompaction(event)) {
 				latestCompaction = event;
+				continue;
 			}
+			// Masking is monotonic: furthest boundary + smallest min-chars, so a later
+			// mask never un-masks results an earlier one cleared.
+			const payload = event.payload as { mask_before_event_id?: string; mask_min_chars?: number };
+			const boundary = payload.mask_before_event_id ? this.store.get(payload.mask_before_event_id) : undefined;
+			if (!boundary) continue;
+			const minChars = payload.mask_min_chars ?? DEFAULT_MASK_MIN_CHARS;
+			maskMinChars = maskBeforeSequence < 0 ? minChars : Math.min(maskMinChars, minChars);
+			maskBeforeSequence = Math.max(maskBeforeSequence, boundary.sequence);
 		}
-		if (!latestCompaction) return events;
 
-		const payload = latestCompaction.payload as { first_kept_event_id?: string };
-		const firstKept = payload.first_kept_event_id ? this.store.get(payload.first_kept_event_id) : undefined;
-		const firstKeptSequence = firstKept?.sequence ?? latestCompaction.sequence + 1;
-
-		return [
-			latestCompaction,
-			...events.filter((event) => event.type !== "COMPACTION_END" && event.sequence >= firstKeptSequence),
-		];
+		let result = events.filter((event) => event.type !== "COMPACTION_END");
+		if (latestCompaction) {
+			const payload = latestCompaction.payload as { first_kept_event_id?: string };
+			const firstKept = payload.first_kept_event_id ? this.store.get(payload.first_kept_event_id) : undefined;
+			const firstKeptSequence = firstKept?.sequence ?? latestCompaction.sequence + 1;
+			result = [latestCompaction, ...result.filter((event) => event.sequence >= firstKeptSequence)];
+		}
+		return maskBeforeSequence >= 0 ? maskToolResultEvents(result, maskBeforeSequence, maskMinChars) : result;
 	}
 
 	private _summarizeEvent(event: EventBase): string {

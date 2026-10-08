@@ -458,6 +458,11 @@ export interface CompactionEndEvent extends EventBase {
 		first_kept_event_id: string;
 		tokens_before: number;
 		tokens_after?: number;
+		/** "summary" (default) or "mask" (tool results replaced, nothing dropped) */
+		mode?: "summary" | "mask";
+		mask_before_event_id?: string;
+		mask_min_chars?: number;
+		masked_count?: number;
 		/** Structured memory nodes extracted */
 		memory_nodes?: import("./types.js").MemoryNodeRef[];
 	};

@@ -307,6 +307,11 @@ export class EventStoreExtensionSessionManager implements ExtensionSessionManage
 			return entry;
 		}
 
+		// Mask-mode compactions drop nothing and carry no summary — not a legacy CompactionEntry.
+		if (event.type === "COMPACTION_END" && (event.payload as { mode?: string }).mode === "mask") {
+			return undefined;
+		}
+
 		if (event.type === "COMPACTION_END") {
 			const payload = event.payload as { summary: string; first_kept_event_id: string; tokens_before: number };
 			const entry: CompactionEntry = {

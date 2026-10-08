@@ -487,12 +487,7 @@ export class EventSourcedRuntime {
 			this.store.append({
 				actor_id: "compactor",
 				type: "COMPACTION_END",
-				payload: {
-					summary: outcome.summary,
-					first_kept_event_id: outcome.first_kept_event_id,
-					tokens_before: outcome.tokens_before,
-					tokens_after: outcome.tokens_after,
-				},
+				payload: { ...outcome },
 				caused_by: causedBy,
 			});
 		} catch (err) {
