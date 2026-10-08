@@ -752,18 +752,21 @@ mod win_pipe {
 	use std::time::{Duration, Instant};
 	use windows_sys::Win32::Foundation::{
 		CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_IO_PENDING, ERROR_OPERATION_ABORTED,
-		ERROR_PIPE_NOT_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
-		WAIT_OBJECT_0,
+		ERROR_PIPE_BUSY, ERROR_PIPE_NOT_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE,
+		INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 	};
 	use windows_sys::Win32::Storage::FileSystem::{
 		CreateFileW, ReadFile, WriteFile, FILE_FLAG_OVERLAPPED, FILE_SHARE_READ, FILE_SHARE_WRITE,
 		OPEN_EXISTING,
 	};
+	use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
 	use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 	use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
 	/// How often a blocked operation re-checks `closed` / its deadline.
 	const POLL_SLICE_MS: u32 = 250;
+	/// How long `connect` waits for a free instance of a busy pipe.
+	const BUSY_WAIT: Duration = Duration::from_secs(2);
 
 	struct OwnedHandle(HANDLE);
 	// SAFETY: a Win32 HANDLE is a process-wide kernel object reference;
@@ -797,24 +800,37 @@ mod win_pipe {
 			write_timeout: Option<Duration>,
 		) -> Result<Self, String> {
 			let wide: Vec<u16> = pipe_name.encode_utf16().chain(Some(0)).collect();
-			let handle = unsafe {
-				CreateFileW(
-					wide.as_ptr(),
-					GENERIC_READ | GENERIC_WRITE,
-					FILE_SHARE_READ | FILE_SHARE_WRITE,
-					std::ptr::null(),
-					OPEN_EXISTING,
-					FILE_FLAG_OVERLAPPED,
-					0,
-				)
-			};
-			if handle == INVALID_HANDLE_VALUE {
+			let busy_deadline = Instant::now() + BUSY_WAIT;
+			let handle = loop {
+				let handle = unsafe {
+					CreateFileW(
+						wide.as_ptr(),
+						GENERIC_READ | GENERIC_WRITE,
+						FILE_SHARE_READ | FILE_SHARE_WRITE,
+						std::ptr::null(),
+						OPEN_EXISTING,
+						FILE_FLAG_OVERLAPPED,
+						0,
+					)
+				};
+				if handle != INVALID_HANDLE_VALUE {
+					break handle;
+				}
+				let err = io::Error::last_os_error();
+				// Every server instance is momentarily taken (connection
+				// burst): the gateway is alive. Treating this as "not
+				// running" made ensure_gateway spawn a duplicate daemon.
+				if err.raw_os_error() == Some(ERROR_PIPE_BUSY as i32)
+					&& Instant::now() < busy_deadline
+				{
+					unsafe { WaitNamedPipeW(wide.as_ptr(), POLL_SLICE_MS) };
+					continue;
+				}
 				return Err(format!(
 					"Failed to connect to gateway pipe {}: {}",
-					pipe_name,
-					io::Error::last_os_error()
+					pipe_name, err
 				));
-			}
+			};
 			Ok(Self {
 				inner: Arc::new(Inner {
 					handle: OwnedHandle(handle),

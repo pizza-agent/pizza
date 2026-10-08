@@ -107,6 +107,25 @@ describe("gateway server", () => {
 		await expect(sendAndWait(socketPath, { type: "ping" })).rejects.toThrow();
 	});
 
+	it("a second gateway on a live socket reports duplicate and never steals it", async () => {
+		const socketPath = uniqueSocketPath();
+		sockets.push(socketPath);
+		server = createGatewayServer({ socketPath, agentDir: "/tmp/nonexistent-agent" });
+		await server.start();
+
+		const second = createGatewayServer({ socketPath, agentDir: "/tmp/nonexistent-agent" });
+		const events: string[] = [];
+		second.on("duplicate", () => events.push("duplicate"));
+		second.on("listening", () => events.push("listening"));
+		await second.start();
+		expect(events).toEqual(["duplicate"]);
+
+		// Stopping the duplicate must not tear down the incumbent's socket.
+		await second.stop();
+		const response = await sendAndWait(socketPath, { type: "ping" });
+		expect(JSON.parse(response)).toEqual({ type: "pong" });
+	});
+
 	it("restricts the socket to owner-only permissions (0600)", async () => {
 		if (platform() === "win32") return; // named pipes use ACLs
 		const socketPath = uniqueSocketPath();

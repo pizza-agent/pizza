@@ -232,6 +232,17 @@ fn resolve_pizza_command(app: &AppHandle) -> (String, Vec<String>) {
 	)
 }
 
+/// The gateway daemon runs the same executable as the sidecar, minus the
+/// sidecar's `--mode rpc` (ensure_gateway appends `--mode gateway`). Leaving
+/// it in produced `pizza --mode rpc --mode gateway`, which only worked
+/// because the last `--mode` happens to win.
+fn gateway_command((program, mut args): (String, Vec<String>)) -> (String, Vec<String>) {
+	if args.ends_with(&["--mode".to_string(), "rpc".to_string()]) {
+		args.truncate(args.len() - 2);
+	}
+	(program, args)
+}
+
 /// Sidecar entry: the process + which windows are using it.
 struct SidecarEntry {
 	child: Child,
@@ -1655,22 +1666,27 @@ async fn init_sidecar_via_gateway(
 
 	let socket = gateway_channel::gateway_socket_path()
 		.ok_or_else(|| "HOME not set; cannot resolve gateway socket".to_string())?;
-	let (program, args) = resolve_pizza_command(&app);
-	let socket_for_blocking = socket.clone();
-	let program_for_blocking = program.clone();
-	let args_for_blocking = args.clone();
-	tauri::async_runtime::spawn_blocking(move || {
+	let (program, args) = gateway_command(resolve_pizza_command(&app));
+	let cwd_for_blocking = cwd.clone();
+	// ensure_gateway, connect and attach all block (attach waits up to 15s
+	// for attach_ok): keep them off the async runtime's worker threads.
+	let (channel, resolved_cwd) = tauri::async_runtime::spawn_blocking(move || {
 		gateway_channel::ensure_gateway(
-			&socket_for_blocking,
-			(&program_for_blocking, &args_for_blocking),
+			&socket,
+			(&program, &args),
 			Some(env!("CARGO_PKG_VERSION")),
-		)
+		)?;
+		let channel = gateway_channel::GatewayChannel::connect(&socket)?;
+		match channel.attach(&cwd_for_blocking) {
+			Ok(resolved) => Ok((channel, resolved)),
+			Err(e) => {
+				channel.close();
+				Err(e)
+			}
+		}
 	})
 	.await
 	.map_err(|e| format!("blocking task failed: {e}"))??;
-
-	let channel = gateway_channel::GatewayChannel::connect(&socket)?;
-	let resolved_cwd = channel.attach(&cwd)?;
 	log_file(&format!(
 		"init_sidecar_via_gateway: attached resolved={}",
 		resolved_cwd
@@ -3653,6 +3669,28 @@ mod tests {
 		} else {
 			assert_eq!(normalized, "C:/Users/Tom/.pizza/main");
 		}
+	}
+
+	#[test]
+	fn gateway_command_strips_sidecar_mode() {
+		let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+		assert_eq!(
+			gateway_command(("pizza".into(), s(&["--mode", "rpc"]))),
+			("pizza".to_string(), vec![])
+		);
+		assert_eq!(
+			gateway_command((
+				"node".into(),
+				s(&["--loader", "l.mjs", "cli.js", "--mode", "rpc"])
+			))
+			.1,
+			s(&["--loader", "l.mjs", "cli.js"])
+		);
+		// Anything else is passed through untouched.
+		assert_eq!(
+			gateway_command(("pizza".into(), s(&["--verbose"]))).1,
+			s(&["--verbose"])
+		);
 	}
 
 	#[test]
