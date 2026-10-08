@@ -26,7 +26,13 @@ windows-sys = { version = "0.52", features = [
 	"Win32_Foundation",
 	"Win32_Security",
 	"Win32_Storage_FileSystem",
+	"Win32_System_IO",
+	"Win32_System_Threading",
 ] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Fake named-pipe gateway server in gateway_channel's Windows tests.
+windows-sys = { version = "0.52", features = ["Win32_System_Pipes"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

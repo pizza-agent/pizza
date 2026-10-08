@@ -95,3 +95,40 @@ jobs:
         run: cargo fmt --check
       - name: Check compilation
         run: cargo check
+
+  desktop-windows:
+    # The gateway channel's named-pipe transport is `#[cfg(windows)]` and is
+    # neither compiled nor tested by the Linux job above.
+    name: Desktop (Windows tests)
+    runs-on: windows-2022
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v5
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/target
+          key: cargo-ci-windows-${{ hashFiles('apps/desktop/Cargo.lock') }}
+          restore-keys: cargo-ci-windows-
+      - name: Install root dependencies
+        # Needed for shx (used by prepare-desktop-resources script).
+        run: npm ci
+        working-directory: .
+      - name: Prepare placeholder resources
+        run: npm run prepare-desktop-resources
+        working-directory: .
+      - name: Run tests
+        run: cargo test

@@ -18,8 +18,10 @@ use std::io::{BufRead, BufReader, Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -75,6 +77,11 @@ pub enum ChannelMessage {
 
 type PendingMap = Arc<Mutex<HashMap<String, Arc<Mutex<Option<Value>>>>>>;
 
+/// Upper bound for a single channel write. A write only blocks when the
+/// gateway stops draining its end of the socket/pipe; past this the
+/// connection is considered dead instead of wedging the caller forever.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// A channel connection to the gateway. Cheap to clone — the underlying socket
 /// and reader thread are shared via Arc. Each clone is the same connection;
 /// use one per desktop process (the gateway multiplexes many workspaces).
@@ -84,6 +91,11 @@ pub struct GatewayChannel {
 	pending: PendingMap,
 	/// Inbox for non-response messages (events, attach_ok, list_result, error).
 	inbox: Arc<Mutex<Vec<ChannelMessage>>>,
+	/// False once the reader hit EOF or the connection was closed/corrupted.
+	alive: Arc<AtomicBool>,
+	/// Tears the connection down so the blocked reader thread exits (and the
+	/// gateway sees the disconnect) instead of leaking a zombie subscriber.
+	closer: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl GatewayChannel {
@@ -102,23 +114,37 @@ impl GatewayChannel {
 		stream
 			.set_nonblocking(false)
 			.map_err(|e| format!("set_nonblocking failed: {e}"))?;
+		stream
+			.set_write_timeout(Some(WRITE_TIMEOUT))
+			.map_err(|e| format!("set_write_timeout failed: {e}"))?;
 		let write_stream = stream
 			.try_clone()
 			.map_err(|e| format!("clone stream: {e}"))?;
+		let close_stream = stream
+			.try_clone()
+			.map_err(|e| format!("clone stream: {e}"))?;
 		let write: Box<dyn Write + Send> = Box::new(write_stream);
-		Self::from_streams(stream, write)
+		Self::from_streams(
+			stream,
+			write,
+			Arc::new(move || {
+				let _ = close_stream.shutdown(std::net::Shutdown::Both);
+			}),
+		)
 	}
 
-	/// Connect to the gateway named pipe (Windows). Spawns the same background
-	/// reader thread as the Unix path — a `File` over a duplicated pipe handle
-	/// implements `Read`/`Write`, so the JSONL dispatch logic is shared.
+	/// Connect to the gateway named pipe (Windows). The pipe is opened for
+	/// OVERLAPPED I/O (see `win_pipe`): with a synchronous handle Windows
+	/// serializes every read and write on the shared file object, so the
+	/// reader thread's pending `ReadFile` would block each `WriteFile` until
+	/// the gateway sent something — a deadlock right after attach.
 	#[cfg(windows)]
 	pub fn connect(socket_path: &PathBuf) -> Result<Self, String> {
 		let pipe_name = socket_path.to_string_lossy().to_string();
-		let file = windows_connect_pipe(&pipe_name)?;
-		let write_half = file.try_clone().map_err(|e| format!("clone pipe: {e}"))?;
-		let write: Box<dyn Write + Send> = Box::new(write_half);
-		Self::from_streams(file, write)
+		let pipe = win_pipe::PipeStream::connect(&pipe_name, None, Some(WRITE_TIMEOUT))?;
+		let write: Box<dyn Write + Send> = Box::new(pipe.clone());
+		let closer = pipe.clone();
+		Self::from_streams(pipe, write, Arc::new(move || closer.close()))
 	}
 
 	/// Build a channel from its read + write halves and spawn the shared
@@ -128,12 +154,15 @@ impl GatewayChannel {
 	fn from_streams<R: Read + Send + 'static>(
 		read: R,
 		write: Box<dyn Write + Send>,
+		closer: Arc<dyn Fn() + Send + Sync>,
 	) -> Result<Self, String> {
 		let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
 		let inbox: Arc<Mutex<Vec<ChannelMessage>>> = Arc::new(Mutex::new(Vec::new()));
+		let alive = Arc::new(AtomicBool::new(true));
 
 		let reader_pending = Arc::clone(&pending);
 		let reader_inbox = Arc::clone(&inbox);
+		let reader_alive = Arc::clone(&alive);
 		thread::spawn(move || {
 			let reader = BufReader::new(read);
 			for line in reader.lines() {
@@ -155,6 +184,7 @@ impl GatewayChannel {
 				}
 			}
 			// EOF: notify + release any waiters so they don't hang forever.
+			reader_alive.store(false, Ordering::SeqCst);
 			reader_inbox
 				.lock()
 				.unwrap()
@@ -172,7 +202,23 @@ impl GatewayChannel {
 			write: Arc::new(Mutex::new(write)),
 			pending,
 			inbox,
+			alive,
+			closer,
 		})
+	}
+
+	/// False once the connection is gone (EOF, closed, or a failed write left
+	/// the JSONL framing in an unknown state). Callers must not reuse it.
+	pub fn is_alive(&self) -> bool {
+		self.alive.load(Ordering::SeqCst)
+	}
+
+	/// Close the connection. The reader thread then hits EOF/error, pushes
+	/// `Disconnected` and releases pending waiters, so the bridge's normal
+	/// disconnect path (evict + `sidecar_exit`) takes over.
+	pub fn close(&self) {
+		self.alive.store(false, Ordering::SeqCst);
+		(self.closer)();
 	}
 
 	/// Route one parsed gateway message to its waiter (response) or the inbox.
@@ -238,15 +284,22 @@ impl GatewayChannel {
 	}
 
 	fn write_line(&self, obj: &Value) -> Result<(), String> {
-		let line = serde_json::to_string(obj).map_err(|e| e.to_string())?;
+		if !self.is_alive() {
+			return Err("gateway connection closed".into());
+		}
+		let mut line = serde_json::to_string(obj).map_err(|e| e.to_string())?;
+		line.push('\n');
 		let mut stream = self.write.lock().map_err(|e| e.to_string())?;
-		stream
+		let result = stream
 			.write_all(line.as_bytes())
-			.map_err(|e| format!("write: {e}"))?;
-		stream
-			.write_all(b"\n")
-			.map_err(|e| format!("write nl: {e}"))?;
-		stream.flush().map_err(|e| format!("flush: {e}"))?;
+			.and_then(|_| stream.flush());
+		drop(stream);
+		if let Err(e) = result {
+			// A failed/timed-out write may have sent a partial line, so the
+			// stream framing is unrecoverable: kill the connection.
+			self.close();
+			return Err(format!("gateway write failed: {e}"));
+		}
 		Ok(())
 	}
 
@@ -279,10 +332,16 @@ impl GatewayChannel {
 			.lock()
 			.unwrap()
 			.insert(id.clone(), Arc::clone(&slot));
-		self.write_line(&json!({ "type": "rpc", "workspace": workspace, "frame": frame }))?;
+		// The deadline covers the write too (bounded by WRITE_TIMEOUT).
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+		if let Err(e) =
+			self.write_line(&json!({ "type": "rpc", "workspace": workspace, "frame": frame }))
+		{
+			self.pending.lock().unwrap().remove(&id);
+			return Err(e);
+		}
 		// Spin-wait on the slot. The reader thread fills it (or a disconnect
 		// sentinel). Matches the blocking nature of the sidecar reader path.
-		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
 		loop {
 			if let Some(value) = slot.lock().unwrap().take() {
 				self.pending.lock().unwrap().remove(&id);
@@ -651,8 +710,9 @@ fn open_gateway_stream(socket_path: &PathBuf) -> Result<Box<dyn ReadWrite + Send
 #[cfg(windows)]
 fn open_gateway_stream(socket_path: &PathBuf) -> Result<Box<dyn ReadWrite + Send>, String> {
 	let pipe_name = socket_path.to_string_lossy().to_string();
-	let file = windows_connect_pipe(&pipe_name)?;
-	Ok(Box::new(file))
+	let timeout = Some(Duration::from_secs(2));
+	let pipe = win_pipe::PipeStream::connect(&pipe_name, timeout, timeout)?;
+	Ok(Box::new(pipe))
 }
 
 /// Send `{"type":"ping"}` and check for a `pong` reply on a single stream.
@@ -670,38 +730,203 @@ fn ping_with_stream(mut stream: Box<dyn ReadWrite + Send>) -> Result<bool, Strin
 	Ok(parsed.get("type").and_then(|t| t.as_str()) == Some("pong"))
 }
 
-/// Connect to a Windows named pipe (e.g. `\\.\pipe\gateway`) and return it as
-/// a `File`, which implements `Read`/`Write`/`try_clone` just like `UnixStream`.
+/// Windows named-pipe client using OVERLAPPED I/O.
+///
+/// Why not `std::fs::File` + `try_clone()`: a handle opened without
+/// `FILE_FLAG_OVERLAPPED` is a synchronous file object, and the I/O manager
+/// serializes all synchronous I/O on one file object. `try_clone`
+/// (DuplicateHandle) shares that object, so the channel's reader thread —
+/// parked in `ReadFile` waiting for gateway output — blocks every
+/// `WriteFile` from the request side. After `attach_ok` the gateway has
+/// nothing to say until it receives `get_state`, which can never be written:
+/// a permanent deadlock (the desktop "starting…" hang).
+///
+/// With overlapped I/O each operation gets its own `OVERLAPPED` + event, so a
+/// pending read and a write proceed independently. It also gives us real
+/// per-operation timeouts (`CancelIoEx`) and a race-free `close()`.
 #[cfg(windows)]
-fn windows_connect_pipe(pipe_name: &str) -> Result<std::fs::File, String> {
-	use std::os::windows::io::{FromRawHandle, RawHandle};
-	use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+mod win_pipe {
+	use std::io;
+	use std::sync::atomic::{AtomicBool, Ordering};
+	use std::sync::Arc;
+	use std::time::{Duration, Instant};
+	use windows_sys::Win32::Foundation::{
+		CloseHandle, GetLastError, ERROR_BROKEN_PIPE, ERROR_IO_PENDING, ERROR_OPERATION_ABORTED,
+		ERROR_PIPE_NOT_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
+		WAIT_OBJECT_0,
+	};
 	use windows_sys::Win32::Storage::FileSystem::{
-		CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+		CreateFileW, ReadFile, WriteFile, FILE_FLAG_OVERLAPPED, FILE_SHARE_READ, FILE_SHARE_WRITE,
+		OPEN_EXISTING,
 	};
-	let mut wide: Vec<u16> = pipe_name.encode_utf16().collect();
-	wide.push(0);
-	let handle = unsafe {
-		CreateFileW(
-			wide.as_ptr(),
-			GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ | FILE_SHARE_WRITE,
-			std::ptr::null(),
-			OPEN_EXISTING,
-			FILE_ATTRIBUTE_NORMAL,
-			0,
-		)
-	};
-	if handle == INVALID_HANDLE_VALUE {
-		return Err(format!(
-			"Failed to connect to gateway pipe {}: {}",
-			pipe_name,
-			std::io::Error::last_os_error()
-		));
+	use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+	use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+
+	/// How often a blocked operation re-checks `closed` / its deadline.
+	const POLL_SLICE_MS: u32 = 250;
+
+	struct OwnedHandle(HANDLE);
+	// SAFETY: a Win32 HANDLE is a process-wide kernel object reference;
+	// overlapped operations on it are thread-safe.
+	unsafe impl Send for OwnedHandle {}
+	unsafe impl Sync for OwnedHandle {}
+	impl Drop for OwnedHandle {
+		fn drop(&mut self) {
+			unsafe { CloseHandle(self.0) };
+		}
 	}
-	// SAFETY: CreateFileW returned a valid, owned HANDLE; wrapping it as a
-	// File transfers ownership (File::drop closes the handle).
-	Ok(unsafe { std::fs::File::from_raw_handle(handle as RawHandle) })
+
+	struct Inner {
+		handle: OwnedHandle,
+		closed: AtomicBool,
+	}
+
+	/// Cheap to clone; all clones share one pipe connection. The handle is
+	/// closed when the last clone drops.
+	#[derive(Clone)]
+	pub struct PipeStream {
+		inner: Arc<Inner>,
+		read_timeout: Option<Duration>,
+		write_timeout: Option<Duration>,
+	}
+
+	impl PipeStream {
+		pub fn connect(
+			pipe_name: &str,
+			read_timeout: Option<Duration>,
+			write_timeout: Option<Duration>,
+		) -> Result<Self, String> {
+			let wide: Vec<u16> = pipe_name.encode_utf16().chain(Some(0)).collect();
+			let handle = unsafe {
+				CreateFileW(
+					wide.as_ptr(),
+					GENERIC_READ | GENERIC_WRITE,
+					FILE_SHARE_READ | FILE_SHARE_WRITE,
+					std::ptr::null(),
+					OPEN_EXISTING,
+					FILE_FLAG_OVERLAPPED,
+					0,
+				)
+			};
+			if handle == INVALID_HANDLE_VALUE {
+				return Err(format!(
+					"Failed to connect to gateway pipe {}: {}",
+					pipe_name,
+					io::Error::last_os_error()
+				));
+			}
+			Ok(Self {
+				inner: Arc::new(Inner {
+					handle: OwnedHandle(handle),
+					closed: AtomicBool::new(false),
+				}),
+				read_timeout,
+				write_timeout,
+			})
+		}
+
+		/// Abort in-flight operations and make all future ones fail. Pending
+		/// waits notice within one poll slice even if no I/O was in flight at
+		/// the moment of the call.
+		pub fn close(&self) {
+			self.inner.closed.store(true, Ordering::SeqCst);
+			unsafe { CancelIoEx(self.inner.handle.0, std::ptr::null()) };
+		}
+
+		/// Start one overlapped operation via `start` and block until it
+		/// completes, times out, or the stream is closed. The OVERLAPPED and
+		/// buffer stay alive until the kernel is done with them: after a
+		/// cancel we still wait (bWait=TRUE) for the completion.
+		fn overlapped_io(
+			&self,
+			timeout: Option<Duration>,
+			start: impl FnOnce(HANDLE, *mut OVERLAPPED) -> i32,
+		) -> io::Result<usize> {
+			if self.inner.closed.load(Ordering::SeqCst) {
+				return Err(io::Error::new(io::ErrorKind::NotConnected, "pipe closed"));
+			}
+			let handle = self.inner.handle.0;
+			let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+			if event == 0 {
+				return Err(io::Error::last_os_error());
+			}
+			let event = OwnedHandle(event);
+			let mut ov: OVERLAPPED = unsafe { std::mem::zeroed() };
+			ov.hEvent = event.0;
+			if start(handle, &mut ov) == 0 {
+				let err = unsafe { GetLastError() };
+				if err != ERROR_IO_PENDING {
+					return Err(io::Error::from_raw_os_error(err as i32));
+				}
+			}
+			let deadline = timeout.map(|t| Instant::now() + t);
+			let mut timed_out = false;
+			loop {
+				if unsafe { WaitForSingleObject(event.0, POLL_SLICE_MS) } == WAIT_OBJECT_0 {
+					break;
+				}
+				let expired = deadline.is_some_and(|d| Instant::now() >= d);
+				if expired || self.inner.closed.load(Ordering::SeqCst) {
+					timed_out = expired;
+					unsafe { CancelIoEx(handle, &ov) };
+					break;
+				}
+			}
+			let mut n: u32 = 0;
+			if unsafe { GetOverlappedResult(handle, &ov, &mut n, 1) } == 0 {
+				let err = unsafe { GetLastError() };
+				return Err(match err {
+					ERROR_OPERATION_ABORTED if timed_out => {
+						io::Error::new(io::ErrorKind::TimedOut, "pipe operation timed out")
+					}
+					ERROR_OPERATION_ABORTED => {
+						io::Error::new(io::ErrorKind::NotConnected, "pipe closed")
+					}
+					_ => io::Error::from_raw_os_error(err as i32),
+				});
+			}
+			Ok(n as usize)
+		}
+	}
+
+	impl io::Read for PipeStream {
+		fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+			if buf.is_empty() {
+				return Ok(0);
+			}
+			let len = buf.len().min(u32::MAX as usize) as u32;
+			let ptr = buf.as_mut_ptr();
+			match self.overlapped_io(self.read_timeout, |h, ov| unsafe {
+				ReadFile(h, ptr, len, std::ptr::null_mut(), ov)
+			}) {
+				// The server closing its end is EOF, not an error.
+				Err(e)
+					if e.raw_os_error() == Some(ERROR_BROKEN_PIPE as i32)
+						|| e.raw_os_error() == Some(ERROR_PIPE_NOT_CONNECTED as i32) =>
+				{
+					Ok(0)
+				}
+				r => r,
+			}
+		}
+	}
+
+	impl io::Write for PipeStream {
+		fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+			if buf.is_empty() {
+				return Ok(0);
+			}
+			let len = buf.len().min(u32::MAX as usize) as u32;
+			let ptr = buf.as_ptr();
+			self.overlapped_io(self.write_timeout, |h, ov| unsafe {
+				WriteFile(h, ptr, len, std::ptr::null_mut(), ov)
+			})
+		}
+
+		fn flush(&mut self) -> io::Result<()> {
+			Ok(())
+		}
+	}
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -878,9 +1103,281 @@ mod tests {
 		}
 
 		#[test]
+		fn close_releases_reader_and_rejects_further_rpc() {
+			let sock = tmp_sock();
+			// A gateway that accepts but never answers.
+			let listener = UnixListener::bind(&sock).expect("bind");
+			thread::spawn(move || {
+				let _conn = listener.accept();
+				thread::sleep(std::time::Duration::from_secs(5));
+			});
+
+			let client = GatewayChannel::connect(&sock).expect("connect");
+			assert!(client.is_alive());
+			client.close();
+			assert!(!client.is_alive());
+
+			let started = std::time::Instant::now();
+			assert!(client
+				.rpc("/proj", json!({ "id": "r1", "type": "get_state" }))
+				.is_err());
+			assert!(started.elapsed() < std::time::Duration::from_secs(1));
+
+			// The reader thread must observe the shutdown and report it.
+			let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+			let mut disconnected = false;
+			while !disconnected && std::time::Instant::now() < deadline {
+				disconnected = client
+					.drain_events()
+					.iter()
+					.any(|m| matches!(m, ChannelMessage::Disconnected));
+				std::thread::sleep(std::time::Duration::from_millis(20));
+			}
+			assert!(disconnected, "reader should exit after close()");
+		}
+
+		#[test]
 		fn connect_error_on_missing_socket() {
 			let sock = tmp_sock();
 			assert!(GatewayChannel::connect(&sock).is_err());
+		}
+	}
+
+	/// Named-pipe tests for the Windows transport. The regression they guard
+	/// against is a deadlock (a write queued behind the reader's pending
+	/// read), so every client-side step runs under `within_deadline`: a
+	/// regression must FAIL, not hang CI.
+	#[cfg(windows)]
+	mod windows_live_tests {
+		use super::*;
+		use std::fs::File;
+		use std::os::windows::io::{FromRawHandle, RawHandle};
+		use std::sync::atomic::AtomicUsize;
+		use std::sync::mpsc;
+		use std::time::Instant;
+		use windows_sys::Win32::Foundation::{
+			GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE,
+		};
+		use windows_sys::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
+		use windows_sys::Win32::System::Pipes::{
+			ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
+		};
+
+		const TEST_DEADLINE: Duration = Duration::from_secs(10);
+
+		fn unique_pipe_name() -> String {
+			static N: AtomicUsize = AtomicUsize::new(0);
+			format!(
+				r"\\.\pipe\pizza-gw-test-{}-{}",
+				std::process::id(),
+				N.fetch_add(1, Ordering::SeqCst)
+			)
+		}
+
+		/// Create the server end now (so the client can connect right
+		/// away), then run `serve` with the connected pipe on a thread. The
+		/// server side uses plain synchronous I/O from a single thread,
+		/// like a well-behaved gateway would.
+		fn spawn_pipe_server(name: &str, buf_size: u32, serve: impl FnOnce(File) + Send + 'static) {
+			let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+			let handle = unsafe {
+				CreateNamedPipeW(
+					wide.as_ptr(),
+					PIPE_ACCESS_DUPLEX,
+					PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+					1,
+					buf_size,
+					buf_size,
+					0,
+					std::ptr::null(),
+				)
+			};
+			assert_ne!(handle, INVALID_HANDLE_VALUE, "CreateNamedPipeW failed");
+			thread::spawn(move || {
+				let ok = unsafe { ConnectNamedPipe(handle, std::ptr::null_mut()) };
+				if ok == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
+					return;
+				}
+				serve(unsafe { File::from_raw_handle(handle as RawHandle) });
+			});
+		}
+
+		fn within_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+			let (tx, rx) = mpsc::channel();
+			thread::spawn(move || {
+				let _ = tx.send(f());
+			});
+			match rx.recv_timeout(TEST_DEADLINE) {
+				Ok(v) => v,
+				Err(mpsc::RecvTimeoutError::Timeout) => {
+					panic!("pipe I/O did not complete within {TEST_DEADLINE:?} (deadlock?)")
+				}
+				Err(mpsc::RecvTimeoutError::Disconnected) => panic!("test body panicked"),
+			}
+		}
+
+		fn read_line(reader: &mut BufReader<File>) -> String {
+			let mut line = String::new();
+			reader.read_line(&mut line).expect("server read");
+			line
+		}
+
+		/// The root cause, at the transport level: a write must go through
+		/// while another thread is parked in a read on the same connection.
+		#[test]
+		fn write_proceeds_while_read_is_pending() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |file| {
+				let mut writer = file.try_clone().unwrap();
+				let mut reader = BufReader::new(file);
+				let line = read_line(&mut reader);
+				writer.write_all(format!("echo:{line}").as_bytes()).unwrap();
+				thread::sleep(Duration::from_secs(1));
+			});
+			let pipe = win_pipe::PipeStream::connect(&name, None, None).expect("connect");
+			let mut read_half = pipe.clone();
+			let reader = thread::spawn(move || {
+				let mut line = String::new();
+				BufReader::new(&mut read_half)
+					.read_line(&mut line)
+					.map(|_| line)
+			});
+			// Let the reader park in ReadFile before writing.
+			thread::sleep(Duration::from_millis(200));
+			let echoed = within_deadline(move || {
+				let mut w = pipe;
+				w.write_all(b"hello\n").expect("write");
+				reader.join().unwrap().expect("read")
+			});
+			assert_eq!(echoed, "echo:hello\n");
+		}
+
+		/// The original symptom end-to-end: attach_ok arrives, the gateway
+		/// then stays silent until it receives get_state.
+		#[test]
+		fn rpc_after_attach_does_not_deadlock() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |file| {
+				let mut writer = file.try_clone().unwrap();
+				let mut reader = BufReader::new(file);
+				assert!(read_line(&mut reader).contains(r#""type":"attach""#));
+				writeln!(writer, r#"{{"type":"attach_ok","workspace":"/proj"}}"#).unwrap();
+				let rpc: Value = serde_json::from_str(&read_line(&mut reader)).unwrap();
+				let id = rpc["frame"]["id"].as_str().unwrap().to_string();
+				writeln!(
+					writer,
+					"{}",
+					json!({ "type": "rpc", "workspace": "/proj",
+						"frame": { "id": id, "type": "response", "command": "get_state", "success": true } })
+				)
+				.unwrap();
+				thread::sleep(Duration::from_secs(1));
+			});
+			let path = PathBuf::from(&name);
+			let resp = within_deadline(move || {
+				let client = GatewayChannel::connect(&path).expect("connect");
+				assert_eq!(client.attach("/proj").expect("attach"), "/proj");
+				// Make sure the reader is parked in ReadFile again.
+				thread::sleep(Duration::from_millis(200));
+				client.rpc("/proj", json!({ "id": "r1", "type": "get_state" }))
+			})
+			.expect("rpc");
+			assert_eq!(resp["id"], "r1");
+			assert_eq!(resp["type"], "response");
+		}
+
+		#[test]
+		fn write_times_out_when_server_stops_reading() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |_file| thread::sleep(Duration::from_secs(5)));
+			let timeout = Duration::from_millis(300);
+			let pipe = win_pipe::PipeStream::connect(&name, None, Some(timeout)).expect("connect");
+			let (err, elapsed) = within_deadline(move || {
+				let started = Instant::now();
+				let mut w = pipe;
+				let err = w
+					.write_all(&vec![b'x'; 1 << 20])
+					.expect_err("write must time out");
+				(err, started.elapsed())
+			});
+			assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+			assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
+		}
+
+		#[test]
+		fn read_times_out_when_server_is_silent() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |_file| thread::sleep(Duration::from_secs(5)));
+			let timeout = Some(Duration::from_millis(300));
+			let pipe = win_pipe::PipeStream::connect(&name, timeout, None).expect("connect");
+			let err = within_deadline(move || {
+				let mut r = pipe;
+				r.read(&mut [0u8; 16]).expect_err("read must time out")
+			});
+			assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+		}
+
+		#[test]
+		fn close_unblocks_pending_read_and_rejects_further_io() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |_file| thread::sleep(Duration::from_secs(5)));
+			let pipe = win_pipe::PipeStream::connect(&name, None, None).expect("connect");
+			let mut read_half = pipe.clone();
+			let reader = thread::spawn(move || read_half.read(&mut [0u8; 16]));
+			thread::sleep(Duration::from_millis(200));
+			pipe.close();
+			let result = within_deadline(move || reader.join().unwrap());
+			assert_eq!(
+				result.expect_err("read must fail").kind(),
+				std::io::ErrorKind::NotConnected
+			);
+			let mut w = pipe;
+			assert!(w.write(b"x").is_err());
+		}
+
+		#[test]
+		fn server_disconnect_is_reported_as_disconnected() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |file| {
+				thread::sleep(Duration::from_millis(200));
+				drop(file);
+			});
+			let client = GatewayChannel::connect(&PathBuf::from(&name)).expect("connect");
+			let client_for_wait = client.clone();
+			within_deadline(move || loop {
+				if client_for_wait
+					.drain_events()
+					.iter()
+					.any(|m| matches!(m, ChannelMessage::Disconnected))
+				{
+					break;
+				}
+				thread::sleep(Duration::from_millis(20));
+			});
+			assert!(!client.is_alive());
+		}
+
+		#[test]
+		fn channel_close_releases_reader_and_rejects_rpc() {
+			let name = unique_pipe_name();
+			spawn_pipe_server(&name, 4096, |_file| thread::sleep(Duration::from_secs(5)));
+			let client = GatewayChannel::connect(&PathBuf::from(&name)).expect("connect");
+			thread::sleep(Duration::from_millis(200));
+			client.close();
+			assert!(!client.is_alive());
+			let c = client.clone();
+			within_deadline(move || {
+				assert!(c
+					.rpc("/proj", json!({ "id": "r1", "type": "get_state" }))
+					.is_err());
+				while !c
+					.drain_events()
+					.iter()
+					.any(|m| matches!(m, ChannelMessage::Disconnected))
+				{
+					thread::sleep(Duration::from_millis(20));
+				}
+			});
 		}
 	}
 }

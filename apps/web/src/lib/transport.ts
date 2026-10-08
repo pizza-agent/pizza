@@ -186,10 +186,34 @@ export async function subscribeSidecarExit(handler: ExitHandler): Promise<() => 
 
 // --- Init ---
 
+/**
+ * Hard ceiling for init_sidecar. The Rust side has its own watchdogs (70s for
+ * the gateway-channel get_state), but if the invoke is wedged BELOW those
+ * watchdogs (e.g. an unsettled Tauri IPC response), the boot UI would show
+ * "starting…" forever. 90s > 70s so the more precise Rust error wins when
+ * both would fire; this is the last-resort backstop that finally rejects and
+ * lets App.tsx render the init-error screen with a retry button.
+ */
+const INIT_INVOKE_TIMEOUT_MS = 90_000;
+
 export async function initSidecar(cwd?: string): Promise<Record<string, unknown> | null> {
 	if (isTauri()) {
 		const core = await import("@tauri-apps/api/core");
-		const result = await core.invoke<string>("init_sidecar", { cwd: cwd ?? null });
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const result = await Promise.race([
+			core.invoke<string>("init_sidecar", { cwd: cwd ?? null }),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() =>
+						reject(
+							new Error(
+								"init_sidecar did not respond within 90s. The bridge or gateway is wedged. Click retry, or set PIZZA_DESKTOP_GATEWAY=0 and restart to use direct sidecar mode.",
+							),
+						),
+					INIT_INVOKE_TIMEOUT_MS,
+				);
+			}),
+		]).finally(() => clearTimeout(timer));
 		let parsed = result;
 		if (typeof parsed === "string") {
 			parsed = JSON.parse(parsed);

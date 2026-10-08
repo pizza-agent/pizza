@@ -306,18 +306,18 @@ pub fn kill_sidecar_for_cwd(state: &BridgeState, cwd: &str) {
 /// Kill all sidecars for a given window (by active cwd).
 pub fn kill_sidecar_for_window(state: &BridgeState, window_label: &str) {
 	let cwd = {
-		let active = state.active.lock().unwrap();
+		let active = lock_ok(&state.active);
 		active.get(window_label).cloned()
 	};
 	if let Some(cwd) = cwd {
 		// Remove this window from active map.
 		{
-			let mut active = state.active.lock().unwrap();
+			let mut active = lock_ok(&state.active);
 			active.remove(window_label);
 		}
 		// Check if any other window is using this sidecar.
 		let still_in_use = {
-			let active = state.active.lock().unwrap();
+			let active = lock_ok(&state.active);
 			active.values().any(|c| c == &cwd)
 		};
 		if !still_in_use {
@@ -383,10 +383,7 @@ fn broadcast_to_all_sidecars(state: &BridgeState, command_type: &str) {
 /// the result is ignored — this is best-effort fan-out (e.g. reload_providers
 /// after editing auth.json).
 async fn broadcast_to_all_channels(state: &BridgeState, command_type: &str) {
-	let entries: Vec<(String, gateway_channel::GatewayChannel)> = state
-		.channels
-		.lock()
-		.unwrap()
+	let entries: Vec<(String, gateway_channel::GatewayChannel)> = lock_ok(&state.channels)
 		.iter()
 		.map(|(k, v)| (k.clone(), v.clone()))
 		.collect();
@@ -890,7 +887,7 @@ fn spawn_background_sidecar(
 					log_file(&format!("sidecar stdout [cwd={}]: {}", reader_cwd, trimmed));
 					let app_ref = &app;
 					let active = app_ref.state::<BridgeState>();
-					let active_map = active.active.lock().unwrap();
+					let active_map = lock_ok(&active.active);
 					let etype = parsed
 						.get("type")
 						.and_then(|t| t.as_str())
@@ -1053,7 +1050,7 @@ pub async fn init_sidecar(
 			cwd
 		));
 		{
-			let mut active = state.active.lock().unwrap();
+			let mut active = lock_ok(&state.active);
 			active.insert(window_label.clone(), cwd.clone());
 		}
 		// Send get_state to get current state.
@@ -1234,7 +1231,7 @@ pub async fn init_sidecar(
 
 	// Set active cwd for this window.
 	{
-		let mut active = state.active.lock().unwrap();
+		let mut active = lock_ok(&state.active);
 		active.insert(window_label.clone(), cwd.clone());
 	}
 
@@ -1258,7 +1255,7 @@ pub async fn init_sidecar(
 					// Emit to all windows that have this cwd as active.
 					let app_ref = &app;
 					let active = app_ref.state::<BridgeState>();
-					let active_map = active.active.lock().unwrap();
+					let active_map = lock_ok(&active.active);
 					// Emit to ALL windows — include _cwd so frontend can filter.
 					// This ensures events are received even when the workspace is not active.
 					let etype = parsed
@@ -1337,7 +1334,7 @@ pub async fn init_sidecar(
 		let state_ref = app_ref.state::<BridgeState>();
 		let suppress = state_ref.restarting.lock().unwrap().contains(&reader_cwd);
 		let active = state_ref;
-		let active_map = active.active.lock().unwrap();
+		let active_map = lock_ok(&active.active);
 		if !suppress {
 			for (label, _ac_cwd) in active_map.iter() {
 				if let Some(win) = app_ref.get_webview_window(label) {
@@ -1438,36 +1435,31 @@ pub async fn rpc_command(
 
 	// Route to the active sidecar for this window.
 	let cwd = {
-		let active = state.active.lock().unwrap();
+		let active = lock_ok(&state.active);
 		active.get(window_label).cloned()
 	};
 	let cwd = cwd.ok_or("No active workspace for this window")?;
 
 	// Gateway-mode: forward via the channel instead of the sidecar stdin.
-	// channel.rpc() blocks until the response arrives (up to 60s). Run it on
+	// channel.rpc() blocks until the response arrives (up to 60s). gateway_rpc runs it on
 	// a blocking thread so we don't freeze the Tauri main thread / webview
 	// event loop — the frontend needs the main thread free to receive the
 	// rpc_response event we emit after the call returns.
-	let channel_opt = state.channels.lock().unwrap().get(&cwd).cloned();
+	let channel_opt = lock_ok(&state.channels).get(&cwd).cloned();
 	if let Some(channel) = channel_opt {
-		let cwd_for_blocking = cwd.clone();
 		let cmd_type_for_log = obj
 			.get("type")
 			.and_then(|t| t.as_str())
 			.unwrap_or("")
 			.to_string();
 		let frame = Value::Object(obj);
-		let resp =
-			tauri::async_runtime::spawn_blocking(move || channel.rpc(&cwd_for_blocking, frame))
-				.await
-				.map_err(|e| format!("blocking task failed: {e}"))?
-				.map_err(|e| {
-					log_file(&format!(
-						"rpc_command [{}] gateway rpc FAILED: type={} error={}",
-						window_label, cmd_type_for_log, e
-					));
-					e
-				})?;
+		let resp = gateway_rpc(&channel, &cwd, frame).await.map_err(|e| {
+			log_file(&format!(
+				"rpc_command [{}] gateway rpc FAILED: type={} error={}",
+				window_label, cmd_type_for_log, e
+			));
+			e
+		})?;
 		log_file(&format!(
 			"rpc_command [{}] gateway rpc OK: type={}",
 			window_label, cmd_type_for_log
@@ -1504,6 +1496,55 @@ fn gateway_mode_enabled() -> bool {
 		.unwrap_or(true)
 }
 
+/// Async-side ceiling for one gateway rpc. `GatewayChannel` bounds its own
+/// I/O (write timeout + 60s response deadline that also covers the write), so
+/// this only fires if the blocking task itself never completes — a backstop
+/// guaranteeing the Tauri invoke always settles.
+const GATEWAY_RPC_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(70);
+
+/// Run `channel.rpc` on the blocking pool under `GATEWAY_RPC_WATCHDOG`. If
+/// the watchdog fires the connection is closed: its reader exits, pending
+/// waiters are released and the drainer's disconnect path evicts it, so the
+/// next init/retry builds a fresh connection instead of reusing a wedged one.
+async fn gateway_rpc(
+	channel: &gateway_channel::GatewayChannel,
+	cwd: &str,
+	frame: Value,
+) -> Result<Value, String> {
+	let ch = channel.clone();
+	let cwd_owned = cwd.to_string();
+	match tokio::time::timeout(
+		GATEWAY_RPC_WATCHDOG,
+		tauri::async_runtime::spawn_blocking(move || ch.rpc(&cwd_owned, frame)),
+	)
+	.await
+	{
+		Ok(Ok(result)) => result,
+		Ok(Err(join_err)) => Err(format!("blocking task failed: {join_err}")),
+		Err(_elapsed) => {
+			channel.close();
+			Err(format!(
+				"gateway rpc timed out after {}s; the connection was reset",
+				GATEWAY_RPC_WATCHDOG.as_secs()
+			))
+		}
+	}
+}
+
+/// Lock a BridgeState mutex, recovering from poisoning instead of panicking.
+/// A panic elsewhere while holding the lock must not wedge every subsequent
+/// command: a poisoned `Mutex` unwraps to a panic inside the async command,
+/// which leaves the frontend invoke unsettled forever (observed on Windows as
+/// an eternal "starting…" splash). The protected data are simple maps whose
+/// invariants do not depend on lock handoff, so the poisoned data is still
+/// usable.
+fn lock_ok<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+	match m.lock() {
+		Ok(guard) => guard,
+		Err(poisoned) => poisoned.into_inner(),
+	}
+}
+
 /// Emit one parsed Layer-0 frame to every window, tagged with `_cwd`, mirroring
 /// the sidecar reader's contract: response→rpc_response, extension_ui_request
 /// as-is, everything else→rpc_event.
@@ -1519,8 +1560,12 @@ fn emit_frame_to_windows(app: &AppHandle, cwd: &str, mut parsed: Value) {
 		}
 	}
 	let state = app.state::<BridgeState>();
-	let active_map = state.active.lock().unwrap();
-	for (label, _ac_cwd) in active_map.iter() {
+	// Snapshot the window labels and drop the lock BEFORE any webview emit:
+	// `win.emit` is synchronous cross-process IPC — holding `active` across it
+	// serializes every other command that needs the map and can deadlock with
+	// a busy webview (observed on Windows as an eternal "starting…" splash).
+	let labels: Vec<String> = lock_ok(&state.active).keys().cloned().collect();
+	for label in &labels {
 		if let Some(win) = app.get_webview_window(label) {
 			match etype.as_str() {
 				"response" => {
@@ -1558,13 +1603,24 @@ async fn init_sidecar_via_gateway(
 	log_file(&format!("init_sidecar_via_gateway: cwd={}", cwd));
 	// Already attached? Just switch the active pointer and re-fetch state.
 	// Extract the channel first, then drop all locks before awaiting.
-	let existing_channel = state.channels.lock().unwrap().get(&cwd).cloned();
+	// A dead connection (closed by a failed write / watchdog) is dropped here
+	// so we reconnect below rather than failing every command on it.
+	let existing_channel = {
+		let mut channels = lock_ok(&state.channels);
+		match channels.get(&cwd) {
+			Some(ch) if !ch.is_alive() => {
+				log_file(&format!(
+					"init_sidecar_via_gateway: dropping dead channel cwd={}",
+					cwd
+				));
+				channels.remove(&cwd);
+				None
+			}
+			other => other.cloned(),
+		}
+	};
 	if let Some(ch) = existing_channel {
-		state
-			.active
-			.lock()
-			.unwrap()
-			.insert(window_label, cwd.clone());
+		lock_ok(&state.active).insert(window_label, cwd.clone());
 		// Re-attach: the gateway may have idle-evicted the agent and cleared
 		// subscribers[cwd] during teardown. Without re-attaching, event fan-out
 		// silently drops because our subscriber is gone. attach is idempotent
@@ -1575,11 +1631,7 @@ async fn init_sidecar_via_gateway(
 			.await;
 		let frame =
 			serde_json::json!({ "id": uuid::Uuid::new_v4().to_string(), "type": "get_state" });
-		let cwd_for_blocking = cwd.clone();
-		let resp_result =
-			tauri::async_runtime::spawn_blocking(move || ch.rpc(&cwd_for_blocking, frame))
-				.await
-				.map_err(|e| format!("blocking task failed: {e}"))?;
+		let resp_result = gateway_rpc(&ch, &cwd, frame).await;
 		// Return the actual state JSON so callers (especially restart_sidecar)
 		// get a real payload instead of {}. In gateway mode restart_sidecar
 		// can't respawn the agent process, so this re-fetched state — which
@@ -1625,32 +1677,34 @@ async fn init_sidecar_via_gateway(
 	));
 
 	// Initial state via the channel, emitted as rpc_response for the frontend.
-	let id = uuid::Uuid::new_v4().to_string();
-	let state_frame = serde_json::json!({ "id": id, "type": "get_state" });
-	let cwd_for_state = cwd.clone();
-	let channel_for_state = channel.clone();
-	let state_resp = tauri::async_runtime::spawn_blocking(move || {
-		channel_for_state.rpc(&cwd_for_state, state_frame)
-	})
-	.await
-	.map_err(|e| format!("blocking task failed: {e}"))?
-	.map_err(|e| e.to_string())?;
+	// On failure the unregistered channel is closed so it doesn't linger as
+	// a zombie subscriber on the gateway; a retry builds a fresh connection.
+	let state_frame =
+		serde_json::json!({ "id": uuid::Uuid::new_v4().to_string(), "type": "get_state" });
+	log_file(&format!(
+		"init_sidecar_via_gateway: sending get_state cwd={}",
+		cwd
+	));
+	let state_resp = gateway_rpc(&channel, &cwd, state_frame)
+		.await
+		.map_err(|e| {
+			log_file(&format!(
+				"init_sidecar_via_gateway: get_state failed cwd={}: {}",
+				cwd, e
+			));
+			channel.close();
+			format!("{e}. Click retry, or set PIZZA_DESKTOP_GATEWAY=0 to use direct sidecar mode.")
+		})?;
+	log_file("init_sidecar_via_gateway: get_state ok, registering channel");
 	emit_frame_to_windows(&app, &resolved_cwd, state_resp);
 
-	state
-		.channels
-		.lock()
-		.unwrap()
-		.insert(cwd.clone(), channel.clone());
-	state
-		.active
-		.lock()
-		.unwrap()
-		.insert(window_label, cwd.clone());
+	lock_ok(&state.channels).insert(cwd.clone(), channel.clone());
+	lock_ok(&state.active).insert(window_label, cwd.clone());
 
 	// Drain fanned-out events → windows. Exits when the channel disconnects.
 	let app_for_drain = app.clone();
 	let drain_cwd = resolved_cwd.clone();
+	let channel_key = cwd.clone();
 	std::thread::spawn(move || {
 		loop {
 			let messages = channel.drain_events();
@@ -1665,18 +1719,18 @@ async fn init_sidecar_via_gateway(
 			if disconnected {
 				log_file(&format!("gateway channel disconnected cwd={}", drain_cwd));
 				// Drop the stale channel so a fresh attach can take its place.
+				// It's keyed by the requested cwd (not the resolved one), and
+				// a re-init may already have replaced it with a live channel.
 				{
 					let state = app_for_drain.state::<BridgeState>();
-					state.channels.lock().unwrap().remove(&drain_cwd);
+					let mut channels = lock_ok(&state.channels);
+					if channels.get(&channel_key).is_some_and(|c| !c.is_alive()) {
+						channels.remove(&channel_key);
+					}
 				}
 				// Notify the frontend exactly like a sidecar exit would, so its
 				// reconnect/restart logic kicks in (it listens on "sidecar_exit").
-				let active = app_for_drain
-					.state::<BridgeState>()
-					.active
-					.lock()
-					.unwrap()
-					.clone();
+				let active = lock_ok(&app_for_drain.state::<BridgeState>().active).clone();
 				for (label, _ac_cwd) in active.iter() {
 					if let Some(win) = app_for_drain.get_webview_window(label) {
 						let _ = win.emit(
@@ -1950,7 +2004,7 @@ pub async fn save_upload(
 ) -> Result<FileAttachmentInfo, String> {
 	let window_label = window.label().to_string();
 	let cwd = {
-		let active = state.active.lock().unwrap();
+		let active = lock_ok(&state.active);
 		active
 			.get(&window_label)
 			.cloned()
