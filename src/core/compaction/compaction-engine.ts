@@ -15,6 +15,15 @@ import type { SessionProjection } from "../projection/session-projection.js";
 import type { LLMClient, ModelConfig, LLMResponse } from "../runtime/llm-types.js";
 import type { CompactionOutcome, CompactionPolicy, CompactionReason } from "../runtime/policies.js";
 import { serializeConversation, SUMMARIZATION_SYSTEM_PROMPT } from "./utils.js";
+import { DEFAULT_MASK_MIN_CHARS, maskToolResultEvents } from "./tool-result-masking.js";
+
+/**
+ * - "mask": only replace old tool results with placeholders (no LLM call).
+ * - "summary": only LLM summarization (drops the summarized prefix).
+ * - "hybrid": mask first; fall back to summary if masking alone doesn't get
+ *   the context comfortably below the threshold.
+ */
+export type CompactionStrategy = "mask" | "summary" | "hybrid";
 
 export interface CompactionEngineSettings {
 	/** Estimated active model context window. */
@@ -25,6 +34,16 @@ export interface CompactionEngineSettings {
 	keepRecentTokens?: number;
 	/** Optional custom threshold. Defaults to (contextWindow - reserveTokens) / contextWindow. */
 	threshold?: number;
+	/** Compaction strategy. Default "hybrid". */
+	strategy?: CompactionStrategy;
+	/** Tool results shorter than this (chars) are never masked. Default 500. */
+	maskMinChars?: number;
+	/**
+	 * hybrid: masking is accepted only if it brings the context to at most
+	 * threshold tokens × this ratio, leaving headroom so the next turn doesn't
+	 * immediately re-trigger compaction (and break the prompt cache again). Default 0.8.
+	 */
+	maskTargetRatio?: number;
 }
 
 export interface CompactionEngineConfig {
@@ -44,6 +63,7 @@ type EventMessagePair = {
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_RESERVE_TOKENS = 16384;
 const DEFAULT_KEEP_RECENT_TOKENS = 20000;
+const DEFAULT_MASK_TARGET_RATIO = 0.8;
 
 /**
  * Ratio threshold above which a provider-reported usage is considered stale.
@@ -169,7 +189,19 @@ export class CompactionEngine implements CompactionPolicy {
 			throw new Error("Nothing to compact");
 		}
 
-		const cutIndex = findCutIndex(compactablePairs, this.config.settings?.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS);
+		const keepRecentTokens = this.config.settings?.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS;
+		const tokensBefore = estimateMessagesTokens(built.messages);
+		const strategy = this.config.settings?.strategy ?? "hybrid";
+		if (strategy !== "summary") {
+			const masked = this._maskToolResults(compactablePairs, keepRecentTokens, tokensBefore);
+			if (strategy === "mask") {
+				if (!masked) throw new Error("Nothing to compact");
+				return masked;
+			}
+			if (masked && masked.tokens_after! <= this._maskTargetTokens()) return masked;
+		}
+
+		const cutIndex = findCutIndex(compactablePairs, keepRecentTokens);
 		if (cutIndex <= 0 || cutIndex >= compactablePairs.length) {
 			throw new Error("Nothing to compact");
 		}
@@ -181,7 +213,6 @@ export class CompactionEngine implements CompactionPolicy {
 			throw new Error("Unable to determine first kept event");
 		}
 
-		const tokensBefore = estimateMessagesTokens(built.messages);
 		const summary = await this._generateSummary(messagesToSummarize, previousSummary, signal);
 		const tokensAfter = estimateMessageTokens({
 			role: "compactionSummary",
@@ -195,6 +226,46 @@ export class CompactionEngine implements CompactionPolicy {
 			first_kept_event_id: firstKeptEvent.event_id,
 			tokens_before: tokensBefore,
 			tokens_after: tokensAfter,
+		};
+	}
+
+	private _maskTargetTokens(): number {
+		const ratio = this.config.settings?.maskTargetRatio ?? DEFAULT_MASK_TARGET_RATIO;
+		return this.contextWindow() * this.threshold() * ratio;
+	}
+
+	/** Tier 1: mask tool results older than the keepRecentTokens window. Undefined if nothing to mask. */
+	private _maskToolResults(
+		pairs: EventMessagePair[],
+		keepRecentTokens: number,
+		tokensBefore: number,
+	): CompactionOutcome | undefined {
+		const boundaryIndex = findRecentBoundaryIndex(pairs, keepRecentTokens);
+		if (boundaryIndex <= 0) return undefined;
+		const boundary = pairs[boundaryIndex]!.event;
+		const minChars = this.config.settings?.maskMinChars ?? DEFAULT_MASK_MIN_CHARS;
+		const events = pairs.map((pair) => pair.event);
+		const maskedEvents = maskToolResultEvents(events, boundary.sequence, minChars);
+
+		let maskedCount = 0;
+		let savedTokens = 0;
+		maskedEvents.forEach((event, i) => {
+			if (event === events[i]) return;
+			const maskedMessage = eventToMessage(event);
+			maskedCount++;
+			savedTokens += estimateMessageTokens(pairs[i]!.message) - (maskedMessage ? estimateMessageTokens(maskedMessage) : 0);
+		});
+		if (maskedCount === 0) return undefined;
+
+		return {
+			mode: "mask",
+			summary: `Cleared ${maskedCount} old tool result(s), saving ~${savedTokens} tokens`,
+			first_kept_event_id: pairs[0]!.event.event_id,
+			mask_before_event_id: boundary.event_id,
+			mask_min_chars: minChars,
+			masked_count: maskedCount,
+			tokens_before: tokensBefore,
+			tokens_after: Math.max(0, tokensBefore - savedTokens),
 		};
 	}
 
@@ -253,6 +324,20 @@ function findCutIndex(pairs: EventMessagePair[], keepRecentTokens: number): numb
 	}
 
 	return cutIndex;
+}
+
+/**
+ * Index of the oldest event kept inside the keepRecentTokens window (the event
+ * that overflows the budget falls outside it), or -1 if everything fits.
+ * The newest event is always kept.
+ */
+function findRecentBoundaryIndex(pairs: EventMessagePair[], keepRecentTokens: number): number {
+	let accumulatedTokens = 0;
+	for (let i = pairs.length - 1; i >= 0; i--) {
+		accumulatedTokens += estimateMessageTokens(pairs[i]!.message);
+		if (accumulatedTokens >= keepRecentTokens) return Math.min(i + 1, pairs.length - 1);
+	}
+	return -1;
 }
 
 function isValidCutMessage(message: AgentMessage): boolean {
