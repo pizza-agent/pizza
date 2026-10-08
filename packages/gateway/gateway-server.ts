@@ -1029,19 +1029,48 @@ function nextMessageId(): string {
 			const socket = connect(socketPath);
 			socket.on("connect", () => {
 				// A listener accepted us: ping it — any reply proves liveness.
-				socket.write(serializeJsonLine({ type: "ping" }));
+				socket.write(`${serializeJsonLine({ type: "ping" })}\n`);
 			});
 			socket.on("data", () => finish(true));
 			socket.on("error", () => finish(false));
 		});
 
+	/** Set once we actually own the socket; a duplicate never does. */
+	let listening = false;
+	/** Report that a live gateway owns the socket; this instance must not run. */
+	const reportDuplicate = (): void => {
+		emitter.emit("duplicate", socketPath as never);
+	};
+
 	async function start(): Promise<void> {
 		if (server) return;
+		// Windows: a named pipe exists only while its owner process is alive,
+		// so there is no stale-socket case — an answering pipe IS a live
+		// gateway. Probe BEFORE listening: listening on an occupied pipe
+		// crashes Bun's Windows runtime (internal assertion failure) instead
+		// of surfacing EADDRINUSE.
+		if (platform() === "win32" && (await isSocketOwnerAlive())) {
+			reportDuplicate();
+			return;
+		}
 		server = createServer(handleConnection);
 
-		await new Promise<void>((resolve, reject) => {
+		const duplicate = await new Promise<boolean>((resolve, reject) => {
+			const onListening = () => {
+				server!.off("error", onError);
+				listening = true;
+				restrictSocketPermissions(socketPath);
+				emitter.emit("listening", socketPath as never);
+				resolve(false);
+			};
 			const onError = (error: NodeJS.ErrnoException) => {
-				if (error.code === "EADDRINUSE" && platform() !== "win32") {
+				if (error.code === "EADDRINUSE" && platform() === "win32") {
+					// Lost a race with another gateway between the probe and
+					// listen (or its instances were all busy during the probe).
+					resolve(true);
+					return;
+				}
+				if (error.code === "EADDRINUSE") {
 					// Another process holds the socket. It is stale ONLY if it
 					// is provably dead (no ping answer). A live gateway must
 					// keep the path — this process exits instead of stealing
@@ -1053,8 +1082,7 @@ function nextMessageId(): string {
 							// duplicate spawned by a race or a transient ping
 							// miss. NEVER steal the path; report and let the
 							// caller exit.
-							emitter.emit("duplicate", socketPath as never);
-							resolve(); // start() resolved, but we never listened
+							resolve(true);
 							return;
 						}
 						try {
@@ -1062,25 +1090,21 @@ function nextMessageId(): string {
 						} catch {
 							/* ignore */
 						}
-						server!.listen(socketPath, () => {
-							server!.off("error", onError);
-							restrictSocketPermissions(socketPath);
-							emitter.emit("listening", socketPath as never);
-							resolve();
-						});
+						// onListening is already registered by the first listen().
+						server!.listen(socketPath);
 					});
 					return;
 				}
 				reject(error);
 			};
 			server!.once("error", onError);
-			server!.listen(socketPath, () => {
-				server!.off("error", onError);
-				restrictSocketPermissions(socketPath);
-				emitter.emit("listening", socketPath as never);
-				resolve();
-			});
+			server!.listen(socketPath, onListening);
 		});
+		if (duplicate) {
+			// start() resolves, but we never listened: no timers, no pool.
+			reportDuplicate();
+			return;
+		}
 		startHealthCheck();
 		startSchedulerGuard();
 	}
@@ -1106,8 +1130,10 @@ function nextMessageId(): string {
 			if (!server) return resolve();
 			server.close(() => resolve());
 		});
-		// Remove the socket file (Unix only).
-		if (platform() !== "win32") {
+		// Remove the socket file (Unix only) — but only if it is OURS: a
+		// duplicate that never listened would otherwise unlink the live
+		// gateway's socket out from under it.
+		if (listening && platform() !== "win32") {
 			try {
 				unlinkSync(socketPath);
 			} catch {
