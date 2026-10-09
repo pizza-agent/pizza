@@ -57,9 +57,11 @@ export interface ChannelConfig {
 }
 
 /** Build the provenance the agent attributes a message to.
- *  provenance("discord", "#dev-alerts") → { kind:"discord", id:"#dev-alerts" }. */
-export function provenance(type: ChannelType, id: string): MessageSource {
-	return { kind: type, id };
+ *  provenance("discord", "#dev-alerts", "tom") → { kind:"discord", id:"#dev-alerts", name:"tom" }.
+ *  `name` is the human-readable sender — surfaced as the envelope's `sender`
+ *  attribute so the UI can show it instead of the opaque id. */
+export function provenance(type: ChannelType, id: string, name?: string): MessageSource {
+	return { kind: type, id, ...(name ? { name } : {}) };
 }
 
 export interface ChannelRuntimeOptions {

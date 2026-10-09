@@ -71,7 +71,7 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		if (!text) return;
 
 		try {
-			const reply = await runtime.deliver(workspace, text, provenance("lark", chatId));
+			const reply = await runtime.deliver(workspace, text, provenance("lark", chatId, msg.senderName));
 			// Reply in-thread so a busy group chat stays readable. The SDK chunks
 			// long markdown itself (outbound.textChunkLimit).
 			if (reply.trim()) await lark.send(chatId, { markdown: reply }, { replyTo: msg.messageId });

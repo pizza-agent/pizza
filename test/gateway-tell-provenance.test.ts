@@ -185,6 +185,22 @@ describe("gateway tell provenance", () => {
 		expect(delivered).not.toContain("crossed a workspace boundary");
 	});
 
+	it("renders the sender name attribute when the source carries one", async () => {
+		const cwd = "/proj/web";
+		const fake = await startWithFake(cwd);
+		const res = await sendAndWait(server!.socketPath, {
+			type: "tell",
+			id: "r1c",
+			to: cwd,
+			message: "hi",
+			from: { kind: "lark", id: "oc_abc", name: 'Tom "quoted"' },
+		});
+		expect(JSON.parse(res).ok).toBe(true);
+		const delivered = fake.received[0]!;
+		// Embedded quotes are neutralized so the attr can't break the block.
+		expect(delivered).toContain('<message from="lark:oc_abc" sender="Tom &quot;quoted&quot;"');
+	});
+
 	it("delivers the bare message when `from` is absent (back-compat)", async () => {
 		const cwd = "/proj/web";
 		const fake = await startWithFake(cwd);

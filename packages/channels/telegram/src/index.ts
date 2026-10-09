@@ -49,10 +49,17 @@ void runChannel(async (runtime: ChannelRuntime) => {
 	// Every non-command text message → deliver to the agent, reply back.
 	bot.on("message:text", async (ctx) => {
 		const chatId = String(ctx.chat.id);
+		// Sender display name for the envelope's `sender` attr — shown in the
+		// UI instead of the raw chat id. Prefer the real name; @username and
+		// (for groups) the chat title are useful fallbacks.
+		const sender =
+			[ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") ||
+			(ctx.from?.username ? `@${ctx.from.username}` : undefined) ||
+			(ctx.chat.type !== "private" && "title" in ctx.chat ? ctx.chat.title : undefined);
 		try {
 			// Telegram lets us show "typing…" while the agent works.
 			await ctx.replyWithChatAction("typing");
-			const reply = await runtime.deliver(WORKSPACE, ctx.message.text, provenance("telegram", chatId));
+			const reply = await runtime.deliver(WORKSPACE, ctx.message.text, provenance("telegram", chatId, sender));
 			// Telegram caps messages at 4096 chars; grammy splits automatically via { Entities }.
 			for (const part of chunk(reply, 4000)) await ctx.reply(part);
 		} catch (err) {

@@ -657,7 +657,7 @@ const AgentMessageCard = memo(function AgentMessageCard({
 	const channelLabel = (CHANNEL_TYPES as readonly string[]).includes(am.kind)
 		? t(`channels.types.${am.kind}`)
 		: am.kind;
-	const senderLabel = isExternal ? `${channelLabel} · ${am.fromName}` : am.fromName;
+	const senderLabel = isExternal ? `${channelLabel} · ${am.senderName ?? am.fromName}` : am.fromName;
 	const i18nPrefix = isExternal ? "conversation.channelMessage" : "conversation.agentMessage";
 	return (
 		<div

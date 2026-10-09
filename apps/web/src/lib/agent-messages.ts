@@ -25,6 +25,9 @@ export interface AgentMessageInfo {
 	/** Source kind — "agent" for workspace-to-workspace, a channel type
 	 *  ("telegram"/"lark"/…) for an outside party reaching in. */
 	kind: string;
+	/** Human-readable sender name (envelope `sender` attr), when the
+	 *  channel provided one — prefer this over the opaque id. */
+	senderName?: string;
 	/** Short workspace label (last path segment of the sender id). */
 	fromName: string;
 	/** Gateway-generated message id, for future inReplyTo threading. */
@@ -93,9 +96,11 @@ export function parseAgentMessage(text: string): AgentMessageInfo | null {
 	const kind = colon === -1 ? from : from.slice(0, colon);
 	const fromId = colon === -1 ? from : from.slice(colon + 1);
 	const id = attrs.get("id");
+	const sender = attrs.get("sender");
 	return {
 		from,
 		kind,
+		senderName: sender ? unescapeEntities(sender) : undefined,
 		fromName: workspaceNameFrom(fromId),
 		id: id || undefined,
 		autoRelay: attrs.get("relay") === "auto",

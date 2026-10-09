@@ -50,6 +50,10 @@ export interface MessageSource {
 	kind: string;
 	/** Specific originator id (agent cwd/name, cron job id, watcher glob, …). */
 	id: string;
+	/** Human-readable sender name when the source provides one (Telegram
+	 *  display name, Lark senderName). Surfaced in the UI in place of the
+	 *  opaque id; also rendered as the envelope's `sender` attribute. */
+	name?: string;
 }
 
 /**
