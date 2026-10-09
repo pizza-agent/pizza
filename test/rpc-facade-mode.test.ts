@@ -651,6 +651,118 @@ describe("runRpcModeWithFacade", () => {
 		facade.dispose();
 	});
 
+	it("reload_providers recovers when the current model becomes unresolvable (provider removed mid-session)", async () => {
+		// Reproduces the gateway-mode trap: the facade started with a real model,
+		// then the provider was deleted from models.json while the agent kept
+		// running (e.g. the user reconfigured providers in the Settings UI).
+		// get_state returns model=undefined and, since gateway agents can't be
+		// respawned by restart_sidecar, nothing ever re-resolves — the GUI
+		// bounces the user back to the setup page forever. reload_providers
+		// must treat a dangling model like the "none" placeholder and pick a
+		// real model once credentials allow it.
+		const dir = makeTempDir();
+		const authJsonPath = join(dir, "auth.json");
+		const modelsJsonPath = join(dir, "models.json");
+		writeFileSync(
+			modelsJsonPath,
+			JSON.stringify({
+				providers: {
+					openai: {
+						baseUrl: "https://api.openai.com/v1",
+						api: "openai-responses",
+						apiKey: "openai", // auth-only override on a built-in provider
+					},
+				},
+			}),
+		);
+
+		const authStorage = AuthStorage.create(authJsonPath);
+		const modelRegistry = RealModelRegistry.create(authStorage, modelsJsonPath);
+
+		// Facade holds a model whose provider no longer exists in the registry —
+		// e.g. settings.json's defaultProvider pointed at a provider that has
+		// since been removed. Not "none": the placeholder-only recovery path
+		// must not be the only escape hatch.
+		const cwd = makeTempDir();
+		const store = new SqliteEventStore(`rpc-dangling-${Date.now()}`, join(cwd, "events.sqlite"));
+		const sessionManager = new SessionManager(store, store);
+		sessionManager.createSession("user_explicit", "Initial");
+		const runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			store,
+			sessionManager,
+			toolRegistry: emptyRegistry,
+			llmClient: { async complete() { return makeTextResponse("ok"); } },
+			systemPrompt: "dangling model test",
+			model: { provider: "removed-provider", model_id: "removed-model" },
+			tools: [],
+		});
+		const facade = new SessionFacade({
+			runtime,
+			settingsManager: SettingsManager.inMemory({}),
+			modelRegistry,
+			disposers: [() => store.close()],
+		});
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		// Before reload: the dangling model resolves to nothing → model=undefined,
+		// which is what traps the GUI in the setup page.
+		rpcIo.lineHandler!(JSON.stringify({ id: "state-1", type: "get_state" }));
+		await vi.waitFor(() => {
+			const stateResp = parseOutputLines().find((l) => l.id === "state-1");
+			expect(stateResp).toBeDefined();
+			expect((stateResp as { data?: { model?: unknown } }).data?.model).toBeUndefined();
+		});
+
+		// User reconfigures providers via the Settings UI; the bridge writes
+		// auth.json (key for the surviving provider) and broadcasts
+		// reload_providers.
+		writeFileSync(authJsonPath, JSON.stringify({ openai: { type: "api_key", key: "sk-test-key" } }, null, 2));
+		rpcIo.lineHandler!(JSON.stringify({ id: "reload-1", type: "reload_providers" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({
+					id: "reload-1",
+					type: "response",
+					command: "reload_providers",
+					success: true,
+					data: { providers: ["openai"] },
+				}),
+			);
+		});
+
+		// After reload: the facade switched to a resolvable model.
+		rpcIo.lineHandler!(JSON.stringify({ id: "state-2", type: "get_state" }));
+		await vi.waitFor(() => {
+			const stateResp = parseOutputLines().find((l) => l.id === "state-2");
+			expect(stateResp).toBeDefined();
+			const model = (stateResp as { data?: { model?: { provider?: string } } }).data?.model;
+			expect(model).toBeDefined();
+			expect(model?.provider).toBe("openai");
+		});
+
+		// A model that still resolves must NOT be yanked on subsequent reloads.
+		const modelId = facade.model.model_id;
+		rpcIo.lineHandler!(JSON.stringify({ id: "reload-2", type: "reload_providers" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({ id: "reload-2", type: "response", command: "reload_providers", success: true }),
+			);
+		});
+		rpcIo.lineHandler!(JSON.stringify({ id: "state-3", type: "get_state" }));
+		await vi.waitFor(() => {
+			const stateResp = parseOutputLines().find((l) => l.id === "state-3");
+			expect(stateResp).toBeDefined();
+			const model = (stateResp as { data?: { model?: { provider?: string; model_id?: string } } }).data?.model;
+			expect(model?.provider).toBe("openai");
+			expect(model?.id).toBe(modelId);
+		});
+
+		facade.dispose();
+	});
+
 	it("get_extensions returns extensions (empty when no resource loader)", async () => {
 		const facade = createFacade();
 		void runRpcModeWithFacade(facade);
