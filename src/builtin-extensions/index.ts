@@ -29,7 +29,6 @@ import {
 	runComputerUseInstall,
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
-import { DEVIN_EXTENSION_ID, createDevinExtension } from "./devin/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -114,12 +113,6 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
-	},
-	{
-		id: DEVIN_EXTENSION_ID,
-		name: "devin",
-		description: "Devin (Cognition Cascade) model provider backed by Devin CLI credentials.",
-		factory: createDevinExtension,
 	},
 ];
 
