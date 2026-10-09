@@ -105,7 +105,10 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		if (!workspace) return; // no route for this channel
 
 		// Default: answer only @mentions or DMs. ANSWER_ALL replies to everything.
-		const isMention = msg.mentions.users.has(discord.user!.id);
+		// mentions.has() also matches mentions of a role the bot holds (users
+		// often @ the bot's role, not the user) and replies to the bot's own
+		// messages — @everyone stays ignored.
+		const isMention = msg.mentions.has(discord.user!, { ignoreEveryone: true });
 		if (!ANSWER_ALL && !isMention && !msg.channel.isDMBased()) return;
 
 		const text = msg.content.replace(/<@!?\d+>/g, "").trim(); // strip the @bot mention
