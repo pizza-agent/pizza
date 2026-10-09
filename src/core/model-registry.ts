@@ -41,10 +41,13 @@ const ajv = new Ajv();
 
 /**
  * Display-name overrides for providers where pizza wants a different label
- * than pi-ai built-in `Provider.name`. Empty by default — pi-ai names are
- * already good display names. Add entries here only to override/supplement.
+ * than pi-ai built-in `Provider.name`, and names for pizza-native providers
+ * that don't exist in pi-ai's catalog at all.
  */
-const PROVIDER_NAME_OVERRIDES: Record<string, string> = {};
+const PROVIDER_NAME_OVERRIDES: Record<string, string> = {
+	// Pizza-native provider (not part of pi-ai's catalog).
+	devin: "Devin (Devin CLI account)",
+};
 
 /** Lazily-built map of provider id -> display name from pi-ai built-ins. */
 let providerNameMap: Map<string, string> | undefined;
