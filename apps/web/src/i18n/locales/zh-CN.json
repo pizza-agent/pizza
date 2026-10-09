@@ -49,7 +49,7 @@
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前",
     "plugins": "插件",
-    "pluginsSubtitle": "技能 · 频道"
+    "pluginsSubtitle": "技能 · 渠道"
   },
   "agent": {
     "newSession": "新会话",
@@ -408,14 +408,14 @@
   },
   "plugins": {
     "title": "插件",
-    "description": "管理技能、扩展和频道",
+    "description": "管理技能、扩展和渠道",
     "loading": "加载中...",
     "error": "错误:{{error}}",
     "refresh": "刷新",
     "tabs": {
       "skills": "技能",
       "extensions": "扩展",
-      "channels": "频道",
+      "channels": "渠道",
       "mcp": "MCP"
     },
     "skills": {
@@ -498,10 +498,10 @@
     }
   },
   "channels": {
-    "add": "添加频道",
-    "loading": "正在加载频道...",
+    "add": "添加渠道",
+    "loading": "正在加载渠道...",
     "error": "错误:{{error}}",
-    "empty": "尚未配置频道",
+    "empty": "尚未配置渠道",
     "emptyHint": "连接 Discord、飞书、Slack、Telegram 或 Webhook，将消息接入到工作区。",
     "status": {
       "connected": "已连接",
@@ -518,7 +518,7 @@
     "configure": "配置",
     "delete": "删除",
     "actions": "操作",
-    "confirmDelete": "确认删除频道\"{{name}}\"？",
+    "confirmDelete": "确认删除渠道\"{{name}}\"？",
     "test": "测试",
     "testing": "测试中…",
     "save": "保存",
@@ -531,9 +531,9 @@
       "webhook": "Webhook"
     },
     "dialog": {
-      "createTitle": "添加频道",
-      "editTitle": "编辑频道",
-      "type": "频道类型",
+      "createTitle": "添加渠道",
+      "editTitle": "编辑渠道",
+      "type": "渠道类型",
       "name": "显示名称",
       "namePlaceholder": "例如：开发告警",
       "token": "机器人 Token",
@@ -545,7 +545,7 @@
       "larkHint": "按会话自动路由：私聊直接回复，群聊需 @机器人。",
       "server": "服务器 / 群组",
       "serverPlaceholder": "例如：pizza-hq",
-      "channel": "频道 / 会话",
+      "channel": "渠道 / 会话",
       "channelPlaceholder": "例如：#dev-alerts",
       "webhookUrl": "Webhook URL",
       "urlHint": "入站消息到达此 URL，回复将被 POST 回去。",
