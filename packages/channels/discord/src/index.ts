@@ -121,7 +121,10 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		const typing = setInterval(() => void typeable?.sendTyping().catch(() => {}), 8_000);
 
 		try {
-			const reply = await runtime.deliver(workspace, text, provenance("discord", channelName));
+			// Sender display name for the envelope's `sender` attr — guild
+			// nickname, global display name, or raw username (DMs have no member).
+			const sender = msg.member?.displayName ?? msg.author.displayName ?? msg.author.username;
+			const reply = await runtime.deliver(workspace, text, provenance("discord", channelName, sender));
 			for (const part of chunk(reply)) await msg.reply(part);
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
