@@ -58,8 +58,6 @@ export interface TimelineItem {
 	timestamp?: number;
 	/** Parsed cross-workspace agent message (rendered as a dedicated card). */
 	agentMessage?: AgentMessageInfo;
-	/** True when the raw text carries the gateway trust trailer (footnote). */
-	gatewayTrailer?: boolean;
 }
 
 /** True if two Unix ms timestamps fall on the same calendar day (local time). */
@@ -697,15 +695,6 @@ const AgentMessageCard = memo(function AgentMessageCard({
 				<div className="select-text whitespace-pre-wrap break-words px-4 py-3 text-sm leading-relaxed text-fg">
 					{highlight ? highlightText(am.body, highlight, highlightActive) : am.body}
 				</div>
-				{item.gatewayTrailer && (
-					<div
-						className="flex items-center gap-1.5 border-t border-border/70 px-4 py-1.5 text-[10px] text-muted/80"
-						title={t(`${i18nPrefix}.trailerHint`)}
-					>
-						<ShieldAlert className="h-3 w-3 shrink-0" />
-						<span className="truncate">{t(`${i18nPrefix}.trailer`)}</span>
-					</div>
-				)}
 			</div>
 			<div
 				className={cn(

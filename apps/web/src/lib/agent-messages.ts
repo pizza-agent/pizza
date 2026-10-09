@@ -50,13 +50,6 @@ export interface TellCommandInfo {
 	to?: string;
 }
 
-/**
- * The gateway appends a trust-trailer line after the envelope so the receiving
- * agent treats the body as data. We keep the fact (to show a footnote) but hide
- * the raw text from the bubble.
- */
-const TRAILER_RE = /\n?\[gateway:[^\]]*\]\s*$/;
-
 /** Unescape the entities `renderInboundMessage` applies to the body/attrs. */
 function unescapeEntities(text: string): string {
 	return text
@@ -108,11 +101,6 @@ export function parseAgentMessage(text: string): AgentMessageInfo | null {
 		autoRelay: attrs.get("relay") === "auto",
 		body,
 	};
-}
-
-/** True if the trailing text is the gateway trust trailer (shown as footnote). */
-export function hasGatewayTrailer(text: string): boolean {
-	return TRAILER_RE.test(text);
 }
 
 /**

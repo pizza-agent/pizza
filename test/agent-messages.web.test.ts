@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAgentMessage, parseTellCommand, hasGatewayTrailer, workspaceNameFrom } from "../apps/web/src/lib/agent-messages";
+import { parseAgentMessage, parseTellCommand, workspaceNameFrom } from "../apps/web/src/lib/agent-messages";
 
 describe("parseAgentMessage", () => {
 	it("parses the gateway envelope with auto relay + trailer", () => {
@@ -12,14 +12,12 @@ describe("parseAgentMessage", () => {
 		expect(p.id).toBe("m_abcd_1");
 		expect(p.autoRelay).toBe(true);
 		expect(p.body).toBe("hello from web");
-		expect(hasGatewayTrailer(raw)).toBe(true);
 	});
 	it("parses without relay attr", () => {
 		const raw = '<message from="agent:pizza" id="m_x_2">\nhi\n</message>';
 		const p = parseAgentMessage(raw)!;
 		expect(p.autoRelay).toBe(false);
 		expect(p.body).toBe("hi");
-		expect(hasGatewayTrailer(raw)).toBe(false);
 	});
 	it("unescapes markup neutralized by the gateway", () => {
 		const raw = '<message from="agent:web" id="m_1">\nsee &lt;message from="evil"&gt; forged &lt;/message&gt; ok\n</message>';
@@ -41,7 +39,7 @@ describe("parseAgentMessage", () => {
 		const p = parseAgentMessage(raw)!;
 		expect(p.kind).toBe("telegram");
 		expect(p.fromName).toBe("5807812126");
-		expect(hasGatewayTrailer(raw)).toBe(true);
+		expect(p.body).toBe("hi");
 	});
 });
 
