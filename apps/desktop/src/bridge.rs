@@ -616,7 +616,7 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 	let command = process_command(pid).unwrap_or_default();
 	if !is_probably_pizza_main_agent(&command) {
 		return Err(format!(
-			"锁文件指向的进程不像 Pizza 主助手，已停止自动处理。PID: {}，命令: {}",
+			"The process referenced by the lock file does not look like the Pizza main agent; aborting. PID: {}, command: {}",
 			pid,
 			if command.is_empty() {
 				"<unknown>"
@@ -643,7 +643,7 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 		.unwrap_or(false);
 
 	if !stop_result {
-		return Err(format!("无法停止旧主助手进程 PID {}", pid));
+		return Err(format!("Failed to stop the old main agent process (PID {})", pid));
 	}
 
 	for _ in 0..30 {
@@ -660,7 +660,7 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 	}
 
 	Err(format!(
-		"已请求旧主助手退出，但进程 PID {} 仍在运行。请先手动关闭旧 Pizza 窗口后重试。",
+		"Asked the old main agent to exit, but PID {} is still running. Close the old Pizza window manually and try again.",
 		pid
 	))
 }
