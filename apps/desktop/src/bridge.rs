@@ -1505,6 +1505,46 @@ pub async fn rpc_command(
 	Ok(id)
 }
 
+/// Channel-management ops (list/save/delete/set_enabled/test) — gateway-level
+/// requests that aren't tied to any one workspace. They reuse whatever live
+/// gateway channel exists (the window's active one, else any), falling back to
+/// a one-shot connection when nothing is attached yet (e.g. Plugins tab open
+/// before any workspace).
+#[tauri::command]
+pub async fn channel_op(
+	window: tauri::Window,
+	app: AppHandle,
+	state: tauri::State<'_, BridgeState>,
+	request: Value,
+) -> Result<Value, String> {
+	let channel = {
+		let cwd = lock_ok(&state.active).get(window.label()).cloned();
+		let channels = lock_ok(&state.channels);
+		cwd.and_then(|c| channels.get(&c).cloned())
+			.or_else(|| channels.values().next().cloned())
+	};
+	if let Some(channel) = channel {
+		let ch = channel.clone();
+		return match tauri::async_runtime::spawn_blocking(move || ch.channel_op(request)).await {
+			Ok(result) => result,
+			Err(join_err) => Err(format!("blocking task failed: {join_err}")),
+		};
+	}
+	// No channel connection exists yet: open a transient one for this op.
+	let socket = gateway_channel::gateway_socket_path()
+		.ok_or_else(|| "HOME not set; cannot resolve gateway socket".to_string())?;
+	let (program, args) = gateway_command(resolve_pizza_command(&app));
+	tauri::async_runtime::spawn_blocking(move || {
+		gateway_channel::ensure_gateway(&socket, (&program, &args), Some(env!("CARGO_PKG_VERSION")))?;
+		let channel = gateway_channel::GatewayChannel::connect(&socket)?;
+		let result = channel.channel_op(request);
+		channel.close();
+		result
+	})
+	.await
+	.map_err(|e| format!("blocking task failed: {e}"))?
+}
+
 /// True when the desktop should route workspaces through the gateway broker
 /// instead of spawning per-cwd sidecars. Gateway mode is the default — it
 /// keeps agent processes alive across desktop restarts and lets multiple

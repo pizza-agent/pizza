@@ -24,6 +24,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { RpcClient } from "../rpc/rpc-client.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
+import { ChannelSupervisor } from "./channel-supervisor.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
@@ -31,6 +32,7 @@ import {
 	type GatewayResponse,
 	type GatewayTellRequest,
 	type GatewayChannelRequest,
+	type GatewayChannelOpRequest,
 	type GatewayRpcFrame,
 	type GatewayWorkspaceInfo,
 	type MessageSource,
@@ -217,6 +219,9 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	let shuttingDown = false;
 	const startTime = Date.now();
 	const { cliPath, binary } = resolveCliSpawn();
+	/** Owns the UI-managed message channels (Discord/Lark/…): persists their
+	 *  configs and runs one adapter process per enabled channel. */
+	const channelSupervisor = new ChannelSupervisor(agentDir);
 	/** Active client sockets — destroyed on shutdown so connected clients
 	 * get EOF immediately instead of waiting for the process to exit. */
 	const activeSockets = new Set<Socket>();
@@ -713,7 +718,12 @@ function nextMessageId(): string {
 				try {
 					// A desktop window is attaching: the human behind it can
 					// answer approval dialogs — the agent must be interactive.
-					const entry = await ensureInteractiveAgent(cwd);
+					// Headless attaches (bot channels) only watch events: they keep
+					// a resident headless agent headless so gated tool calls on
+					// their turns auto-reject instead of waiting on a human.
+					const entry = request.headless
+						? await getOrCreateAgent(cwd)
+						: await ensureInteractiveAgent(cwd);
 					ensureForwarder(cwd, entry);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
@@ -754,8 +764,13 @@ function nextMessageId(): string {
 				let entry: PoolEntry;
 				try {
 					// Channel rpc comes from a desktop window (or another
-					// human-facing client): approvals must be answerable.
-					entry = await ensureInteractiveAgent(cwd);
+					// human-facing client): approvals must be answerable —
+					// unless the channel marked itself headless (bot relays),
+					// in which case the agent stays headless and gated calls
+					// auto-reject.
+					entry = request.headless
+						? await getOrCreateAgent(cwd)
+						: await ensureInteractiveAgent(cwd);
 				} catch (error) {
 					const frameId = (request.frame as { id?: string })?.id;
 					write({
@@ -813,6 +828,43 @@ function nextMessageId(): string {
 				write({ type: "list_result", workspaces });
 				return;
 			}
+			case "channel_op": {
+				try {
+					const data = await handleChannelOp(request);
+					write({ type: "channel_op_result", id: request.id, ok: true, data });
+				} catch (error) {
+					write({
+						type: "channel_op_result",
+						id: request.id,
+						ok: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+				return;
+			}
+		}
+	}
+
+	/** Dispatch a channel-management op to the supervisor. */
+	async function handleChannelOp(request: GatewayChannelOpRequest): Promise<unknown> {
+		switch (request.action) {
+			case "list":
+				return { channels: channelSupervisor.list() };
+			case "save":
+				return { channel: channelSupervisor.save(request.channel ?? {}, request.channelId) };
+			case "delete":
+				if (!request.channelId) throw new Error("delete requires channelId");
+				channelSupervisor.delete(request.channelId);
+				return { ok: true };
+			case "set_enabled": {
+				if (!request.channelId) throw new Error("set_enabled requires channelId");
+				return { channel: channelSupervisor.setEnabled(request.channelId, request.enabled === true) };
+			}
+			case "test":
+				if (!request.channelId) throw new Error("test requires channelId");
+				return channelSupervisor.test(request.channelId);
+			default:
+				throw new Error(`Unknown channel_op action "${String(request.action)}"`);
 		}
 	}
 
@@ -888,7 +940,7 @@ function nextMessageId(): string {
 			}
 
 			// Channel protocol: attach / detach / rpc / list.
-			if (type === "attach" || type === "detach" || type === "rpc" || type === "list") {
+			if (type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op") {
 				void handleChannelRequest(parsed as GatewayChannelRequest, write, subscribedCwds).catch((error: unknown) => {
 					write({ type: "error", message: error instanceof Error ? error.message : String(error) });
 				});
@@ -1107,6 +1159,9 @@ function nextMessageId(): string {
 		}
 		startHealthCheck();
 		startSchedulerGuard();
+		// After the socket is listening: adapters the supervisor spawns connect
+		// back to this gateway immediately, so start it only once we can serve.
+		channelSupervisor.start();
 	}
 
 	async function stop(): Promise<void> {
@@ -1114,6 +1169,7 @@ function nextMessageId(): string {
 		shuttingDown = true;
 		stopHealthCheck();
 		stopSchedulerGuard();
+		await channelSupervisor.shutdown();
 		// Tear down all pooled agents.
 		const cwds = Array.from(pool.keys());
 		await Promise.all(cwds.map((cwd) => teardownAgent(cwd, "shutdown").catch(() => {})));

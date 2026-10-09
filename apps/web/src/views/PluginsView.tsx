@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, Badge, Button, MoreMenu, type ContextMenuItem } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
-import { cn, pathBasename } from "@/lib/utils";
+import { cn, isMainChatCwd, pathBasename } from "@/lib/utils";
 import {
 	fetchSkillsSh,
 	getCachedSkillsSh,
@@ -884,7 +884,9 @@ function ChannelCard({
 	const statusTone =
 		channel.status === "connected" ? "success" : channel.status === "error" ? "danger" : "neutral";
 	const statusKey = channel.enabled ? channel.status : "disconnected";
-	const wsName = channel.workspace ? pathBasename(channel.workspace) : "";
+	// A channel delivering to the persistent main assistant shows the same name
+	// the sidebar uses for it — not the raw directory basename.
+	const wsName = channel.workspace ? (isMainChatCwd(channel.workspace) ? t("layout.agent") : pathBasename(channel.workspace)) : "";
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">

@@ -170,10 +170,12 @@ export class GatewayTransport implements ChannelTransport {
 		}
 	}
 
-	/** Subscribe to a workspace's event stream. Returns the resolved cwd. */
-	async attach(workspace: string): Promise<string> {
+	/** Subscribe to a workspace's event stream. Returns the resolved cwd.
+	 *  `opts.headless` keeps the agent headless (bot channels — no human to
+	 *  answer approvals). */
+	async attach(workspace: string, opts?: { headless?: boolean }): Promise<string> {
 		this.requireConnected();
-		const msg = await this.request({ type: "attach", workspace });
+		const msg = await this.request({ type: "attach", workspace, headless: opts?.headless === true ? true : undefined });
 		return (msg as { workspace: string }).workspace;
 	}
 
@@ -196,12 +198,13 @@ export class GatewayTransport implements ChannelTransport {
 		throw new Error("GatewayTransport.send requires a workspace — use sendToWorkspace");
 	}
 
-	/** Forward a Layer-0 command to a workspace's agent and await its response. */
-	async sendToWorkspace(workspace: string, frame: ChannelFrame): Promise<Record<string, unknown>> {
+	/** Forward a Layer-0 command to a workspace's agent and await its response.
+	 *  `opts.headless` keeps the agent headless (bot channels). */
+	async sendToWorkspace(workspace: string, frame: ChannelFrame, opts?: { headless?: boolean }): Promise<Record<string, unknown>> {
 		this.requireConnected();
 		return new Promise<Record<string, unknown>>((resolve, reject) => {
 			this.pending.set(frame.id, { resolve, reject });
-			this.write({ type: "rpc", workspace, frame });
+			this.write({ type: "rpc", workspace, frame, headless: opts?.headless === true ? true : undefined });
 		});
 	}
 

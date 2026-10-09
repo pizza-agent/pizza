@@ -3,11 +3,11 @@
  * webhooks) that deliver inbound messages into a workspace agent and relay its
  * replies back out.
  *
- * ⚠️ MOCK BACKEND: the gateway has no channel-config RPC yet. These functions
- * are persisted to localStorage so the Channels tab is fully interactive in the
- * desktop UI today. Each one maps 1:1 to the future gateway RPC (noted inline),
- * so wiring the real backend is a drop-in: replace the localStorage body with a
- * `sendCommandAwait({ type: "list_channels" })` (or Tauri `invoke`) call.
+ * In Tauri these call the gateway's `channel_op` Layer-1 message via the Rust
+ * bridge — the gateway's ChannelSupervisor persists configs and spawns one
+ * adapter process per enabled channel, so "connected" means the adapter is
+ * actually running. The browser dev preview has no gateway, so it falls back
+ * to a localStorage mock purely to keep the tab interactive.
  *
  * The on-wire shape mirrors packages/gateway/protocol.ts MessageSource: each
  * channel delivers with `kind = config.type` so the agent sees a uniform
@@ -15,7 +15,7 @@
  */
 
 import { listWorkspaces } from "./transport";
-import { pathBasename } from "./platform";
+import { isMainChatCwd, isTauri, MAIN_CHAT_CWD, pathBasename } from "./platform";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -35,9 +35,12 @@ export interface ChannelConfig {
 	enabled: boolean;
 	/** Credential, stored locally for the mock (real backend → auth-storage). */
 	token?: string;
-	/** Discord guild / Lark tenant. */
+	/** Lark/Feishu app credentials (LARK_APP_ID / LARK_APP_SECRET). */
+	appId?: string;
+	appSecret?: string;
+	/** Discord guild. */
 	server?: string;
-	/** Discord channel / Lark chat / Slack channel name. */
+	/** Discord channel / Slack channel name. */
 	channel?: string;
 	/** webhook type only. */
 	webhookUrl?: string;
@@ -61,7 +64,42 @@ export function isTokenType(type: ChannelType): boolean {
 	return type !== "webhook";
 }
 
-// ── Mock store (localStorage) ────────────────────────────────────────────
+/** Which credential/routing fields a channel type needs. Lark authenticates
+ *  with an appId+appSecret pair and routes per-chat automatically — the
+ *  Discord-style server/channel fields don't apply to it. */
+export interface ChannelFieldSpec {
+	appCredentials?: boolean;
+	token?: boolean;
+	server?: boolean;
+	channel?: boolean;
+	webhook?: boolean;
+}
+
+export function channelFieldSpec(type: ChannelType): ChannelFieldSpec {
+	switch (type) {
+		case "discord":
+			return { token: true, server: true, channel: true };
+		case "lark":
+			return { appCredentials: true };
+		case "slack":
+			return { token: true, channel: true };
+		case "telegram":
+			return { token: true };
+		case "webhook":
+			return { webhook: true };
+	}
+}
+
+// ── Real backend (Tauri → gateway channel_op) ────────────────────────────
+
+/** Send a channel-management op through the Rust bridge to the gateway.
+ *  Rejects with the gateway's error string on failure. */
+async function channelOp<T = unknown>(request: Record<string, unknown>): Promise<T> {
+	const { invoke } = await import("@tauri-apps/api/core");
+	return invoke<T>("channel_op", { request });
+}
+
+// ── Mock store (localStorage, browser fallback only) ─────────────────────
 
 const STORAGE_KEY = "pizza.channels.v1";
 
@@ -111,8 +149,11 @@ function delay<T>(value: T, ms = 250): Promise<T> {
 
 // ── Transport functions (each → a future gateway RPC) ────────────────────
 
-/** Future: sendCommandAwait<{ type: "list_channels" }> → { channels } */
 export async function listChannels(): Promise<ChannelInfo[]> {
+	if (isTauri()) {
+		const res = await channelOp<{ channels: ChannelInfo[] }>({ action: "list" });
+		return res.channels;
+	}
 	return delay(readStore());
 }
 
@@ -120,6 +161,8 @@ export interface ChannelInput {
 	type: ChannelType;
 	name: string;
 	token?: string;
+	appId?: string;
+	appSecret?: string;
 	server?: string;
 	channel?: string;
 	webhookUrl?: string;
@@ -128,11 +171,18 @@ export interface ChannelInput {
 }
 
 /**
- * Future: sendCommandAwait<{ type: "save_channel", channel: input, id? }>
- * Creates or updates. On save the channel is treated as freshly configured
- * (status "configuring" → run `testChannel` to flip it to connected).
+ * Creates or updates a channel. The gateway persists it and (re)spawns the
+ * adapter when enabled — the returned info carries the live status.
  */
 export async function saveChannel(id: string | null, input: ChannelInput): Promise<ChannelInfo> {
+	if (isTauri()) {
+		const res = await channelOp<{ channel: ChannelInfo }>({
+			action: "save",
+			channelId: id ?? undefined,
+			channel: input,
+		});
+		return res.channel;
+	}
 	const channels = readStore();
 	if (id) {
 		const idx = channels.findIndex((c) => c.id === id);
@@ -148,15 +198,21 @@ export async function saveChannel(id: string | null, input: ChannelInput): Promi
 	return delay(created);
 }
 
-/** Future: sendCommandAwait<{ type: "delete_channel", id }> */
 export async function deleteChannel(id: string): Promise<void> {
+	if (isTauri()) {
+		await channelOp({ action: "delete", channelId: id });
+		return;
+	}
 	const channels = readStore().filter((c) => c.id !== id);
 	writeStore(channels);
 	return delay(undefined);
 }
 
-/** Future: sendCommandAwait<{ type: "set_channel_enabled", id, enabled }> */
 export async function setChannelEnabled(id: string, enabled: boolean): Promise<ChannelInfo> {
+	if (isTauri()) {
+		const res = await channelOp<{ channel: ChannelInfo }>({ action: "set_enabled", channelId: id, enabled });
+		return res.channel;
+	}
 	const channels = readStore();
 	const idx = channels.findIndex((c) => c.id === id);
 	if (idx === -1) throw new Error("Channel not found");
@@ -173,21 +229,29 @@ export interface ChannelTestResult {
 }
 
 /**
- * Future: sendCommandAwait<{ type: "test_channel", id }> — like the provider
- * "test connection" flow. Mock: validates a token/url is present, then flips
- * status to connected/disconnected.
+ * Like the provider "test connection" flow — in Tauri this is a real
+ * credential probe (e.g. Lark tenant_access_token, Discord users/@me).
  */
 export async function testChannel(id: string): Promise<ChannelTestResult> {
+	if (isTauri()) {
+		return channelOp<ChannelTestResult>({ action: "test", channelId: id });
+	}
 	const channels = readStore();
 	const idx = channels.findIndex((c) => c.id === id);
 	if (idx === -1) throw new Error("Channel not found");
 	const c = channels[idx];
-	const hasCred = isTokenType(c.type) ? !!c.token?.trim() : !!c.webhookUrl?.trim();
+	const spec = channelFieldSpec(c.type);
+	const hasCred = spec.webhook
+		? !!c.webhookUrl?.trim()
+		: spec.appCredentials
+			? !!(c.appId?.trim() && c.appSecret?.trim())
+			: !!c.token?.trim();
 	const ok = hasCred;
+	const missing = spec.webhook ? "Missing webhook URL" : spec.appCredentials ? "Missing app credentials" : "Missing token";
 	channels[idx] = {
 		...c,
 		status: ok ? "connected" : "error",
-		lastError: ok ? undefined : isTokenType(c.type) ? "Missing token" : "Missing webhook URL",
+		lastError: ok ? undefined : missing,
 	};
 	writeStore(channels);
 	return delay({ ok, message: ok ? "Connection successful" : channels[idx].lastError ?? "Connection failed" }, 900);
@@ -197,15 +261,28 @@ export async function testChannel(id: string): Promise<ChannelTestResult> {
 
 /**
  * Resolve the workspace cwd options for the "deliver to" dropdown. Wraps the
- * real listWorkspaces(); when none exist (e.g. web preview without Tauri) the
- * dialog shows a hint instead of an empty dropdown.
+ * real listWorkspaces(); the persistent main assistant (~/.pizza/main) is
+ * pinned first and flagged `main` so the dialog can render it with the same
+ * name the sidebar uses (layout.agent). When no workspaces exist (e.g. web
+ * preview without Tauri) main is still offered — it always exists.
  */
-export async function workspaceOptions(): Promise<{ value: string; label: string; hint: string }[]> {
+export interface WorkspaceOption {
+	value: string;
+	label: string;
+	hint: string;
+	/** The persistent main assistant — label/hint come from layout.agent i18n. */
+	main?: boolean;
+}
+
+export async function workspaceOptions(): Promise<WorkspaceOption[]> {
 	const workspaces = await listWorkspaces();
-	return workspaces.map((ws) => {
-		const name = pathBasename(ws.cwd);
-		return { value: ws.cwd, label: name, hint: ws.cwd };
-	});
+	const options = workspaces
+		.filter((ws) => !isMainChatCwd(ws.cwd))
+		.map((ws) => {
+			const name = pathBasename(ws.cwd);
+			return { value: ws.cwd, label: name, hint: ws.cwd };
+		});
+	return [{ value: MAIN_CHAT_CWD, label: "", hint: "", main: true }, ...options];
 }
 
 /** Format "active 3m ago" / "no activity" for the card footer. */

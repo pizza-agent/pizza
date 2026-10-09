@@ -206,14 +206,14 @@ export type GatewayResponse =
 export function isGatewayRequest(value: unknown): value is GatewayRequest {
 	if (typeof value !== "object" || value === null) return false;
 	const type = (value as { type?: unknown }).type;
-	return type === "tell" || type === "ping" || type === "status" || type === "shutdown" || type === "attach" || type === "detach" || type === "rpc" || type === "list";
+	return type === "tell" || type === "ping" || type === "status" || type === "shutdown" || type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op";
 }
 
 /** Is the value a valid {@link GatewayResponse}? Structural check. */
 export function isGatewayResponse(value: unknown): value is GatewayResponse {
 	if (typeof value !== "object" || value === null) return false;
 	const type = (value as { type?: unknown }).type;
-	return type === "tell_result" || type === "pong" || type === "status_result" || type === "shutdown_ok" || type === "error" || type === "attach_ok" || type === "rpc" || type === "list_result";
+	return type === "tell_result" || type === "pong" || type === "status_result" || type === "shutdown_ok" || type === "error" || type === "attach_ok" || type === "rpc" || type === "list_result" || type === "channel_op_result";
 }
 
 /** Default tell timeout (ms) when the client omits one. */
@@ -268,6 +268,13 @@ export interface GatewayAttachRequest extends GatewayMessageBase {
 	workspace: string;
 	/** Optional event-log cursor to resume from (reserved for the log-tail upgrade). */
 	cursor?: number;
+	/**
+	 * Headless watcher: attach only to observe the event stream — do NOT upgrade
+	 * the workspace's agent to interactive. Bot-style channels (Discord/Lark/…)
+	 * set this so gated tool calls on turns they trigger auto-reject (headless
+	 * semantics) instead of hanging on an approval no human will answer.
+	 */
+	headless?: boolean;
 }
 
 /** `detach` — stop receiving events for a workspace on this connection. */
@@ -281,6 +288,8 @@ export interface GatewayRpcRequest extends GatewayMessageBase {
 	type: "rpc";
 	workspace: string;
 	frame: GatewayRpcFrame;
+	/** Same semantics as {@link GatewayAttachRequest.headless}: keep the agent headless. */
+	headless?: boolean;
 }
 
 /** `list` — enumerate known workspaces (name, cwd, workspace_id, last_accessed). */
@@ -288,12 +297,32 @@ export interface GatewayListRequest extends GatewayMessageBase {
 	type: "list";
 }
 
+/**
+ * `channel_op` — manage message-channel integrations (Discord/Lark/…): the
+ * configs the gateway persists and supervises (spawning one adapter process
+ * per enabled channel). One envelope for every op keeps the wire small; the
+ * response is always {@link GatewayChannelOpResult} with the same `id`.
+ */
+export interface GatewayChannelOpRequest extends GatewayMessageBase {
+	type: "channel_op";
+	/** Correlation id echoed back in the result. */
+	id: string;
+	action: "list" | "save" | "delete" | "set_enabled" | "test";
+	/** `save`: the full channel config (without `id` → create). */
+	channel?: Record<string, unknown>;
+	/** `delete` / `set_enabled` / `test`: the target channel id. */
+	channelId?: string;
+	/** `set_enabled`: the desired state. */
+	enabled?: boolean;
+}
+
 /** Any channel-originated request. */
 export type GatewayChannelRequest =
 	| GatewayAttachRequest
 	| GatewayDetachRequest
 	| GatewayRpcRequest
-	| GatewayListRequest;
+	| GatewayListRequest
+	| GatewayChannelOpRequest;
 
 /** `attach_ok` — confirms a subscription; carries the resolved cwd as the canonical workspace id. */
 export interface GatewayAttachOk extends GatewayMessageBase {
@@ -322,9 +351,20 @@ export interface GatewayListResult extends GatewayMessageBase {
 	workspaces: GatewayWorkspaceInfo[];
 }
 
+/** Reply to {@link GatewayChannelOpRequest}: `ok` + action-specific `data` or an `error`. */
+export interface GatewayChannelOpResult extends GatewayMessageBase {
+	type: "channel_op_result";
+	/** Echoes the request id. */
+	id: string;
+	ok: boolean;
+	data?: unknown;
+	error?: string;
+}
+
 /** Any gateway-originated message on a channel connection (broadened beyond tell-only). */
 export type GatewayChannelResponse =
 	| GatewayAttachOk
 	| GatewayRpcDelivery
 	| GatewayListResult
+	| GatewayChannelOpResult
 	| GatewayError;

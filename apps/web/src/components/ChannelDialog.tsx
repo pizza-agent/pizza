@@ -13,14 +13,16 @@ import { useTranslation } from "react-i18next";
 import { Button, ErrorBanner, Field, Modal, Select } from "@/components/ui";
 import {
 	CHANNEL_TYPES,
-	isTokenType,
+	channelFieldSpec,
 	saveChannel,
 	testChannel,
 	workspaceOptions,
 	type ChannelInfo,
 	type ChannelInput,
 	type ChannelType,
+	type WorkspaceOption,
 } from "@/lib/channels";
+import { MAIN_CHAT_CWD } from "@/lib/utils";
 
 interface ChannelDialogProps {
 	open: boolean;
@@ -37,12 +39,16 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 	const [type, setType] = useState<ChannelType>(existing?.type ?? "discord");
 	const [name, setName] = useState(existing?.name ?? "");
 	const [token, setToken] = useState(existing?.token ?? "");
+	const [appId, setAppId] = useState(existing?.appId ?? "");
+	const [appSecret, setAppSecret] = useState(existing?.appSecret ?? "");
 	const [server, setServer] = useState(existing?.server ?? "");
 	const [channel, setChannel] = useState(existing?.channel ?? "");
 	const [webhookUrl, setWebhookUrl] = useState(existing?.webhookUrl ?? "");
-	const [workspace, setWorkspace] = useState(existing?.workspace ?? "");
+	// New channels default to the persistent main assistant — same target the
+	// sidebar's top "Agent" entry chats with.
+	const [workspace, setWorkspace] = useState(existing?.workspace ?? MAIN_CHAT_CWD);
 	const [enabled, setEnabled] = useState(existing?.enabled ?? true);
-	const [workspaces, setWorkspaces] = useState<{ value: string; label: string; hint: string }[]>([]);
+	const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [testing, setTesting] = useState(false);
 	const [testMessage, setTestMessage] = useState<string | null>(null);
@@ -54,10 +60,12 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setType(existing?.type ?? "discord");
 		setName(existing?.name ?? "");
 		setToken(existing?.token ?? "");
+		setAppId(existing?.appId ?? "");
+		setAppSecret(existing?.appSecret ?? "");
 		setServer(existing?.server ?? "");
 		setChannel(existing?.channel ?? "");
 		setWebhookUrl(existing?.webhookUrl ?? "");
-		setWorkspace(existing?.workspace ?? "");
+		setWorkspace(existing?.workspace ?? MAIN_CHAT_CWD);
 		setEnabled(existing?.enabled ?? true);
 		setError(null);
 		setTestMessage(null);
@@ -70,13 +78,15 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		workspaceOptions().then(setWorkspaces).catch(() => setWorkspaces([]));
 	}, [open]);
 
-	const tokenType = isTokenType(type);
+	const spec = channelFieldSpec(type);
 
 	function validate(): string | null {
 		if (!name.trim()) return t("channels.dialog.nameRequired");
 		if (!workspace) return t("channels.dialog.workspaceRequired");
-		if (tokenType && !token.trim()) return t("channels.dialog.tokenRequired");
-		if (!tokenType && !webhookUrl.trim()) return t("channels.dialog.urlRequired");
+		if (spec.token && !token.trim()) return t("channels.dialog.tokenRequired");
+		if (spec.appCredentials && !appId.trim()) return t("channels.dialog.appIdRequired");
+		if (spec.appCredentials && !appSecret.trim()) return t("channels.dialog.appSecretRequired");
+		if (spec.webhook && !webhookUrl.trim()) return t("channels.dialog.urlRequired");
 		return null;
 	}
 
@@ -91,7 +101,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setTestMessage(null);
 		try {
 			// Save first (so testChannel has the latest config), then test.
-			const input: ChannelInput = { type, name: name.trim(), token, server, channel, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, server, channel, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			const result = await testChannel(saved.id);
 			setTestMessage(result.message);
@@ -112,7 +122,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setError(null);
 		setSaving(true);
 		try {
-			const input: ChannelInput = { type, name: name.trim(), token, server, channel, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, server, channel, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			onSaved(saved);
 			onClose();
@@ -173,18 +183,43 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 					</Field>
 				</div>
 
-				{tokenType ? (
+				{spec.appCredentials && (
 					<>
-						<Field label={t("channels.dialog.token")} hint={t("channels.dialog.tokenHint")}>
+						<Field label={t("channels.dialog.appId")} hint={t("channels.dialog.appIdHint")}>
+							<input
+								type="text"
+								value={appId}
+								onChange={(e) => setAppId(e.target.value)}
+								placeholder="cli_…"
+								className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+							/>
+						</Field>
+						<Field label={t("channels.dialog.appSecret")} hint={t("channels.dialog.appSecretHint")}>
 							<input
 								type="password"
-								value={token}
-								onChange={(e) => setToken(e.target.value)}
+								value={appSecret}
+								onChange={(e) => setAppSecret(e.target.value)}
 								placeholder="••••••••"
 								className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 							/>
 						</Field>
-						<div className="grid grid-cols-2 gap-3">
+						<p className="text-xs text-muted">{t("channels.dialog.larkHint")}</p>
+					</>
+				)}
+				{spec.token && (
+					<Field label={t("channels.dialog.token")} hint={t("channels.dialog.tokenHint")}>
+						<input
+							type="password"
+							value={token}
+							onChange={(e) => setToken(e.target.value)}
+							placeholder="••••••••"
+							className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+						/>
+					</Field>
+				)}
+				{(spec.server || spec.channel) && (
+					<div className="grid grid-cols-2 gap-3">
+						{spec.server && (
 							<Field label={t("channels.dialog.server")}>
 								<input
 									type="text"
@@ -194,6 +229,8 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 									className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 								/>
 							</Field>
+						)}
+						{spec.channel && (
 							<Field label={t("channels.dialog.channel")}>
 								<input
 									type="text"
@@ -203,9 +240,10 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 									className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 								/>
 							</Field>
-						</div>
-					</>
-				) : (
+						)}
+					</div>
+				)}
+				{spec.webhook && (
 					<Field label={t("channels.dialog.webhookUrl")} hint={t("channels.dialog.urlHint")}>
 						<input
 							type="text"
@@ -221,7 +259,9 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 					{workspaces.length > 0 ? (
 						<Select
 							value={workspace}
-							options={workspaces}
+							options={workspaces.map((o) =>
+								o.main ? { ...o, label: t("layout.agent"), hint: t("layout.agentSubtitle") } : o,
+							)}
 							onChange={setWorkspace}
 							placeholder={t("channels.dialog.workspacePlaceholder")}
 						/>

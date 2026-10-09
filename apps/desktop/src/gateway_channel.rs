@@ -271,6 +271,22 @@ impl GatewayChannel {
 					.unwrap()
 					.push(ChannelMessage::ListResult { workspaces });
 			}
+			"channel_op_result" => {
+				// Channel-management replies are id-routed like rpc responses,
+				// except the id sits at the envelope's top level (not in a frame).
+				let id = parsed
+					.get("id")
+					.and_then(|i| i.as_str())
+					.map(|s| s.to_string());
+				if let Some(id) = id {
+					if let Some(slot) = pending.lock().unwrap().get(&id).cloned() {
+						if let Ok(mut guard) = slot.lock() {
+							*guard = Some(parsed.clone());
+						}
+						return;
+					}
+				}
+			}
 			"error" => {
 				let message = parsed
 					.get("message")
@@ -379,6 +395,55 @@ impl GatewayChannel {
 	#[allow(dead_code)]
 	pub fn detach(&self, workspace: &str) -> Result<(), String> {
 		self.write_line(&json!({ "type": "detach", "workspace": workspace }))
+	}
+
+	/// Send a channel-management op (list/save/delete/set_enabled/test) and
+	/// await the matching `channel_op_result`. Returns the `data` payload on
+	/// `ok`, or the gateway's error string otherwise.
+	pub fn channel_op(&self, request: Value) -> Result<Value, String> {
+		let mut obj = request
+			.as_object()
+			.cloned()
+			.ok_or_else(|| "channel_op request must be an object".to_string())?;
+		let id = obj
+			.get("id")
+			.and_then(|i| i.as_str())
+			.map(|s| s.to_string())
+			.unwrap_or_else(|| format!("cop_{}", uuid::Uuid::new_v4()));
+		obj.insert("type".to_string(), Value::String("channel_op".to_string()));
+		obj.insert("id".to_string(), Value::String(id.clone()));
+		let slot: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+		self.pending
+			.lock()
+			.unwrap()
+			.insert(id.clone(), Arc::clone(&slot));
+		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+		if let Err(e) = self.write_line(&Value::Object(obj)) {
+			self.pending.lock().unwrap().remove(&id);
+			return Err(e);
+		}
+		loop {
+			if let Some(value) = slot.lock().unwrap().take() {
+				self.pending.lock().unwrap().remove(&id);
+				if value.get("_disconnected").is_some() {
+					return Err("gateway connection closed".into());
+				}
+				if value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+					return Ok(value.get("data").cloned().unwrap_or(Value::Null));
+				}
+				let err = value
+					.get("error")
+					.and_then(|e| e.as_str())
+					.unwrap_or("channel op failed")
+					.to_string();
+				return Err(err);
+			}
+			if std::time::Instant::now() > deadline {
+				self.pending.lock().unwrap().remove(&id);
+				return Err("channel op timed out".into());
+			}
+			std::thread::sleep(std::time::Duration::from_millis(5));
+		}
 	}
 
 	/// Drain only fanned-out **events** and the disconnect sentinel from the

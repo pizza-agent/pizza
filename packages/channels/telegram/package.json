@@ -25,7 +25,8 @@
 	},
 	"dependencies": {
 		"@tomsun28/pizza-channel-core": "*",
-		"grammy": "^1.30.0"
+		"grammy": "^1.30.0",
+		"https-proxy-agent": "^7.0.6"
 	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",
