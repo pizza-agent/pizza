@@ -70,6 +70,10 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		const text = msg.content.trim();
 		if (!text) return;
 
+		// Instant read-receipt — an EYES reaction says "received" without waiting
+		// on the LLM turn. Fire-and-forget: a failed reaction is fine.
+		void lark.addReaction(msg.messageId, "EYES").catch(() => {});
+
 		try {
 			const reply = await runtime.deliver(workspace, text, provenance("lark", chatId, msg.senderName));
 			// Reply in-thread so a busy group chat stays readable. The SDK chunks

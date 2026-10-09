@@ -57,6 +57,9 @@ void runChannel(async (runtime: ChannelRuntime) => {
 			(ctx.from?.username ? `@${ctx.from.username}` : undefined) ||
 			(ctx.chat.type !== "private" && "title" in ctx.chat ? ctx.chat.title : undefined);
 		try {
+			// Instant read-receipt — a 👀 reaction says "received" without waiting
+			// on the LLM turn. Fire-and-forget: a failed reaction is fine.
+			await ctx.react("👀").catch(() => {});
 			// Telegram lets us show "typing…" while the agent works.
 			await ctx.replyWithChatAction("typing");
 			const reply = await runtime.deliver(WORKSPACE, ctx.message.text, provenance("telegram", chatId, sender));

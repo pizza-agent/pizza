@@ -114,6 +114,10 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		const text = msg.content.replace(/<@!?\d+>/g, "").trim(); // strip the @bot mention
 		if (!text) return;
 
+		// Instant read-receipt — a 👀 reaction says "received" without waiting
+		// on the LLM turn. Fire-and-forget: a missing reaction perm is fine.
+		void msg.react("👀").catch(() => {});
+
 		// Reflect "typing" while the agent works (it may take a while). Not every
 		// channel kind can be typed in (e.g. partial group DMs), hence the guard.
 		const typeable = msg.channel.isSendable() ? msg.channel : undefined;
