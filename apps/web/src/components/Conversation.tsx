@@ -661,7 +661,7 @@ const AgentMessageCard = memo(function AgentMessageCard({
 	const i18nPrefix = isExternal ? "conversation.channelMessage" : "conversation.agentMessage";
 	return (
 		<div
-			className="my-4 flex flex-col items-start"
+			className="my-4 flex flex-col items-end"
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
 		>
