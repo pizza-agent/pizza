@@ -470,6 +470,8 @@
       "installing": "Installing…",
       "uninstall": "Uninstall",
       "uninstalling": "Uninstalling…",
+      "removePackageConfirm": "Remove package \"{{name}}\"? Its resources stay loaded until the session restarts.",
+      "removePackageFailed": "Failed to remove the package.",
       "actions": "Actions",
       "permissions": {
         "checking": "Checking desktop automation permissions",

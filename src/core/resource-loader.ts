@@ -15,7 +15,7 @@ import { loadLongTermMemory, loadSoulFile, type MemoryEntry, type SoulFile } fro
 import { createEventBus, type EventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
-import { collectAncestorAgentsSkillDirs, DefaultPackageManager, type PathMetadata } from "./package-manager.js";
+import { collectAncestorAgentsSkillDirs, DefaultPackageManager, type ConfiguredPackage, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
 import { loadPromptTemplates } from "./prompt-templates.js";
 import { SettingsManager } from "./settings-manager.js";
@@ -68,6 +68,10 @@ export interface ResourceLoader {
 	deleteSkill?(name: string): boolean;
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
+	/** Installed plugin packages configured in settings (may contribute any resource type). */
+	listConfiguredPackages?(): ConfiguredPackage[];
+	/** Remove an installed package (files for npm/git) and drop it from settings. Returns false when not configured. */
+	removeConfiguredPackage?(source: string): Promise<boolean>;
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
@@ -354,6 +358,23 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
 		return { themes: this.themes, diagnostics: this.themeDiagnostics };
+	}
+
+	/** Installed plugin packages configured in settings (may contribute any resource type). */
+	listConfiguredPackages(): ConfiguredPackage[] {
+		return this.packageManager.listConfiguredPackages();
+	}
+
+	async removeConfiguredPackage(source: string): Promise<boolean> {
+		const configured = this.packageManager.listConfiguredPackages().find((p) => p.source === source);
+		if (!configured) return false;
+		// Settings store local sources as paths relative to the agent/project
+		// dir — feeding them back verbatim would resolve against the process
+		// cwd and miss. installedPath is already resolved against the right
+		// base dir, so pass that instead.
+		const isLocalSource = isLocalPath(source) || source.startsWith("file:");
+		const effectiveSource = isLocalSource && configured.installedPath ? configured.installedPath : source;
+		return this.packageManager.removeAndPersist(effectiveSource, { local: configured.scope === "project" });
 	}
 
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {

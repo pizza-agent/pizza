@@ -502,6 +502,12 @@ export interface WebThemeInfo {
 		mode: "light" | "dark";
 		/** CSS custom-property overrides keyed without the "--" prefix. */
 		tokens: Record<string, string>;
+		/** Window/document title and app brand name shown while this theme is active. */
+		title?: string;
+		/** App icon (favicon, window icon, sidebar brand mark) as a data: URI. */
+		icon?: string;
+		/** Raw CSS injected only while this theme is active (background images, animations, ...). */
+		css?: string;
 	};
 }
 
@@ -533,6 +539,21 @@ export async function installExtension(
 		600000,
 	);
 	return { ok: r.data?.ok ?? false, message: r.data?.message ?? "", installed: r.data?.installed ?? false };
+}
+
+/** Remove an installed package (theme/skill/prompt pack) from settings; requires a session reload to unload its resources. */
+export async function removePackage(
+	source: string,
+): Promise<{ removed: boolean; requiresReload: boolean; error?: string }> {
+	try {
+		const r = await sendCommandAwait<{ source: string; removed: boolean; requiresReload: boolean }>(
+			{ type: "remove_package", source },
+			15000,
+		);
+		return { removed: r.data?.removed ?? false, requiresReload: r.data?.requiresReload ?? true };
+	} catch (e) {
+		return { removed: false, requiresReload: false, error: e instanceof Error ? e.message : String(e) };
+	}
 }
 
 /** Uninstall an extension's external dependency. */

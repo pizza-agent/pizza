@@ -94,13 +94,19 @@ const ThemeJsonSchema = Type.Object({
 	 * Optional web/desktop UI contribution. `tokens` maps CSS custom-property
 	 * names (without the "--" prefix, e.g. "bg", "surface", "accent",
 	 * "syn-keyword", "retro-card") to CSS values. Values may reference `vars`
-	 * entries just like `colors` values.
+	 * entries just like `colors` values. `title` rebrands the window/document
+	 * title, `icon` replaces the app icon (data: URI or a file path relative
+	 * to the theme JSON), and `css` injects raw CSS while the theme is active
+	 * (background images, animations, ...).
 	 */
 	web: Type.Optional(
 		Type.Object({
 			label: Type.Optional(Type.String()),
 			mode: Type.Optional(Type.Union([Type.Literal("light"), Type.Literal("dark")])),
 			tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
+			title: Type.Optional(Type.String()),
+			icon: Type.Optional(Type.String()),
+			css: Type.Optional(Type.String()),
 		}),
 	),
 });
@@ -176,6 +182,16 @@ export interface WebThemeSpec {
 	label?: string;
 	mode: "light" | "dark";
 	tokens: Record<string, string>;
+	/** Window/document title and brand name shown while this theme is active. */
+	title?: string;
+	/**
+	 * App icon (favicon, window icon, sidebar brand mark). A data: URI, or a
+	 * file path resolved against the theme JSON's directory — resolved to a
+	 * data URI by {@link resolveThemeIcon} before reaching clients.
+	 */
+	icon?: string;
+	/** Raw CSS injected only while this theme is active (images, animations, ...). */
+	css?: string;
 }
 
 // ============================================================================
@@ -661,7 +677,53 @@ function buildWebSpec(themeJson: ThemeJson, resolvedColors: Record<string, strin
 	}
 	if (!themeJson.web && Object.keys(tokens).length === 0) return undefined;
 	const mode = themeJson.web?.mode ?? (/light/i.test(themeJson.name) ? "light" : "dark");
-	return { label: themeJson.web?.label, mode, tokens };
+	return {
+		label: themeJson.web?.label,
+		mode,
+		tokens,
+		title: themeJson.web?.title,
+		icon: themeJson.web?.icon,
+		css: themeJson.web?.css,
+	};
+}
+
+const ICON_MIME_TYPES: Record<string, string> = {
+	".png": "image/png",
+	".ico": "image/x-icon",
+	".svg": "image/svg+xml",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".webp": "image/webp",
+	".gif": "image/gif",
+};
+
+/** Max icon file size embedded into RPC payloads. */
+const MAX_ICON_BYTES = 512 * 1024;
+
+/**
+ * Resolve a theme's `web.icon` to a data URI consumable by web/desktop
+ * clients. `data:` URIs pass through; file paths resolve relative to the
+ * theme JSON's directory (or absolute). Returns undefined when the icon
+ * cannot be resolved to a data URI.
+ */
+export function resolveThemeIcon(icon: string | undefined, sourcePath: string | undefined): string | undefined {
+	if (!icon || /^https?:\/\//i.test(icon)) return undefined;
+	if (icon.startsWith("data:")) return icon;
+	const iconPath = path.isAbsolute(icon)
+		? icon
+		: sourcePath
+			? path.join(path.dirname(sourcePath), icon)
+			: undefined;
+	if (!iconPath) return undefined;
+	const mime = ICON_MIME_TYPES[path.extname(iconPath).toLowerCase()];
+	if (!mime) return undefined;
+	try {
+		const stat = fs.statSync(iconPath);
+		if (!stat.isFile() || stat.size > MAX_ICON_BYTES) return undefined;
+		return `data:${mime};base64,${fs.readFileSync(iconPath).toString("base64")}`;
+	} catch {
+		return undefined;
+	}
 }
 
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {

@@ -10,18 +10,31 @@ export interface CustomTheme {
 	label: string;
 	mode: Theme;
 	tokens: Record<string, string>;
+	/** Window/document title and brand name shown while this theme is active. */
+	title?: string;
+	/** App icon as a data: URI (favicon, window icon, sidebar brand mark). */
+	icon?: string;
+	/** Raw CSS injected only while this theme is active. */
+	css?: string;
 }
 
 const STORAGE_KEY = "pizza-theme";
 const MODE_KEY = "pizza-theme-mode";
 const CSS_KEY = "pizza-theme-css";
+const EXTRA_CSS_KEY = "pizza-theme-extra-css";
+const TITLE_KEY = "pizza-theme-title";
+const ICON_KEY = "pizza-theme-icon";
 const STYLE_ID = "pizza-custom-theme";
+const EXTRA_STYLE_ID = "pizza-custom-theme-extra";
+const FAVICON_ID = "pizza-theme-favicon";
+const DEFAULT_TITLE = "Pizza";
 
 import { isTauri } from "./utils";
 import { listThemes } from "./transport";
 
 let customThemes: CustomTheme[] = [];
 let styleEl: HTMLStyleElement | null = null;
+let extraStyleEl: HTMLStyleElement | null = null;
 
 function hexToRgbTuple(hex: string): [number, number, number] | null {
 	const m = hex.replace("#", "");
@@ -40,6 +53,63 @@ async function syncWindowBackground(mode: Theme, bgHex?: string): Promise<void> 
 	} catch {
 		// ignore
 	}
+}
+
+/** Sync window title + icon to the theme's web.title/web.icon (desktop only). */
+async function syncWindowChrome(custom: CustomTheme | undefined): Promise<void> {
+	if (!isTauri()) return;
+	try {
+		const { getCurrentWindow } = await import("@tauri-apps/api/window");
+		const win = getCurrentWindow();
+		await win.setTitle(custom?.title ?? DEFAULT_TITLE);
+		if (custom?.icon?.startsWith("data:")) {
+			const { Image } = await import("@tauri-apps/api/image");
+			const base64 = custom.icon.slice(custom.icon.indexOf(",") + 1);
+			const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+			await win.setIcon(await Image.fromBytes(bytes));
+		}
+	} catch {
+		// ignore
+	}
+}
+
+/** Point the favicon at the theme icon (data: URI); removes it when the theme has none. */
+function applyFavicon(icon: string | undefined): void {
+	let link = document.getElementById(FAVICON_ID) as HTMLLinkElement | null;
+	if (!icon) {
+		link?.remove();
+		return;
+	}
+	if (!link) {
+		link = document.createElement("link");
+		link.id = FAVICON_ID;
+		link.rel = "icon";
+		document.head.appendChild(link);
+	}
+	link.type = icon.slice(5, icon.indexOf(";")) || "image/png";
+	link.href = icon;
+}
+
+function ensureExtraStyleEl(): HTMLStyleElement {
+	if (extraStyleEl && extraStyleEl.isConnected) return extraStyleEl;
+	const existing = document.getElementById(EXTRA_STYLE_ID);
+	extraStyleEl = existing instanceof HTMLStyleElement ? existing : document.createElement("style");
+	extraStyleEl.id = EXTRA_STYLE_ID;
+	if (!extraStyleEl.isConnected) document.head.appendChild(extraStyleEl);
+	return extraStyleEl;
+}
+
+/**
+ * Apply the parts of a theme CSS vars cannot express: document/window title,
+ * favicon, window icon, and the theme's raw `web.css` (injected only while
+ * the theme is active — it is not scoped, so it must not be pre-rendered for
+ * every theme like the token stylesheet is).
+ */
+function applyChrome(custom: CustomTheme | undefined): void {
+	document.title = custom?.title ?? DEFAULT_TITLE;
+	ensureExtraStyleEl().textContent = custom?.css ?? "";
+	applyFavicon(custom?.icon);
+	void syncWindowChrome(custom);
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +204,22 @@ export function listCustomThemes(): CustomTheme[] {
 	return customThemes;
 }
 
+/** Reactive variant of listCustomThemes — re-renders when the catalog is refreshed. */
+export function useCustomThemes(): CustomTheme[] {
+	const [themes, setThemes] = useState<CustomTheme[]>(customThemes);
+	useEffect(() => {
+		const update = () => setThemes(customThemes);
+		customThemeListeners.add(update);
+		return () => {
+			customThemeListeners.delete(update);
+		};
+	}, []);
+	return themes;
+}
+
+/** Notified when the custom theme catalog is (re)fetched so consumers re-render. */
+const customThemeListeners = new Set<() => void>();
+
 /** Fetch the theme catalog from the agent and (re)generate the theme stylesheet. */
 export async function refreshCustomThemes(): Promise<CustomTheme[]> {
 	const infos = await listThemes();
@@ -144,10 +230,14 @@ export async function refreshCustomThemes(): Promise<CustomTheme[]> {
 			label: t.web!.label ?? t.label ?? t.name,
 			mode: t.web!.mode,
 			tokens: t.web!.tokens,
+			title: t.web!.title,
+			icon: t.web!.icon,
+			css: t.web!.css,
 		}));
 	injectThemesCss();
 	// Re-apply: a previously saved custom theme may have just become available.
 	applyTheme(getThemeId());
+	for (const listener of customThemeListeners) listener();
 	return customThemes;
 }
 
@@ -175,6 +265,7 @@ function applyTheme(id: string): void {
 	} else {
 		delete root.dataset.theme;
 	}
+	applyChrome(custom);
 	void syncWindowBackground(mode, custom?.tokens.bg);
 }
 
@@ -198,8 +289,17 @@ export function setTheme(id: string): void {
 		const custom = findCustomTheme(id);
 		if (custom) {
 			localStorage.setItem(CSS_KEY, renderThemeCss(custom));
+			if (custom.css) localStorage.setItem(EXTRA_CSS_KEY, custom.css);
+			else localStorage.removeItem(EXTRA_CSS_KEY);
+			if (custom.title) localStorage.setItem(TITLE_KEY, custom.title);
+			else localStorage.removeItem(TITLE_KEY);
+			if (custom.icon) localStorage.setItem(ICON_KEY, custom.icon);
+			else localStorage.removeItem(ICON_KEY);
 		} else {
 			localStorage.removeItem(CSS_KEY);
+			localStorage.removeItem(EXTRA_CSS_KEY);
+			localStorage.removeItem(TITLE_KEY);
+			localStorage.removeItem(ICON_KEY);
 		}
 	} catch {
 		/* ignore */
@@ -222,9 +322,11 @@ export function useTheme(): Theme {
 		});
 		return () => observer.disconnect();
 	}, []);
-	// Sync window background on mount and theme change
+	// Sync window background and title/icon on mount and theme change
 	useEffect(() => {
-		void syncWindowBackground(theme, findCustomTheme(getThemeId())?.tokens.bg);
+		const custom = findCustomTheme(getThemeId());
+		void syncWindowBackground(theme, custom?.tokens.bg);
+		void syncWindowChrome(custom);
 	}, [theme]);
 	return theme;
 }

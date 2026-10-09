@@ -24,6 +24,25 @@
 						style.textContent = css;
 						document.head.appendChild(style);
 					}
+					var extraCss = localStorage.getItem("pizza-theme-extra-css");
+					if (extraCss) {
+						var extra = document.createElement("style");
+						extra.id = "pizza-custom-theme-extra";
+						extra.textContent = extraCss;
+						document.head.appendChild(extra);
+					}
+					var themeTitle = localStorage.getItem("pizza-theme-title");
+					if (themeTitle) {
+						document.title = themeTitle;
+					}
+					var themeIcon = localStorage.getItem("pizza-theme-icon");
+					if (themeIcon) {
+						var fav = document.createElement("link");
+						fav.id = "pizza-theme-favicon";
+						fav.rel = "icon";
+						fav.href = themeIcon;
+						document.head.appendChild(fav);
+					}
 				} catch (e) {}
 			})();
 		</script>

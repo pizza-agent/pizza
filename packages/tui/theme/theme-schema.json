@@ -333,6 +333,18 @@
 					"additionalProperties": {
 						"type": "string"
 					}
+				},
+				"title": {
+					"type": "string",
+					"description": "Window/document title and app brand name shown while this theme is active"
+				},
+				"icon": {
+					"type": "string",
+					"description": "App icon (favicon, window icon, sidebar brand mark): a data: URI, or an image file path relative to this theme JSON"
+				},
+				"css": {
+					"type": "string",
+					"description": "Raw CSS injected only while this theme is active — for background images, animations, anything tokens cannot express"
 				}
 			},
 			"additionalProperties": false

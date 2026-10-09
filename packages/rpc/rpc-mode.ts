@@ -12,6 +12,8 @@
  */
 
 import * as crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { AgentMessage } from "../../src/core/agent/types.js";
 import { computeMessageStats, type SessionStats } from "../../src/core/session-stats.js";
 import type {
@@ -35,7 +37,7 @@ import { exportFromFile } from "../../src/core/export-html/index.js";
 import { buildHistoryTreeNodes } from "../../src/core/projection/history-tree.js";
 import { killTrackedDetachedChildren } from "../../src/utils/shell.js";
 import { startPtyServer, type PtyServer } from "../pty/pty-server.js";
-import { type Theme, theme } from "../../packages/tui/theme/theme.js";
+import { type Theme, theme, resolveThemeIcon } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
 import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "@tomsun28/pizza-protocol";
 import { installCrashHandlers } from "../../src/core/crash-handlers.js";
@@ -192,9 +194,8 @@ function extensionIdFromPath(extPath: string): string {
  */
 function canonicalWorkspaceId(cwd: string): string {
 	if (/^ws_[0-9a-f]{12}$/.test(cwd)) return cwd;
-	const { resolve } = require("node:path") as typeof import("node:path");
 	const canonical = resolve(cwd).replace(/\\/g, "/");
-	return `ws_${require("node:crypto").createHash("sha256").update(canonical).digest("hex").slice(0, 12)}`;
+	return `ws_${crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 12)}`;
 }
 
 function workspaceIdMatches(provided: string | undefined, expected: string | undefined): boolean {
@@ -336,6 +337,31 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 			builtinCommandCount: 0,
 		});
 	}
+
+	// Installed packages that contribute only non-extension resources (theme/
+	// skill/prompt packs) still deserve a row so users can see and manage them.
+	const loadedPackageSources = new Set(
+		loaded.filter((e) => e.sourceInfo?.origin === "package").map((e) => e.sourceInfo.source),
+	);
+	for (const pkg of facade.resourceLoader?.listConfiguredPackages?.() ?? []) {
+		if (loadedPackageSources.has(pkg.source)) continue;
+		const manifest = readInstalledPackageJson(pkg.installedPath);
+		infos.push({
+			id: pkg.source,
+			name: manifest?.name ?? pkg.source,
+			description: manifest?.description,
+			kind: "package",
+			enabled: true,
+			canToggle: false,
+			installable: false,
+			installed: true,
+			path: pkg.installedPath ?? pkg.source,
+			toolCount: 0,
+			commandCount: 0,
+			builtinCommandCount: 0,
+		});
+	}
+
 	// Stable ordering: built-ins first, then the rest by id.
 	infos.sort((a, b) => {
 		if ((a.kind === "builtin") !== (b.kind === "builtin")) {
@@ -344,6 +370,17 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 		return a.id.localeCompare(b.id);
 	});
 	return infos;
+}
+
+/** Read name/description from an installed package's package.json (best-effort). */
+function readInstalledPackageJson(installedPath: string | undefined): { name?: string; description?: string } | undefined {
+	if (!installedPath) return undefined;
+	try {
+		const pkg = JSON.parse(readFileSync(join(installedPath, "package.json"), "utf-8"));
+		return { name: pkg.name, description: pkg.description };
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -363,7 +400,7 @@ function buildThemeInfos(facade: SessionFacade): RpcThemeInfo[] {
 			path: theme.sourcePath,
 			source: theme.sourceInfo?.source,
 			builtin: !theme.sourcePath || theme.sourcePath.startsWith(builtinDir),
-			web: theme.web,
+			web: { ...theme.web, icon: resolveThemeIcon(theme.web.icon, theme.sourcePath) },
 		});
 	}
 	infos.sort((a, b) => a.name.localeCompare(b.name));
@@ -1348,6 +1385,16 @@ export async function runRpcModeWithFacade(
 				message: result.message,
 				installed: result.installed,
 			});
+		}
+
+		case "remove_package": {
+			const removed = await facade.resourceLoader?.removeConfiguredPackage?.(command.source);
+			if (!removed) {
+				return error(id, "remove_package", `Package not configured: ${command.source}`);
+			}
+			// Resources the package contributed (themes, skills, ...) stay loaded
+			// until the session reloads its resources.
+			return success(id, "remove_package", { source: command.source, removed: true, requiresReload: true });
 		}
 
 		case "get_extension_permissions": {

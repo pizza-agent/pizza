@@ -470,6 +470,8 @@
       "installing": "安装中…",
       "uninstall": "卸载",
       "uninstalling": "卸载中…",
+      "removePackageConfirm": "移除插件包 \"{{name}}\"？其资源在会话重启前仍会保持加载。",
+      "removePackageFailed": "移除插件包失败。",
       "actions": "操作",
       "permissions": {
         "checking": "正在检测电脑自动化权限",
