@@ -28,6 +28,10 @@ for (const provider of builtinProviders()) {
 	providers[provider.id] = overrides[provider.id] ?? provider.name;
 }
 
+// Providers implemented in pizza's own layer (not pi-ai's catalog).
+// Keep in sync with getBuiltinFlows() in src/core/oauth.ts.
+providers["devin"] = "Devin (Devin CLI account)";
+
 await mkdir(outDir, { recursive: true });
 await writeFile(outFile, JSON.stringify(providers, null, 2) + "\n", "utf8");
 

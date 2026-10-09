@@ -502,6 +502,14 @@ export interface WebThemeInfo {
 		mode: "light" | "dark";
 		/** CSS custom-property overrides keyed without the "--" prefix. */
 		tokens: Record<string, string>;
+		/** Window/document title and app brand name shown while this theme is active. */
+		title?: string;
+		/** App icon (favicon, window icon, sidebar brand mark) as a data: URI. */
+		icon?: string;
+		/** Raw CSS injected only while this theme is active (background images, animations, ...). */
+		css?: string;
+		/** Background video as a data: URI — plays muted+looping behind app content. */
+		video?: string;
 	};
 }
 
@@ -533,6 +541,21 @@ export async function installExtension(
 		600000,
 	);
 	return { ok: r.data?.ok ?? false, message: r.data?.message ?? "", installed: r.data?.installed ?? false };
+}
+
+/** Remove an installed package (theme/skill/prompt pack) from settings; requires a session reload to unload its resources. */
+export async function removePackage(
+	source: string,
+): Promise<{ removed: boolean; requiresReload: boolean; error?: string }> {
+	try {
+		const r = await sendCommandAwait<{ source: string; removed: boolean; requiresReload: boolean }>(
+			{ type: "remove_package", source },
+			15000,
+		);
+		return { removed: r.data?.removed ?? false, requiresReload: r.data?.requiresReload ?? true };
+	} catch (e) {
+		return { removed: false, requiresReload: false, error: e instanceof Error ? e.message : String(e) };
+	}
 }
 
 /** Uninstall an extension's external dependency. */
@@ -597,12 +620,53 @@ export interface SkillsShSkill {
 	installs?: number;
 }
 
+const SKILLS_SH_CACHE_KEY = "pizza-skills-sh-cache";
+/** The skills.sh directory changes slowly — cache it for a few days. */
+const SKILLS_SH_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+let skillsShMemCache: { skills: SkillsShSkill[]; fetchedAt: number } | null = null;
+
+function readSkillsShCache(): { skills: SkillsShSkill[]; fetchedAt: number } | null {
+	if (skillsShMemCache) return skillsShMemCache;
+	try {
+		const raw = localStorage.getItem(SKILLS_SH_CACHE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed?.skills) && typeof parsed.fetchedAt === "number") {
+			skillsShMemCache = parsed;
+			return parsed;
+		}
+	} catch {
+		/* ignore */
+	}
+	return null;
+}
+
+function writeSkillsShCache(skills: SkillsShSkill[]): void {
+	const entry = { skills, fetchedAt: Date.now() };
+	skillsShMemCache = entry;
+	try {
+		localStorage.setItem(SKILLS_SH_CACHE_KEY, JSON.stringify(entry));
+	} catch {
+		/* quota — memory cache still works */
+	}
+}
+
+/** Whatever is currently cached (fresh or stale), or null — for instant first paint. */
+export function getCachedSkillsSh(): SkillsShSkill[] | null {
+	return readSkillsShCache()?.skills ?? null;
+}
+
 /**
  * Fetch skill directory from skills.sh by scraping the HTML leaderboard.
  * The official API requires Vercel OIDC auth, but the HTML page contains
  * all skill links rendered server-side.
  */
-export async function fetchSkillsSh(): Promise<SkillsShSkill[]> {
+export async function fetchSkillsSh(force = false): Promise<SkillsShSkill[]> {
+	const cached = readSkillsShCache();
+	if (!force && cached && Date.now() - cached.fetchedAt < SKILLS_SH_TTL_MS) {
+		return cached.skills;
+	}
 	try {
 		let html: string;
 		if (isTauri()) {
@@ -612,7 +676,7 @@ export async function fetchSkillsSh(): Promise<SkillsShSkill[]> {
 			const res = await fetch("https://www.skills.sh/", {
 				headers: { Accept: "text/html" },
 			});
-			if (!res.ok) return [];
+			if (!res.ok) return cached?.skills ?? [];
 			html = await res.text();
 		}
 		const seen = new Set<string>();
@@ -635,9 +699,14 @@ export async function fetchSkillsSh(): Promise<SkillsShSkill[]> {
 				installUrl: `https://github.com/${source}`,
 			});
 		}
+		// An empty scrape almost always means the page markup changed or the
+		// response was a shell — keep serving whatever we had rather than
+		// rendering an empty directory.
+		if (skills.length === 0) return cached?.skills ?? [];
+		writeSkillsShCache(skills);
 		return skills;
 	} catch {
-		return [];
+		return cached?.skills ?? [];
 	}
 }
 

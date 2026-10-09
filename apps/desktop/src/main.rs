@@ -53,6 +53,10 @@ fn main() {
 		])
 		.setup(|app| {
 			bridge::start_scheduler_sidecar_guard(app.handle().clone());
+			// Pre-fetch `pizza auth list --json` so Settings doesn't wait ~1s
+			// for a CLI spawn on first open.
+			let warmup_app = app.handle().clone();
+			std::thread::spawn(move || bridge::warm_auth_options(&warmup_app));
 			#[cfg(debug_assertions)]
 			{
 				if let Some(window) = app.get_webview_window("main") {

@@ -552,7 +552,8 @@ export function Composer({
 		// The `@` must not be glued to a preceding word character, otherwise
 		// e-mails (`a@b.com`) and scoped paths would pop the menu open. We check
 		// for ASCII word/path characters rather than requiring whitespace: CJK
-		// text has no spaces, so `帮我看看@Composer` must still trigger the menu.
+		// text has no spaces, so `帮我看看@Composer` ("take a look @Composer"
+		// with no spaces) must still trigger the menu.
 		if (atIdx > 0 && /[A-Za-z0-9._~-]/.test(before[atIdx - 1])) {
 			closeMention();
 			return;
@@ -636,9 +637,9 @@ export function Composer({
 
 	// Approval policy for the current session (two states). Selected inline in
 	// the composer so the user can choose per-session without visiting Settings.
-	// "off" (自动) auto-runs everything; "auto" (审批, default) gates only
-	// unknown tools and dangerous commands. Legacy "on" (strict) settings map
-	// to 审批 in the UI.
+	// "off" (自动 "automatic") auto-runs everything; "auto" (审批 "approval",
+	// default) gates only unknown tools and dangerous commands. Legacy "on"
+	// (strict) settings map to 审批 ("approval") in the UI.
 	const approvalPolicy = state?.approvalPolicy ?? (state?.safeMode ? "on" : "auto");
 	const gated = approvalPolicy !== "off";
 	const handleApprovalPolicyChange = useCallback(async (policy: "auto" | "off") => {

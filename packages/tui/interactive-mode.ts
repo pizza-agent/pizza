@@ -1102,7 +1102,8 @@ export class InteractiveMode {
    */
   private updateTerminalTitle(): void {
     const cwdBasename = path.basename(this.facadeCwd);
-    this.ui.terminal.setTitle(`Pizza - ${cwdBasename}`);
+    const appName = theme.web?.title ?? "Pizza";
+    this.ui.terminal.setTitle(`${appName} - ${cwdBasename}`);
   }
 
   /**
@@ -4356,6 +4357,7 @@ export class InteractiveMode {
           onThemeChange: (themeName) => {
             const result = setTheme(themeName, true);
             this.settingsManager.setTheme(themeName);
+            this.updateTerminalTitle();
             this.ui.invalidate();
             if (!result.success) {
               this.showError(

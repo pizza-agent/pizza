@@ -9,13 +9,13 @@ import { Z } from "@/lib/z-index";
  * The 6 visual schedule modes (plus an "advanced (cron)" entry). Matches
  * the screenshot the user shared:
  *
- *   - 每隔 N 分钟 / Every N minutes
- *   - 每隔 N 小时 / Every N hours
- *   - 每天固定时间 / Every day at fixed times
- *   - 工作日固定时间 / Weekdays at fixed times
- *   - 每周几固定时间 / Weekly on chosen weekdays at fixed times
- *   - 每月固定时间 / Monthly on chosen days at fixed times
- *   - Cron 表达式 / Cron expression (advanced)
+ *   - Every N minutes
+ *   - Every N hours
+ *   - Every day at fixed times
+ *   - Weekdays at fixed times
+ *   - Weekly on chosen weekdays at fixed times
+ *   - Monthly on chosen days at fixed times
+ *   - Cron expression (advanced)
  */
 const VISUAL_MODES: ScheduleMode[] = [
 	"every_n_minutes",

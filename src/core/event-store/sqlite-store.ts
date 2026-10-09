@@ -41,6 +41,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	private sessionStore: SqliteSessionStore;
 
 	private _nextSequence = 0;
+	private _closed = false;
 
 	readonly workspace_id: string;
 
@@ -197,6 +198,9 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	query(filter: EventQuery): EventBase[] {
+		// Reads on a closed store return empty — renderers (footer, projection)
+		// can fire once more during shutdown after dispose() ran.
+		if (this._closed) return [];
 		const clauses = ["workspace_id = ?"];
 		const params: SQLInputValue[] = [this.workspace_id];
 
@@ -257,6 +261,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	get(event_id: string): EventBase | undefined {
+		if (this._closed) return undefined;
 		const row = this.db
 			.prepare("select * from events where workspace_id = ? and event_id = ?")
 			.get(this.workspace_id, event_id) as EventRow | undefined;
@@ -294,6 +299,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	get size(): number {
+		if (this._closed) return 0;
 		const row = this.db
 			.prepare("select count(*) as count from events where workspace_id = ?")
 			.get(this.workspace_id) as { count: number };
@@ -301,6 +307,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	get head(): string | undefined {
+		if (this._closed) return undefined;
 		const row = this.db
 			.prepare("select event_id from events where workspace_id = ? order by sequence desc limit 1")
 			.get(this.workspace_id) as { event_id: string } | undefined;
@@ -312,6 +319,8 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	close(): void {
+		if (this._closed) return;
+		this._closed = true;
 		if (this._metaTouchTimer) {
 			clearTimeout(this._metaTouchTimer);
 			this._metaTouchTimer = undefined;
@@ -320,6 +329,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	getSessionIndex(): SessionIndex | undefined {
+		if (this._closed) return undefined;
 		return this.sessionStore.getSessionIndex();
 	}
 

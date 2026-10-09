@@ -1,15 +1,16 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
+import { Editor, visibleWidth, type EditorOptions, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../src/core/keybindings.js";
+import { theme } from "../theme/theme.js";
 
 /** Strip ANSI escape sequences for visible-text checks. */
 function stripAnsi(str: string): string {
 	return str.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-/** Check if a rendered line is a plain border (all ─ characters). */
-function isPlainBorder(line: string): boolean {
-	const stripped = stripAnsi(line);
-	return stripped.length > 2 && /^─+$/.test(stripped);
+/** Check if a rendered line is a border rule (plain ─ run or "↑/↓ N more" scroll hint). */
+function isBorderLine(line: string): boolean {
+	const s = stripAnsi(line);
+	return /^─+$/.test(s) || /^─+\s*[↑↓]\s*\d+\s*more\s*─*$/.test(s);
 }
 
 /**
@@ -90,28 +91,54 @@ export class CustomEditor extends Editor {
 	}
 
 	/**
-	 * Override render to add cyber-style corner brackets on border lines.
-	 * The parent Editor renders plain ─── lines; we replace the first and
-	 * last simple border lines with angular corners (┌┐ / └┘).
-	 * Scroll indicators and content lines are passed through unchanged.
+	 * Override render to draw an asymmetric frame: the left side is open and
+	 * shows a `❯` prompt on the first content line, while the right side is a
+	 * full border (┐ / │ / ┘). The parent renders plain full-width ─── rules
+	 * with no side borders, so we render 3 columns narrower and splice in the
+	 * prompt marker and right edge ourselves.
 	 */
 	render(width: number): string[] {
-		const lines = super.render(width);
-		if (width < 4 || lines.length < 2) return lines;
+		// Need room for "> ", "│", and at least a couple columns of text.
+		if (width < 6) return super.render(width);
 
-		// Top border: first line if it's a plain border
-		if (isPlainBorder(lines[0]!)) {
-			lines[0] = this.borderColor("┌") + this.borderColor("─").repeat(width - 2) + this.borderColor("┐");
-		}
+		const innerWidth = width - 3;
+		const lines = super.render(innerWidth);
+		if (lines.length < 2) return lines;
 
-		// Bottom border: scan backwards from end for the last plain border
+		// The last border line (plain rule or "↓ N more" scroll hint) is the
+		// bottom border; anything after it is the autocomplete popup.
+		let bottomIdx = -1;
 		for (let i = lines.length - 1; i >= 1; i--) {
-			if (isPlainBorder(lines[i]!)) {
-				lines[i] = this.borderColor("└") + this.borderColor("─").repeat(width - 2) + this.borderColor("┘");
+			if (isBorderLine(lines[i]!)) {
+				bottomIdx = i;
 				break;
 			}
 		}
+		if (bottomIdx === -1) return super.render(width);
 
-		return lines;
+		const out: string[] = [this.frameBorder(lines[0]!, "┐", innerWidth)];
+		for (let i = 1; i < bottomIdx; i++) {
+			const marker = i === 1 ? this.promptMarker() : "  ";
+			out.push(marker + lines[i] + this.borderColor("│"));
+		}
+		out.push(this.frameBorder(lines[bottomIdx]!, "┘", innerWidth));
+
+		// Autocomplete popup lines: indent to sit under the editor text.
+		for (let i = bottomIdx + 1; i < lines.length; i++) {
+			out.push("  " + lines[i] + " ".repeat(Math.max(0, width - 2 - visibleWidth(lines[i]!))));
+		}
+		return out;
+	}
+
+	/** Build a full-width horizontal rule ending in the given corner, preserving scroll hints. */
+	private frameBorder(line: string, corner: string, innerWidth: number): string {
+		if (/[↑↓]/.test(stripAnsi(line))) {
+			return this.borderColor("──") + line + this.borderColor(corner);
+		}
+		return this.borderColor("─".repeat(innerWidth + 2) + corner);
+	}
+
+	private promptMarker(): string {
+		return theme.fg("accent", "❯") + " ";
 	}
 }

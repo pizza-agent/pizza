@@ -6,15 +6,15 @@
  *   1. DeterministicPatternDetector — pure regex/heuristics covering the
  *      ~80% case in Chinese and English. No LLM, no model latency, fully
  *      testable. Supports phrases like:
- *        - "X 分钟后提醒我 Y"
- *        - "X 小时后提醒我 Y"
- *        - "明天 HH:MM Y"
- *        - "后天 HH:MM Y"
+ *        - "remind me in X minutes: Y" / "X 分钟后提醒我 Y"
+ *        - "remind me in X hours: Y" / "X 小时后提醒我 Y"
+ *        - "tomorrow HH:MM Y" / "明天 HH:MM Y"
+ *        - "day after tomorrow HH:MM Y" / "后天 HH:MM Y"
  *        - "每天 HH:MM Y" / "every day at HH:MM Y"
  *        - "工作日 HH:MM Y" / "weekdays at HH:MM Y"
  *        - "每周X HH:MM Y" / "every Monday HH:MM Y"
  *        - "每月 X 号 HH:MM Y" / "on the 15th of every month Y"
- *        - "提醒我 Y" with no schedule (returns null — too ambiguous)
+ *        - "remind me Y" / "提醒我 Y" with no schedule (returns null — too ambiguous)
  *
  *   2. ScheduleIntentDetector — interface that callers can implement for
  *      LLM-backed detection. The runtime uses the deterministic detector
@@ -54,7 +54,8 @@ function parseTimeOfDay(s: string): TimeOfDay | null {
 function pickPrompt(after: string | undefined, fallback: string): string {
 	const trimmed = (after ?? "").trim();
 	if (!trimmed) return fallback;
-	// Strip leading "提醒我", "remind me to", "remind me", "提醒", "提醒一下"
+	// Strip leading reminder phrases ("remind me to", "remind me" in en;
+	// 提醒我 / 提醒 / 提醒一下 / 提醒我去做 in zh)
 	return trimmed
 		.replace(/^(提醒|提醒我|提醒一下|提醒我去做|remind me to|remind me|remind me about)\s*/i, "")
 		.trim() || fallback;
@@ -125,7 +126,8 @@ export class DeterministicPatternDetector implements ScheduleIntentDetector {
 		}
 
 		// 3. Absolute time within today/tomorrow/etc.: "<day> HH:MM <prompt>"
-		// Examples: "明天 8:00 提醒我 ...", "today 14:30 ...", "tomorrow at 9:00 ..."
+		// Examples: "tomorrow 8:00 remind me ..." / "明天 8:00 提醒我 ...",
+		// "today 14:30 ...", "tomorrow at 9:00 ..."
 		const dayMatch = /(今天|明天|后天|今日|明日|后日|today|tomorrow|tonight)\s*(at\s+)?(\d{1,2}:\d{2})\s+(.*)$/i.exec(t);
 		if (dayMatch) {
 			const dayWord = dayMatch[1]!.toLowerCase();
@@ -135,14 +137,15 @@ export class DeterministicPatternDetector implements ScheduleIntentDetector {
 			if (tod) {
 				const offset = dayWord.startsWith("tomorrow") || dayWord === "明天" || dayWord === "明日" ? 1
 					: dayWord.startsWith("今天") || dayWord === "today" || dayWord === "今日" || dayWord === "tonight" ? 0
-					: 2; // 后天 / 后日
+					: 2; // 后天 / 后日 (day after tomorrow)
 				const target = tomorrow(now, offset);
 				const fireAt = new Date(target.year, target.month, target.day, tod.hour, tod.minute, 0, 0).getTime();
 				const prompt = pickPrompt(after, "");
 				if (prompt && fireAt > now.getTime()) {
-					// We model "明天 HH:MM" as a one-shot (cron is too noisy). Since
-					// the engine supports endAt + startAt with arbitrary schedule, we
-					// use the simpler cron form for reusability: `M H * * *`.
+					// We model "tomorrow HH:MM" / "明天 HH:MM" as a one-shot (cron is
+					// too noisy). Since the engine supports endAt + startAt with
+					// arbitrary schedule, we use the simpler cron form for
+					// reusability: `M H * * *`.
 					return {
 						schedule: {
 							mode: "daily",
@@ -194,7 +197,8 @@ export class DeterministicPatternDetector implements ScheduleIntentDetector {
 		}
 
 		// 6. "每周X HH:MM ..." / "every Monday HH:MM ..."
-		//    Accept both 周一/周二/.../周日 (zh) and monday/tuesday/.../sunday (en).
+		//    Accept both 周一/周二/.../周日 (zh: Mon/Tue/.../Sun) and
+		//    monday/tuesday/.../sunday (en).
 		const m5 = /每(周|星期)([日一二三四五六天])\s*(at\s+)?(\d{1,2}:\d{2})\s*(.*)$/.exec(t);
 		if (m5) {
 			const tod = parseTimeOfDay(m5[4]!);
