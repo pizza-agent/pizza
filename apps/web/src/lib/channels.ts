@@ -64,29 +64,23 @@ export function isTokenType(type: ChannelType): boolean {
 	return type !== "webhook";
 }
 
-/** Which credential/routing fields a channel type needs. Lark authenticates
- *  with an appId+appSecret pair and routes per-chat automatically — the
- *  Discord-style server/channel fields don't apply to it. */
+/** Which credential fields a channel type needs. Every inbound message routes
+ *  to the configured workspace — guild/server scoping and per-channel routing
+ *  are adapter-level concerns (PIZZA_ROUTES), not user-facing fields. */
 export interface ChannelFieldSpec {
 	appCredentials?: boolean;
 	token?: boolean;
-	server?: boolean;
-	channel?: boolean;
 	webhook?: boolean;
 }
 
 export function channelFieldSpec(type: ChannelType): ChannelFieldSpec {
 	switch (type) {
-		case "discord":
-			return { token: true, server: true, channel: true };
 		case "lark":
 			return { appCredentials: true };
-		case "slack":
-			return { token: true, channel: true };
-		case "telegram":
-			return { token: true };
 		case "webhook":
 			return { webhook: true };
+		default:
+			return { token: true };
 	}
 }
 

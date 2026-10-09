@@ -41,8 +41,6 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 	const [token, setToken] = useState(existing?.token ?? "");
 	const [appId, setAppId] = useState(existing?.appId ?? "");
 	const [appSecret, setAppSecret] = useState(existing?.appSecret ?? "");
-	const [server, setServer] = useState(existing?.server ?? "");
-	const [channel, setChannel] = useState(existing?.channel ?? "");
 	const [webhookUrl, setWebhookUrl] = useState(existing?.webhookUrl ?? "");
 	// New channels default to the persistent main assistant — same target the
 	// sidebar's top "Agent" entry chats with.
@@ -62,8 +60,6 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setToken(existing?.token ?? "");
 		setAppId(existing?.appId ?? "");
 		setAppSecret(existing?.appSecret ?? "");
-		setServer(existing?.server ?? "");
-		setChannel(existing?.channel ?? "");
 		setWebhookUrl(existing?.webhookUrl ?? "");
 		setWorkspace(existing?.workspace ?? MAIN_CHAT_CWD);
 		setEnabled(existing?.enabled ?? true);
@@ -101,7 +97,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setTestMessage(null);
 		try {
 			// Save first (so testChannel has the latest config), then test.
-			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, server, channel, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			const result = await testChannel(saved.id);
 			setTestMessage(result.message);
@@ -122,7 +118,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setError(null);
 		setSaving(true);
 		try {
-			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, server, channel, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			onSaved(saved);
 			onClose();
@@ -216,32 +212,6 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 							className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 						/>
 					</Field>
-				)}
-				{(spec.server || spec.channel) && (
-					<div className="grid grid-cols-2 gap-3">
-						{spec.server && (
-							<Field label={t("channels.dialog.server")}>
-								<input
-									type="text"
-									value={server}
-									onChange={(e) => setServer(e.target.value)}
-									placeholder={t("channels.dialog.serverPlaceholder")}
-									className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</Field>
-						)}
-						{spec.channel && (
-							<Field label={t("channels.dialog.channel")}>
-								<input
-									type="text"
-									value={channel}
-									onChange={(e) => setChannel(e.target.value)}
-									placeholder={t("channels.dialog.channelPlaceholder")}
-									className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
-								/>
-							</Field>
-						)}
-					</div>
 				)}
 				{spec.webhook && (
 					<Field label={t("channels.dialog.webhookUrl")} hint={t("channels.dialog.urlHint")}>

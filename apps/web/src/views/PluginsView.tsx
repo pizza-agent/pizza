@@ -896,11 +896,6 @@ function ChannelCard({
 						<span className="truncate text-sm font-medium text-fg">{channel.name}</span>
 						<code className="font-mono text-[10px] text-muted">{t(`channels.types.${channel.type}`)}</code>
 					</div>
-					{(channel.server || channel.channel) && (
-						<p className="mt-1.5 truncate font-mono text-xs text-muted">
-							{[channel.server, channel.channel].filter(Boolean).join(" / ")}
-						</p>
-					)}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
 						<Badge tone={statusTone}>{t(`channels.status.${statusKey}`)}</Badge>
 						{wsName ? (
