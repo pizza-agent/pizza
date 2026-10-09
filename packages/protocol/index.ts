@@ -431,6 +431,8 @@ export interface RpcThemeInfo {
 		icon?: string;
 		/** Raw CSS injected only while this theme is active (background images, animations, ...). */
 		css?: string;
+		/** Background video as a data: URI — plays muted+looping behind app content. */
+		video?: string;
 	};
 }
 

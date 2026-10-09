@@ -96,8 +96,9 @@ const ThemeJsonSchema = Type.Object({
 	 * "syn-keyword", "retro-card") to CSS values. Values may reference `vars`
 	 * entries just like `colors` values. `title` rebrands the window/document
 	 * title, `icon` replaces the app icon (data: URI or a file path relative
-	 * to the theme JSON), and `css` injects raw CSS while the theme is active
-	 * (background images, animations, ...).
+	 * to the theme JSON), `css` injects raw CSS while the theme is active
+	 * (background images, animations, ...), and `video` plays a looping
+	 * background video behind the app content.
 	 */
 	web: Type.Optional(
 		Type.Object({
@@ -107,6 +108,7 @@ const ThemeJsonSchema = Type.Object({
 			title: Type.Optional(Type.String()),
 			icon: Type.Optional(Type.String()),
 			css: Type.Optional(Type.String()),
+			video: Type.Optional(Type.String()),
 		}),
 	),
 });
@@ -192,6 +194,13 @@ export interface WebThemeSpec {
 	icon?: string;
 	/** Raw CSS injected only while this theme is active (images, animations, ...). */
 	css?: string;
+	/**
+	 * Background video (data: URI, or a file path resolved against the theme
+	 * JSON's directory — resolved to a data URI by {@link resolveThemeVideo}
+	 * before reaching clients). Rendered as a fixed layer behind app content;
+	 * pair with translucent bg/surface tokens so it shows through.
+	 */
+	video?: string;
 }
 
 // ============================================================================
@@ -684,6 +693,7 @@ function buildWebSpec(themeJson: ThemeJson, resolvedColors: Record<string, strin
 		title: themeJson.web?.title,
 		icon: themeJson.web?.icon,
 		css: themeJson.web?.css,
+		video: themeJson.web?.video,
 	};
 }
 
@@ -697,8 +707,47 @@ const ICON_MIME_TYPES: Record<string, string> = {
 	".gif": "image/gif",
 };
 
-/** Max icon file size embedded into RPC payloads. */
+const VIDEO_MIME_TYPES: Record<string, string> = {
+	".mp4": "video/mp4",
+	".m4v": "video/mp4",
+	".webm": "video/webm",
+	".mov": "video/quicktime",
+};
+
+/** Max media file sizes embedded into RPC payloads. */
 const MAX_ICON_BYTES = 512 * 1024;
+const MAX_VIDEO_BYTES = 24 * 1024 * 1024;
+
+/**
+ * Resolve a theme media reference to a data URI consumable by web/desktop
+ * clients. `data:` URIs pass through; file paths resolve relative to the
+ * theme JSON's directory (or absolute). Returns undefined when the media
+ * cannot be resolved.
+ */
+function resolveThemeMedia(
+	value: string | undefined,
+	sourcePath: string | undefined,
+	mimeTypes: Record<string, string>,
+	maxBytes: number,
+): string | undefined {
+	if (!value || /^https?:\/\//i.test(value)) return undefined;
+	if (value.startsWith("data:")) return value;
+	const mediaPath = path.isAbsolute(value)
+		? value
+		: sourcePath
+			? path.join(path.dirname(sourcePath), value)
+			: undefined;
+	if (!mediaPath) return undefined;
+	const mime = mimeTypes[path.extname(mediaPath).toLowerCase()];
+	if (!mime) return undefined;
+	try {
+		const stat = fs.statSync(mediaPath);
+		if (!stat.isFile() || stat.size > maxBytes) return undefined;
+		return `data:${mime};base64,${fs.readFileSync(mediaPath).toString("base64")}`;
+	} catch {
+		return undefined;
+	}
+}
 
 /**
  * Resolve a theme's `web.icon` to a data URI consumable by web/desktop
@@ -707,23 +756,15 @@ const MAX_ICON_BYTES = 512 * 1024;
  * cannot be resolved to a data URI.
  */
 export function resolveThemeIcon(icon: string | undefined, sourcePath: string | undefined): string | undefined {
-	if (!icon || /^https?:\/\//i.test(icon)) return undefined;
-	if (icon.startsWith("data:")) return icon;
-	const iconPath = path.isAbsolute(icon)
-		? icon
-		: sourcePath
-			? path.join(path.dirname(sourcePath), icon)
-			: undefined;
-	if (!iconPath) return undefined;
-	const mime = ICON_MIME_TYPES[path.extname(iconPath).toLowerCase()];
-	if (!mime) return undefined;
-	try {
-		const stat = fs.statSync(iconPath);
-		if (!stat.isFile() || stat.size > MAX_ICON_BYTES) return undefined;
-		return `data:${mime};base64,${fs.readFileSync(iconPath).toString("base64")}`;
-	} catch {
-		return undefined;
-	}
+	return resolveThemeMedia(icon, sourcePath, ICON_MIME_TYPES, MAX_ICON_BYTES);
+}
+
+/**
+ * Resolve a theme's `web.video` to a data URI consumable by web/desktop
+ * clients. Same resolution rules as {@link resolveThemeIcon}.
+ */
+export function resolveThemeVideo(video: string | undefined, sourcePath: string | undefined): string | undefined {
+	return resolveThemeMedia(video, sourcePath, VIDEO_MIME_TYPES, MAX_VIDEO_BYTES);
 }
 
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {

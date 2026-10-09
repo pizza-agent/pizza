@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadThemeFromPath, resolveThemeIcon } from "../packages/tui/theme/theme.js";
+import { loadThemeFromPath, resolveThemeIcon, resolveThemeVideo } from "../packages/tui/theme/theme.js";
 
 const darkTheme = JSON.parse(readFileSync(join(__dirname, "../packages/tui/theme/dark.json"), "utf-8")) as {
 	vars: Record<string, string | number>;
@@ -36,15 +36,17 @@ describe("theme web spec", () => {
 		expect(theme.web?.title).toBeUndefined();
 		expect(theme.web?.icon).toBeUndefined();
 		expect(theme.web?.css).toBeUndefined();
+		expect(theme.web?.video).toBeUndefined();
 	});
 
-	it("passes through title, icon and css from the web block", () => {
+	it("passes through title, icon, css and video from the web block", () => {
 		const themePath = writeTheme(tempRoot, "branded", {
 			web: {
 				label: "Branded",
 				title: "Branded App",
 				icon: "icon.svg",
 				css: "html { animation: x 1s; }",
+				video: "bg.mp4",
 				tokens: { bg: "#101020" },
 			},
 		});
@@ -52,6 +54,7 @@ describe("theme web spec", () => {
 		expect(theme.web?.title).toBe("Branded App");
 		expect(theme.web?.icon).toBe("icon.svg");
 		expect(theme.web?.css).toBe("html { animation: x 1s; }");
+		expect(theme.web?.video).toBe("bg.mp4");
 		expect(theme.web?.tokens.bg).toBe("#101020");
 		// Derived tokens still fill in gaps the explicit block leaves open.
 		expect(theme.web?.tokens.accent).toBe("#4ECDC4");
@@ -102,5 +105,32 @@ describe("resolveThemeIcon", () => {
 		expect(resolveThemeIcon("https://example.com/icon.png", themePath)).toBeUndefined();
 		expect(resolveThemeIcon("icon.bmp", themePath)).toBeUndefined();
 		expect(resolveThemeIcon(undefined, themePath)).toBeUndefined();
+	});
+});
+
+describe("resolveThemeVideo", () => {
+	let tempRoot: string;
+
+	beforeEach(() => {
+		tempRoot = mkdtempSync(join(tmpdir(), "pizza-theme-video-"));
+	});
+
+	afterEach(() => {
+		rmSync(tempRoot, { recursive: true, force: true });
+	});
+
+	it("resolves a video file relative to the theme JSON into a data URI", () => {
+		const themePath = join(tempRoot, "t.json");
+		writeFileSync(join(tempRoot, "bg.webm"), Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+		const resolved = resolveThemeVideo("bg.webm", themePath);
+		expect(resolved).toMatch(/^data:video\/webm;base64,/);
+	});
+
+	it("rejects non-video files and remote URLs", () => {
+		const themePath = join(tempRoot, "t.json");
+		writeFileSync(join(tempRoot, "bg.txt"), "not a video");
+		expect(resolveThemeVideo("bg.txt", themePath)).toBeUndefined();
+		expect(resolveThemeVideo("https://example.com/bg.mp4", themePath)).toBeUndefined();
+		expect(resolveThemeVideo("missing.mp4", themePath)).toBeUndefined();
 	});
 });

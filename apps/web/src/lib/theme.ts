@@ -16,6 +16,8 @@ export interface CustomTheme {
 	icon?: string;
 	/** Raw CSS injected only while this theme is active. */
 	css?: string;
+	/** Background video as a data: URI (not persisted — re-fetched on load). */
+	video?: string;
 }
 
 const STORAGE_KEY = "pizza-theme";
@@ -27,6 +29,7 @@ const ICON_KEY = "pizza-theme-icon";
 const STYLE_ID = "pizza-custom-theme";
 const EXTRA_STYLE_ID = "pizza-custom-theme-extra";
 const FAVICON_ID = "pizza-theme-favicon";
+const VIDEO_ID = "pizza-theme-video";
 const DEFAULT_TITLE = "Pizza";
 
 import { isTauri } from "./utils";
@@ -90,6 +93,37 @@ function applyFavicon(icon: string | undefined): void {
 	link.href = icon;
 }
 
+/**
+ * Mount/remove a fixed background <video> layer behind the app content.
+ * Sits at z-index -1, so it only shows through surfaces the theme makes
+ * translucent (tokens) — theme css can override its styling via
+ * `#pizza-theme-video` selectors.
+ */
+function applyVideo(src: string | undefined): void {
+	let video = document.getElementById(VIDEO_ID) as HTMLVideoElement | null;
+	if (!src) {
+		video?.remove();
+		return;
+	}
+	if (!video) {
+		video = document.createElement("video");
+		video.id = VIDEO_ID;
+		video.muted = true;
+		video.loop = true;
+		video.autoplay = true;
+		video.playsInline = true;
+		video.setAttribute("aria-hidden", "true");
+		video.style.cssText =
+			"position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1;pointer-events:none";
+		document.body.prepend(video);
+	}
+	if (video.dataset.src !== src) {
+		video.dataset.src = src;
+		video.src = src;
+		void video.play().catch(() => {});
+	}
+}
+
 function ensureExtraStyleEl(): HTMLStyleElement {
 	if (extraStyleEl && extraStyleEl.isConnected) return extraStyleEl;
 	const existing = document.getElementById(EXTRA_STYLE_ID);
@@ -109,6 +143,7 @@ function applyChrome(custom: CustomTheme | undefined): void {
 	document.title = custom?.title ?? DEFAULT_TITLE;
 	ensureExtraStyleEl().textContent = custom?.css ?? "";
 	applyFavicon(custom?.icon);
+	applyVideo(custom?.video);
 	void syncWindowChrome(custom);
 }
 
@@ -233,6 +268,7 @@ export async function refreshCustomThemes(): Promise<CustomTheme[]> {
 			title: t.web!.title,
 			icon: t.web!.icon,
 			css: t.web!.css,
+			video: t.web!.video,
 		}));
 	injectThemesCss();
 	// Re-apply: a previously saved custom theme may have just become available.

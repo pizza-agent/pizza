@@ -345,6 +345,10 @@
 				"css": {
 					"type": "string",
 					"description": "Raw CSS injected only while this theme is active — for background images, animations, anything tokens cannot express"
+				},
+				"video": {
+					"type": "string",
+					"description": "Background video (mp4/webm/mov): a data: URI, or a file path relative to this theme JSON. Plays muted+looping on a fixed layer behind app content — make bg/surface tokens translucent so it shows through"
 				}
 			},
 			"additionalProperties": false
