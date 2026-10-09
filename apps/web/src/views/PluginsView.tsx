@@ -5,6 +5,7 @@ import { confirmDialog } from "@/lib/confirm";
 import { cn, pathBasename } from "@/lib/utils";
 import {
 	fetchSkillsSh,
+	getCachedSkillsSh,
 	getSkills,
 	setSkillEnabled,
 	deleteSkill,
@@ -167,9 +168,9 @@ function DirectorySkillCard({ skill, installed }: { skill: SkillsShSkill; instal
 
 function SkillsTab() {
 	const { t } = useTranslation();
-	const [dirSkills, setDirSkills] = useState<SkillsShSkill[]>([]);
+	const [dirSkills, setDirSkills] = useState<SkillsShSkill[]>(() => getCachedSkillsSh() ?? []);
 	const [installedSkills, setInstalledSkills] = useState<SkillInfo[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [loading, setLoading] = useState(() => dirSkills.length === 0);
 	const [error, setError] = useState("");
 	const [search, setSearch] = useState("");
 
