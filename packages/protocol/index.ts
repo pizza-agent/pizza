@@ -20,7 +20,8 @@
  * Two layers of scheduling are supported:
  *   - "visual" modes: every_n_minutes / every_n_hours / daily / weekdays /
  *     weekly / monthly. Each "time" field is an array so multiple time
- *     points are first-class (e.g. "每天 02:00 和 03:00").
+ *     points are first-class (e.g. "every day at 02:00 and 03:00" /
+ *     "每天 02:00 和 03:00").
  *   - "advanced" mode: cron expression with optional timezone.
  *
  * The two layers are equivalent at runtime: any visual schedule can be
@@ -294,6 +295,7 @@ export type RpcCommand =
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
 	| { id?: string; type: "install_extension"; extensionId: string }
 	| { id?: string; type: "uninstall_extension"; extensionId: string }
+	| { id?: string; type: "remove_package"; source: string }
 	| { id?: string; type: "get_extension_permissions"; extensionId: string }
 	| { id?: string; type: "recheck_extension_permissions"; extensionId: string }
 	| { id?: string; type: "open_extension_permission_settings"; extensionId: string; permissionKind: RpcExtensionPermissionKind }
@@ -423,6 +425,14 @@ export interface RpcThemeInfo {
 		mode: "light" | "dark";
 		/** CSS custom-property overrides keyed without the "--" prefix. */
 		tokens: Record<string, string>;
+		/** Window/document title and app brand name shown while this theme is active. */
+		title?: string;
+		/** App icon (favicon, window icon, sidebar brand mark) as a data: URI. */
+		icon?: string;
+		/** Raw CSS injected only while this theme is active (background images, animations, ...). */
+		css?: string;
+		/** Background video as a data: URI — plays muted+looping behind app content. */
+		video?: string;
 	};
 }
 
@@ -584,6 +594,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
 	| { id?: string; type: "response"; command: "uninstall_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
+	| { id?: string; type: "response"; command: "remove_package"; success: true; data: { source: string; removed: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "get_extension_permissions"; success: true; data: RpcExtensionPermissionState }
 	| { id?: string; type: "response"; command: "recheck_extension_permissions"; success: true; data: RpcExtensionPermissionState }
 	| { id?: string; type: "response"; command: "open_extension_permission_settings"; success: true; data: { extensionId: string; ok: boolean; message: string } }
@@ -693,7 +704,7 @@ export type RpcExtensionUIResponse =
 
 // Well-known event types emitted by the scheduler. The UI subscribes to
 // these over the rpc_event stream so it can update task status, history,
-// and the "⏰ 已触发" notice card in real time.
+// and the "⏰ task fired" notice card in real time.
 export const SCHEDULED_TASK_FIRED = "SCHEDULED_TASK_FIRED";
 export const SCHEDULED_TASK_COMPLETED = "SCHEDULED_TASK_COMPLETED";
 export const SCHEDULE_INTENT_RESOLVED = "SCHEDULE_INTENT_RESOLVED";

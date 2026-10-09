@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Card, Badge, Button, MoreMenu } from "@/components/ui";
+import { Card, Badge, Button, MoreMenu, type ContextMenuItem } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
 import { cn, pathBasename } from "@/lib/utils";
 import {
 	fetchSkillsSh,
+	getCachedSkillsSh,
 	getSkills,
 	setSkillEnabled,
 	deleteSkill,
@@ -12,6 +13,7 @@ import {
 	setExtensionEnabled,
 	installExtension,
 	uninstallExtension,
+	removePackage,
 	getExtensionPermissions,
 	recheckExtensionPermissions,
 	openExtensionPermissionSettings,
@@ -166,9 +168,9 @@ function DirectorySkillCard({ skill, installed }: { skill: SkillsShSkill; instal
 
 function SkillsTab() {
 	const { t } = useTranslation();
-	const [dirSkills, setDirSkills] = useState<SkillsShSkill[]>([]);
+	const [dirSkills, setDirSkills] = useState<SkillsShSkill[]>(() => getCachedSkillsSh() ?? []);
 	const [installedSkills, setInstalledSkills] = useState<SkillInfo[]>([]);
-	const [loading, setLoading] = useState(true);
+	const [loading, setLoading] = useState(() => dirSkills.length === 0);
 	const [error, setError] = useState("");
 	const [search, setSearch] = useState("");
 
@@ -341,6 +343,7 @@ function ExtensionCard({
 	permissionBusy,
 	onOpenPermission,
 	onRecheckPermissions,
+	onRemovePackage,
 	busyId,
 }: {
 	ext: ExtensionInfo;
@@ -351,6 +354,7 @@ function ExtensionCard({
 	permissionBusy: string | null;
 	onOpenPermission: (id: string, kind: ExtensionPermissionKind) => void;
 	onRecheckPermissions: (id: string) => void;
+	onRemovePackage: (source: string) => void;
 	busyId: string | null;
 }) {
 	const { t } = useTranslation();
@@ -363,6 +367,35 @@ function ExtensionCard({
 	const showToggle = ext.canToggle && !notInstalledInstallable;
 	const showEnabledBadge = !notInstalledInstallable;
 	const showPermissionGuide = ext.id === "computer-use" && ext.installable && ext.installed;
+	const menuItems: ContextMenuItem[] = [
+		...(ext.installable
+			? [{
+					icon: ext.installed ? Trash2 : Download,
+					label: busy
+						? (ext.installed ? t("plugins.extensions.uninstalling") : t("plugins.extensions.installing"))
+						: (ext.installed ? t("plugins.extensions.uninstall") : t("plugins.extensions.install")),
+					disabled: busy,
+					onClick: () => (ext.installed ? onUninstall(ext.id) : onInstall(ext.id)),
+				}]
+			: []),
+		...(showToggle
+			? [{
+					icon: Power,
+					label: ext.enabled ? t("plugins.extensions.disable") : t("plugins.extensions.enable"),
+					disabled: busy,
+					onClick: () => onToggle(ext.id, !ext.enabled),
+				}]
+			: []),
+		// Resource packages (theme/skill/prompt packs) can only be removed, not toggled.
+		...(ext.kind === "package"
+			? [{
+					icon: Trash2,
+					label: busy ? t("plugins.extensions.uninstalling") : t("plugins.extensions.uninstall"),
+					disabled: busy,
+					onClick: () => onRemovePackage(ext.id),
+				}]
+			: []),
+	];
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
@@ -405,30 +438,13 @@ function ExtensionCard({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					<MoreMenu
-						disabled={busy}
-						title={t("plugins.extensions.actions")}
-						items={[
-							...(ext.installable
-								? [{
-										icon: ext.installed ? Trash2 : Download,
-										label: busy
-											? (ext.installed ? t("plugins.extensions.uninstalling") : t("plugins.extensions.installing"))
-											: (ext.installed ? t("plugins.extensions.uninstall") : t("plugins.extensions.install")),
-										disabled: busy,
-										onClick: () => (ext.installed ? onUninstall(ext.id) : onInstall(ext.id)),
-									}]
-								: []),
-							...(showToggle
-								? [{
-										icon: Power,
-										label: ext.enabled ? t("plugins.extensions.disable") : t("plugins.extensions.enable"),
-										disabled: busy,
-										onClick: () => onToggle(ext.id, !ext.enabled),
-									}]
-								: []),
-						]}
-					/>
+					{menuItems.length > 0 && (
+						<MoreMenu
+							disabled={busy}
+							title={t("plugins.extensions.actions")}
+							items={menuItems}
+						/>
+					)}
 				</div>
 			</div>
 			{showPermissionGuide && (
@@ -675,6 +691,34 @@ function ExtensionsTab() {
 	const handleInstall = useCallback((id: string) => runLifecycle(id, installExtension), [runLifecycle]);
 	const handleUninstall = useCallback((id: string) => runLifecycle(id, uninstallExtension), [runLifecycle]);
 
+	const handleRemovePackage = useCallback(
+		async (source: string) => {
+			const ok = await confirmDialog({
+				title: t("plugins.extensions.uninstall"),
+				message: t("plugins.extensions.removePackageConfirm", { name: source }),
+				confirmLabel: t("common.remove"),
+				danger: true,
+			});
+			if (!ok) return;
+			setBusyId(source);
+			setInstallMessage(null);
+			try {
+				const result = await removePackage(source);
+				if (result.removed) {
+					setReloadHint(result.requiresReload);
+					setExtensions((prev) => prev.filter((e) => e.id !== source));
+				} else {
+					setInstallMessage(result.error ?? t("plugins.extensions.removePackageFailed"));
+				}
+			} catch (e) {
+				setInstallMessage(e instanceof Error ? e.message : String(e));
+			} finally {
+				setBusyId(null);
+			}
+		},
+		[t],
+	);
+
 	const handleOpenPermission = useCallback(async (id: string, kind: ExtensionPermissionKind) => {
 		if (permissionBusy) return;
 		setPermissionBusy(`${id}:${kind}`);
@@ -795,6 +839,7 @@ function ExtensionsTab() {
 							permissionBusy={permissionBusy}
 							onOpenPermission={handleOpenPermission}
 							onRecheckPermissions={handleRecheckPermissions}
+							onRemovePackage={handleRemovePackage}
 							busyId={busyId}
 						/>
 					))}

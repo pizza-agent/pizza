@@ -1,0 +1,102 @@
+{
+	"$schema": "../../../packages/tui/theme/theme-schema.json",
+	"name": "aurora",
+	"vars": {
+		"cyan": "#7EE0D2",
+		"blue": "#7FA8F2",
+		"green": "#8FD9A8",
+		"red": "#F27E93",
+		"yellow": "#FFD08A",
+		"gray": "#7A80A8",
+		"dimGray": "#4A4F75",
+		"darkGray": "#2A2E4A",
+		"accent": "#B57EDC",
+		"selectedBg": "#282B4D",
+		"userMsgBg": "#1A1D38",
+		"toolPendingBg": "#181B33",
+		"toolSuccessBg": "#14281F",
+		"toolErrorBg": "#2B1A26",
+		"customMsgBg": "#201B3D"
+	},
+	"colors": {
+		"accent": "accent",
+		"border": "darkGray",
+		"borderAccent": "accent",
+		"borderMuted": "darkGray",
+		"success": "green",
+		"error": "red",
+		"warning": "yellow",
+		"muted": "gray",
+		"dim": "dimGray",
+		"text": "",
+		"thinkingText": "gray",
+
+		"selectedBg": "selectedBg",
+		"userMessageBg": "userMsgBg",
+		"userMessageText": "",
+		"customMessageBg": "customMsgBg",
+		"customMessageText": "",
+		"customMessageLabel": "#C9A0E8",
+		"toolPendingBg": "toolPendingBg",
+		"toolSuccessBg": "toolSuccessBg",
+		"toolErrorBg": "toolErrorBg",
+		"toolTitle": "",
+		"toolOutput": "gray",
+
+		"mdHeading": "yellow",
+		"mdLink": "cyan",
+		"mdLinkUrl": "dimGray",
+		"mdCode": "accent",
+		"mdCodeBlock": "green",
+		"mdCodeBlockBorder": "darkGray",
+		"mdQuote": "gray",
+		"mdQuoteBorder": "darkGray",
+		"mdHr": "darkGray",
+		"mdListBullet": "accent",
+
+		"toolDiffAdded": "green",
+		"toolDiffRemoved": "red",
+		"toolDiffContext": "gray",
+
+		"syntaxComment": "#5A5F85",
+		"syntaxKeyword": "#B57EDC",
+		"syntaxFunction": "#7FA8F2",
+		"syntaxVariable": "#E8EAF6",
+		"syntaxString": "#A8D9B8",
+		"syntaxNumber": "#F2A06C",
+		"syntaxType": "#7EE0D2",
+		"syntaxOperator": "#9DD0FF",
+		"syntaxPunctuation": "#9DD0FF",
+
+		"thinkingOff": "cyan",
+		"thinkingMinimal": "#4A4F75",
+		"thinkingLow": "#5A6FAF",
+		"thinkingMedium": "#7FA8F2",
+		"thinkingHigh": "#A98FD8",
+		"thinkingXhigh": "#D08AFF",
+
+		"bashMode": "green"
+	},
+	"export": {
+		"pageBg": "#0D0F1E",
+		"cardBg": "#15182E",
+		"infoBg": "#14281F"
+	},
+	"web": {
+		"label": "Aurora",
+		"mode": "dark",
+		"title": "Aurora",
+		"icon": "aurora-icon.svg",
+		"tokens": {
+			"bg": "rgba(13, 15, 30, 0.82)",
+			"surface": "rgba(21, 24, 46, 0.72)",
+			"surface-2": "rgba(32, 36, 66, 0.72)",
+			"fg": "#E8EAF6",
+			"border": "#2A2E4A",
+			"muted": "#7A80A8",
+			"accent": "#B57EDC",
+			"link": "#7EE0D2"
+		},
+		"css": "html {\n\tbackground: #0B0E1A;\n}\nbody::before {\n\tcontent: \"\";\n\tposition: fixed;\n\tinset: 0;\n\tz-index: 1;\n\tpointer-events: none;\n\tbackground: linear-gradient(115deg, rgba(181, 126, 220, 0.35) 0%, rgba(79, 195, 247, 0.28) 40%, rgba(67, 170, 139, 0.28) 70%, rgba(181, 126, 220, 0.35) 100%);\n\tbackground-size: 320% 320%;\n\tmix-blend-mode: screen;\n\topacity: 0.6;\n\tanimation: aurora-drift 16s ease-in-out infinite;\n}\nbody::after {\n\tcontent: \"\";\n\tposition: fixed;\n\ttop: -15vmax;\n\tleft: -15vmax;\n\twidth: 55vmax;\n\theight: 55vmax;\n\tz-index: 1;\n\tpointer-events: none;\n\tborder-radius: 50%;\n\tbackground: radial-gradient(circle, rgba(181, 126, 220, 0.55) 0%, rgba(79, 195, 247, 0.3) 45%, transparent 70%);\n\tfilter: blur(60px);\n\tmix-blend-mode: screen;\n\tanimation: aurora-blob 20s ease-in-out infinite alternate;\n}\n@keyframes aurora-drift {\n\t0%, 100% { background-position: 0% 30%; }\n\t50% { background-position: 100% 70%; }\n}\n@keyframes aurora-blob {\n\t0% { transform: translate(0, 0) scale(1); }\n\t50% { transform: translate(55vw, 30vh) scale(1.3); }\n\t100% { transform: translate(85vw, 5vh) scale(0.85); }\n}"
+	}
+}

@@ -10,6 +10,7 @@
 
 import type { ApiKeyAuth, ModelAuth, OAuthAuth } from "@earendil-works/pi-ai/compat";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { devinOAuth } from "./devin/oauth.js";
 
 /** A login-able OAuth flow: pi-ai `OAuthAuth` plus pizza display metadata. */
 export interface OAuthFlow {
@@ -54,6 +55,14 @@ function getBuiltinFlows(): OAuthFlow[] {
 					usesCallbackServer: CALLBACK_SERVER_PROVIDERS.has(provider.id),
 				},
 			];
+		});
+		// Devin lives in pizza's own provider layer (not pi-ai's catalog) so it
+		// can be registered alongside the pi-ai flows.
+		builtinFlowsCache.push({
+			id: "devin",
+			name: devinOAuth.name,
+			oauth: devinOAuth,
+			usesCallbackServer: false,
 		});
 	}
 	return builtinFlowsCache;

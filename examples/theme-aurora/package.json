@@ -1,0 +1,9 @@
+{
+	"name": "pizza-theme-aurora",
+	"version": "1.0.0",
+	"description": "Aurora theme plugin for Pizza — rebrands title/icon and adds an animated aurora background",
+	"private": true,
+	"pizza": {
+		"themes": ["themes/aurora.json"]
+	}
+}

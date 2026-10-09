@@ -1020,9 +1020,23 @@ function ProviderTab({
 										<Badge tone="neutral">{t("settings.provider.notConfigured")}</Badge>
 									)}
 								</div>
-								<Button size="sm" tone="accent" onClick={() => setLoginProvider({ id: o.id, name: o.name })}>
-									{t("settings.provider.signIn")}
-								</Button>
+								{oauthSignedIn.has(o.id) ? (
+									<Button
+										size="sm"
+										tone="neutral"
+										onClick={() => {
+											void removeProviderApiKey(o.id)
+												.then(() => refresh())
+												.catch((e) => setError(e instanceof Error ? e.message : String(e)));
+										}}
+									>
+										{t("settings.provider.signOut")}
+									</Button>
+								) : (
+									<Button size="sm" tone="accent" onClick={() => setLoginProvider({ id: o.id, name: o.name })}>
+										{t("settings.provider.signIn")}
+									</Button>
+								)}
 							</div>
 						))}
 					</div>

@@ -383,10 +383,10 @@ function TaskRow({
 						)}
 					</span>
 					<span className="mt-0.5 block truncate font-mono text-[10px] text-muted">
-						{describeSchedule(task.schedule)}
+						{describeSchedule(task.schedule, t)}
 					</span>
 					<span className="block truncate text-[10px] text-muted">
-						{t("schedule.nextRun")}: {task.enabled ? formatNextRun(task.nextRunAt) : t("schedule.disabled")}
+						{t("schedule.nextRun")}: {task.enabled ? formatNextRun(task.nextRunAt, t) : t("schedule.disabled")}
 					</span>
 				</button>
 				<div className="flex shrink-0 items-center gap-1">

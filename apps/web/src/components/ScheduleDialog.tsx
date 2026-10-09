@@ -38,8 +38,6 @@ function blankSpec(): ScheduleSpec {
 	};
 }
 
-const WEEKDAY_LABELS_ZH = ["日", "一", "二", "三", "四", "五", "六"];
-
 function defaultSessionTarget(sessionId?: string): SessionTarget {
 	return sessionId ? { kind: "pinned", sessionId } : { kind: "pinned" };
 }
@@ -81,6 +79,10 @@ export function ScheduleForm(props: ScheduleFormProps) {
 	const [enabled, setEnabled] = useState(existing?.enabled ?? true);
 	const [error, setError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
+	const weekdayShortRaw = t("schedule.weekdayShort", { returnObjects: true });
+	const weekdayLongRaw = t("schedule.weekdayLong", { returnObjects: true });
+	const weekdayShort: string[] = Array.isArray(weekdayShortRaw) ? weekdayShortRaw : [];
+	const weekdayLong: string[] = Array.isArray(weekdayLongRaw) ? weekdayLongRaw : [];
 	// Local draft input for the monthly day-of-month picker. Kept here so it
 	// survives re-renders of `renderModeFields` (which is a plain function,
 	// not a component, so it can't call hooks itself).
@@ -291,7 +293,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
 					<div className="space-y-3">
 						<Field label={t("schedule.weekdays")}>
 							<div className="flex flex-wrap gap-1.5">
-								{WEEKDAY_LABELS_ZH.map((label, idx) => {
+								{weekdayShort.map((label, idx) => {
 									const d = idx as Weekday;
 									const on = selected.includes(d);
 									return (
@@ -305,7 +307,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
 													? "border-accent bg-accent text-accent-fg"
 													: "border-border bg-surface-2 text-muted hover:bg-surface hover:text-fg",
 											)}
-											title={`周${label}`}
+											title={weekdayLong[idx]}
 										>
 											{label}
 										</button>

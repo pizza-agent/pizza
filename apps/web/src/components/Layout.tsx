@@ -10,6 +10,7 @@ import WorkspacePane from "./WorkspacePane";
 import { UpdateBanner } from "./UpdateBanner";
 import { cn, isTauri, hasMacTrafficLights, isMainChatCwd, samePath, MAIN_CHAT_CWD, pathBasename } from "@/lib/utils";
 import { deleteWorkspace, revealWorkspace } from "@/lib/transport";
+import { useCustomThemes, useThemeId } from "@/lib/theme";
 import { clearComposerDraft } from "@/lib/composer-drafts";
 import { Z } from "@/lib/z-index";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
@@ -97,6 +98,9 @@ export default function Layout({
 	}, []);
 	const online = sidecarReady && sidecarExitCode === null;
 	const isMainChat = isMainChatCwd(workspace);
+	// Themes can rebrand the app: web.title/web.icon replace the sidebar brand mark.
+	const themeId = useThemeId();
+	const brandTheme = useCustomThemes().find((ct) => ct.name === themeId);
 	const [pinned, setPinned] = useState<Set<string>>(getPinnedWorkspaces);
 	const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 	const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -246,10 +250,20 @@ export default function Layout({
 					data-tauri-drag-region="deep"
 					className="flex items-center gap-3 px-5 pb-2 pt-1"
 				>
-					<BrandIcon size={26} className="shrink-0 text-fg" />
+					{brandTheme?.icon ? (
+						<img
+							src={brandTheme.icon}
+							alt=""
+							width={26}
+							height={26}
+							className="shrink-0 rounded-md object-contain"
+						/>
+					) : (
+						<BrandIcon size={26} className="shrink-0 text-fg" />
+					)}
 					<div className="leading-tight">
 						<div className="text-[15px] font-semibold tracking-tight text-fg">
-							Pizza
+							{brandTheme?.title ?? "Pizza"}
 						</div>
 						<div className="text-[11px] text-muted">
 							{t("layout.brandTagline")}

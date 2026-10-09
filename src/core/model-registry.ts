@@ -35,16 +35,20 @@ import {
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.js";
 import { getOAuthFlows, getOAuthRequestAuth, registerOAuthFlow, resetOAuthFlows } from "./oauth.js";
+import { DEVIN_DEFAULT_API_SERVER_URL, devinProviderConfig, fetchDevinCatalog } from "./devin/index.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 const ajv = new Ajv();
 
 /**
  * Display-name overrides for providers where pizza wants a different label
- * than pi-ai built-in `Provider.name`. Empty by default — pi-ai names are
- * already good display names. Add entries here only to override/supplement.
+ * than pi-ai built-in `Provider.name`, and names for pizza-native providers
+ * that don't exist in pi-ai's catalog at all.
  */
-const PROVIDER_NAME_OVERRIDES: Record<string, string> = {};
+const PROVIDER_NAME_OVERRIDES: Record<string, string> = {
+	// Pizza-native provider (not part of pi-ai's catalog).
+	devin: "Devin (Devin CLI account)",
+};
 
 /** Lazily-built map of provider id -> display name from pi-ai built-ins. */
 let providerNameMap: Map<string, string> | undefined;
@@ -453,6 +457,9 @@ export class ModelRegistry {
 	private modelCacheRetentions: Map<string, CacheRetention> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private loadError: string | undefined = undefined;
+	/** Live Devin catalog once fetched (replaces the static fallback list). */
+	private devinCatalogModels: NonNullable<ProviderConfigInput["models"]> | undefined;
+	private devinCatalogRequested = false;
 
 	private constructor(
 		readonly authStorage: AuthStorage,
@@ -462,7 +469,9 @@ export class ModelRegistry {
 	}
 
 	static create(authStorage: AuthStorage, modelsJsonPath: string = join(getAgentDir(), "models.json")): ModelRegistry {
-		return new ModelRegistry(authStorage, modelsJsonPath);
+		const registry = new ModelRegistry(authStorage, modelsJsonPath);
+		registry.scheduleDevinCatalogRefresh();
+		return registry;
 	}
 
 	static inMemory(authStorage: AuthStorage): ModelRegistry {
@@ -533,6 +542,40 @@ export class ModelRegistry {
 		}
 
 		this.models = combined;
+
+		// Pizza-native providers that aren't in pi-ai's catalog. Applies the
+		// OAuth flow, the custom Connect-JSON stream handler, and the current
+		// model list (live catalog once fetched, static fallback otherwise).
+		this.applyProviderConfig("devin", devinProviderConfig(this.devinCatalogModels));
+	}
+
+	/**
+	 * Fetch the live Devin model catalog in the background when signed in,
+	 * replacing the static fallback list. Runs at most once per registry
+	 * lifetime; failures keep the fallback list.
+	 */
+	private scheduleDevinCatalogRefresh(): void {
+		if (this.devinCatalogRequested) return;
+		this.devinCatalogRequested = true;
+		const cred = this.authStorage.get("devin");
+		if (cred?.type !== "oauth") return;
+		void (async () => {
+			try {
+				const auth = await getOAuthRequestAuth("devin", cred);
+				if (!auth?.apiKey) return;
+				const catalog = await fetchDevinCatalog(
+					auth.baseUrl ?? DEVIN_DEFAULT_API_SERVER_URL,
+					auth.apiKey,
+					{ signal: AbortSignal.timeout(15_000) },
+				);
+				if (catalog.models.length > 0) {
+					this.devinCatalogModels = catalog.models;
+					this.refresh();
+				}
+			} catch {
+				// Offline or invalid token — keep the fallback model list.
+			}
+		})();
 	}
 
 	/** Load built-in models and apply provider/model overrides */

@@ -7,6 +7,9 @@
 		"core:default",
 		"core:event:default",
 		"core:window:allow-start-dragging",
+		"core:window:allow-set-title",
+		"core:window:allow-set-icon",
+		"core:image:allow-from-bytes",
 		"shell:allow-execute",
 		"shell:allow-open",
 		"dialog:default"
