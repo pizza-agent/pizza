@@ -23,7 +23,7 @@
 		"directory": "packages/channels/core"
 	},
 	"dependencies": {
-		"@tomsun28/pizza": "file:../.."
+		"@tomsun28/pizza": "file:../../.."
 	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",
