@@ -15,10 +15,19 @@
  */
 
 import { Bot } from "grammy";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { ChannelRuntime, provenance, runChannel } from "@tomsun28/pizza-channel-core";
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const WORKSPACE = process.env.PIZZA_WORKSPACE;
+// api.telegram.org is unreachable from some networks — honor the standard
+// proxy env vars (the gateway supervisor injects the OS proxy when set).
+const PROXY =
+	process.env.TELEGRAM_PROXY ??
+	process.env.HTTPS_PROXY ??
+	process.env.https_proxy ??
+	process.env.ALL_PROXY ??
+	process.env.all_proxy;
 
 if (!TOKEN) {
 	console.error("Missing TELEGRAM_BOT_TOKEN. Get one from @BotFather.");
@@ -30,17 +39,30 @@ if (!WORKSPACE) {
 }
 
 void runChannel(async (runtime: ChannelRuntime) => {
-	const bot = new Bot(TOKEN);
+	// grammy fetches via node-fetch, so a proxy agent rides in baseFetchConfig.
+	const agent = PROXY ? new HttpsProxyAgent(PROXY) : undefined;
+	const bot = new Bot(TOKEN, agent ? { client: { baseFetchConfig: { agent } as never } } : undefined);
+	if (agent) console.log(`[telegram] routing API via proxy ${PROXY!.replace(/\/\/[^/@]*@/, "//***@")}`);
 
 	bot.command("start", (ctx) => ctx.reply("I'm a Pizza agent bridge. Send me a message."));
 
 	// Every non-command text message → deliver to the agent, reply back.
 	bot.on("message:text", async (ctx) => {
 		const chatId = String(ctx.chat.id);
+		// Sender display name for the envelope's `sender` attr — shown in the
+		// UI instead of the raw chat id. Prefer the real name; @username and
+		// (for groups) the chat title are useful fallbacks.
+		const sender =
+			[ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") ||
+			(ctx.from?.username ? `@${ctx.from.username}` : undefined) ||
+			(ctx.chat.type !== "private" && "title" in ctx.chat ? ctx.chat.title : undefined);
 		try {
+			// Instant read-receipt — a 👀 reaction says "received" without waiting
+			// on the LLM turn. Fire-and-forget: a failed reaction is fine.
+			await ctx.react("👀").catch(() => {});
 			// Telegram lets us show "typing…" while the agent works.
 			await ctx.replyWithChatAction("typing");
-			const reply = await runtime.deliver(WORKSPACE, ctx.message.text, provenance("telegram", chatId));
+			const reply = await runtime.deliver(WORKSPACE, ctx.message.text, provenance("telegram", chatId, sender));
 			// Telegram caps messages at 4096 chars; grammy splits automatically via { Entities }.
 			for (const part of chunk(reply, 4000)) await ctx.reply(part);
 		} catch (err) {
@@ -50,9 +72,16 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		}
 	});
 
-	// long polling — no public webhook endpoint needed (stays local-first).
-	await bot.start({
-		onStart: (info) => console.log(`[telegram] logged in as @${info.username}`),
+	// getMe up front — fails fast on a bad token / unreachable API.
+	await bot.init();
+	console.log(`[telegram] logged in as @${bot.botInfo.username}`);
+
+	// Long polling — no public webhook endpoint needed (stays local-first).
+	// bot.start() blocks on the polling loop, so it must NOT be awaited here:
+	// runChannel only installs signal handlers after this factory returns.
+	bot.start().catch((err) => {
+		console.error("[telegram] polling stopped:", err instanceof Error ? err.message : err);
+		process.exit(1);
 	});
 
 	return async () => {

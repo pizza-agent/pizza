@@ -22,6 +22,12 @@
 export interface AgentMessageInfo {
 	/** Serialized sender source, e.g. "agent:/Users/tom/code/web". */
 	from: string;
+	/** Source kind — "agent" for workspace-to-workspace, a channel type
+	 *  ("telegram"/"lark"/…) for an outside party reaching in. */
+	kind: string;
+	/** Human-readable sender name (envelope `sender` attr), when the
+	 *  channel provided one — prefer this over the opaque id. */
+	senderName?: string;
 	/** Short workspace label (last path segment of the sender id). */
 	fromName: string;
 	/** Gateway-generated message id, for future inReplyTo threading. */
@@ -32,19 +38,20 @@ export interface AgentMessageInfo {
 	body: string;
 }
 
+/**
+ * Source kinds produced inside the gateway's own trust domain — mirrors
+ * INTERNAL_SOURCE_KINDS in packages/gateway/gateway-server.ts. Any other
+ * kind arrived through an external channel and the card should say so
+ * rather than labelling it cross-workspace traffic.
+ */
+export const INTERNAL_MESSAGE_KINDS = new Set(["agent", "cron", "watcher", "user"]);
+
 export interface TellCommandInfo {
 	/** "send" delivers a message; "list" shows known workspaces. */
 	action: "send" | "list";
 	/** Destination workspace (name or path), when present. */
 	to?: string;
 }
-
-/**
- * The gateway appends a trust-trailer line after the envelope so the receiving
- * agent treats the body as data. We keep the fact (to show a footnote) but hide
- * the raw text from the bubble.
- */
-const TRAILER_RE = /\n?\[gateway:[^\]]*\]\s*$/;
 
 /** Unescape the entities `renderInboundMessage` applies to the body/attrs. */
 function unescapeEntities(text: string): string {
@@ -86,20 +93,19 @@ export function parseAgentMessage(text: string): AgentMessageInfo | null {
 	if (!body) return null;
 	// "agent:/a/b/web" -> kind "agent", id "/a/b/web".
 	const colon = from.indexOf(":");
+	const kind = colon === -1 ? from : from.slice(0, colon);
 	const fromId = colon === -1 ? from : from.slice(colon + 1);
 	const id = attrs.get("id");
+	const sender = attrs.get("sender");
 	return {
 		from,
+		kind,
+		senderName: sender ? unescapeEntities(sender) : undefined,
 		fromName: workspaceNameFrom(fromId),
 		id: id || undefined,
 		autoRelay: attrs.get("relay") === "auto",
 		body,
 	};
-}
-
-/** True if the trailing text is the gateway trust trailer (shown as footnote). */
-export function hasGatewayTrailer(text: string): boolean {
-	return TRAILER_RE.test(text);
 }
 
 /**

@@ -162,6 +162,15 @@ export interface SchedulerPolicy {
 	defaultSessionTarget: SessionTarget;
 }
 
+/** Network settings (settings.json `network`) — outbound egress for channel
+ *  adapters and other integrations. */
+export interface NetworkSettings {
+	/** Proxy for outbound connections. "auto" (default/absent): env vars, then
+	 *  OS proxy detection. "off": direct connections. Otherwise an explicit URL
+	 *  like "http://127.0.0.1:7897" or "socks5://…". */
+	proxy?: string;
+}
+
 /** Lightweight status snapshot returned to UI when listing tasks. */
 export interface ScheduledTaskSummary extends ScheduledTask {
 	/** Next scheduled fire time, or null if disabled / past endAt. */
@@ -305,6 +314,8 @@ export type RpcCommand =
 	| { id?: string; type: "reload_providers" }
 	| { id?: string; type: "get_scheduler_policy" }
 	| { id?: string; type: "set_scheduler_policy"; policy: SchedulerPolicy }
+	| { id?: string; type: "get_network" }
+	| { id?: string; type: "set_network"; network: NetworkSettings }
 
 	// Scheduled tasks
 	| { id?: string; type: "schedule_list"; scope: "main" | "workspace"; workspaceId?: string }
@@ -601,6 +612,8 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "reload_providers"; success: true; data: { providers: string[] } }
 	| { id?: string; type: "response"; command: "get_scheduler_policy"; success: true; data: { policy: SchedulerPolicy } }
 	| { id?: string; type: "response"; command: "set_scheduler_policy"; success: true; data: { policy: SchedulerPolicy } }
+	| { id?: string; type: "response"; command: "get_network"; success: true; data: { network: NetworkSettings } }
+	| { id?: string; type: "response"; command: "set_network"; success: true; data: { network: NetworkSettings } }
 
 	// Scheduled tasks
 	| { id?: string; type: "response"; command: "schedule_list"; success: true; data: { tasks: ScheduledTaskSummary[] } }

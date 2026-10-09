@@ -49,7 +49,7 @@ function isGitRepository(cwd: string): boolean {
 /**
  * Build the environment section to append at the end of the system prompt
  */
-function buildEnvironmentSection(cwd: string, eventStorePath?: string): string {
+function buildEnvironmentSection(cwd: string, eventStorePath?: string, isMainAgent = false): string {
 	const resolvedCwd = cwd.replace(/\\/g, "/");
 	const isGit = isGitRepository(cwd);
 	const platform = process.platform;
@@ -68,7 +68,7 @@ function buildEnvironmentSection(cwd: string, eventStorePath?: string): string {
 	return `
 ## Environment
 You are being called in the following environment:
- - Primary working directory: ${resolvedCwd}
+ - ${isMainAgent ? "Home directory (your files and long-term memory live here — it is not a project workspace)" : "Primary working directory"}: ${resolvedCwd}
  - Is Git repository: ${isGit ? "Yes" : "No"}
  - Platform: ${platform}
  - Shell: ${shell}
@@ -161,6 +161,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	} = options;
 	const resolvedCwd = cwd;
 	const mainAgentPrefix = buildMainAgentPrefix({ soulFile, longTermMemory, mainAgentBanner });
+	// The persistent main assistant is the only agent with a soul file (or a
+	// first-run banner). It is NOT a workspace-bound coding agent — its prompt
+	// describes a home directory and a long-term role instead.
+	const isMainAgent = Boolean(soulFile ?? mainAgentBanner);
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
 
 	const now = new Date();
@@ -200,10 +204,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 		// Add date and working directory last
 		prompt += `\nCurrent date: ${date}`;
-		prompt += `\nCurrent working directory: ${promptCwd}`;
+		prompt += isMainAgent
+			? `\nYour home directory: ${promptCwd}`
+			: `\nCurrent working directory: ${promptCwd}`;
 
 		// Add environment section at the end
-		prompt += buildEnvironmentSection(resolvedCwd, options.eventStorePath);
+		prompt += buildEnvironmentSection(resolvedCwd, options.eventStorePath, isMainAgent);
 
 		return prompt;
 	}
@@ -241,7 +247,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	addGuideline("Be concise in your responses");
 	addGuideline("Show file paths clearly when working with files");
 	addGuideline("Keep reasoning tight: think only as much as the task needs, then act — avoid over-analyzing simple requests");
-	addGuideline("Prefer relative paths; the working directory is fixed at the workspace root for every command. Avoid accessing files outside the workspace unless the user explicitly asks");
+	addGuideline(
+		isMainAgent
+			? "Prefer relative paths; commands run from your home directory. Avoid accessing files outside it unless the user explicitly asks"
+			: "Prefer relative paths; the working directory is fixed at the workspace root for every command. Avoid accessing files outside the workspace unless the user explicitly asks",
+	);
 
 	for (const guideline of promptGuidelines ?? []) {
 		const normalized = guideline.trim();
@@ -332,7 +342,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	].join("\n");
 
 	let prompt = mainAgentPrefix + [
-		"You are an expert coding assistant. You help users by reading files, executing commands, editing code, and writing new files.",
+		isMainAgent
+			? "You are the user's long-term personal assistant. You answer questions, run commands, work with files, write code when asked, and remember things across sessions. You are not bound to a project workspace — the directory below is your home, where your notes and long-term memory live."
+			: "You are an expert coding assistant. You help users by reading files, executing commands, editing code, and writing new files.",
 		"",
 		"Available tools:",
 		toolsList,
@@ -353,7 +365,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		guidelines,
 		"",
 		"Current date: " + date,
-		"Current working directory: " + promptCwd,
+		isMainAgent ? "Your home directory: " + promptCwd : "Current working directory: " + promptCwd,
 	].join("\n");
 
 	if (appendSection) {
@@ -377,7 +389,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	}
 
 	// Add environment section at the end
-	prompt += buildEnvironmentSection(resolvedCwd, options.eventStorePath);
+	prompt += buildEnvironmentSection(resolvedCwd, options.eventStorePath, isMainAgent);
 
 	return prompt;
 }

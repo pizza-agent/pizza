@@ -18,6 +18,7 @@ fn main() {
 			bridge::stop_main_agent,
 			bridge::stop_sidecar,
 			bridge::rpc_command,
+			bridge::channel_op,
 			bridge::new_workspace,
 			bridge::list_workspaces,
 			bridge::delete_workspace,

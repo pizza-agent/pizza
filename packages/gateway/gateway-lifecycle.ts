@@ -137,8 +137,14 @@ async function shutdownGateway(socketPath: string): Promise<boolean> {
  * The gateway inherits PIZZA_AGENT_DIR from the environment so spawned
  * sub-agents share the caller's auth/models.
  */
-function spawnGateway(socketPath: string, agentDir: string): ChildProcess {
-	const { cliPath, binary } = resolveCliSpawn();
+function spawnGateway(socketPath: string, agentDir: string, cliPathOverride?: string): ChildProcess {
+	// When the caller is not the pizza CLI itself (a channel adapter process
+	// whose argv[1] is its own entry script), an explicit cliPath is required —
+	// resolveCliSpawn() would otherwise spawn the channel again as "gateway".
+	const resolved = cliPathOverride
+		? { cliPath: cliPathOverride, binary: false }
+		: resolveCliSpawn();
+	const { cliPath, binary } = resolved;
 	const args = ["--mode", "gateway"];
 	// Pass the socket path via env so the daemon picks it up.
 	const env: Record<string, string> = {
@@ -178,8 +184,12 @@ function cleanStaleSocket(socketPath: string): void {
  * @param expectedVersion The caller's Pizza version (from package.json). When
  *   omitted, version checking is skipped (back-compat for callers that don't
  *   pass it).
+ * @param cliPath Explicit path to the pizza CLI entry (dist/src/cli.js) to
+ *   spawn. Required when the caller is not the CLI itself (e.g. a channel
+ *   adapter package) — otherwise the spawn would re-run the caller's own
+ *   entry point instead of the pizza CLI.
  */
-export async function ensureGateway(agentDir: string, socketPath?: string, expectedVersion?: string): Promise<string> {
+export async function ensureGateway(agentDir: string, socketPath?: string, expectedVersion?: string, cliPath?: string): Promise<string> {
 	const sock = socketPath ?? gatewaySocketPath();
 
 	// Fast path: already running?
@@ -213,7 +223,7 @@ export async function ensureGateway(agentDir: string, socketPath?: string, expec
 	cleanStaleSocket(sock);
 
 	// Spawn the daemon and wait for it to bind.
-	spawnGateway(sock, agentDir);
+	spawnGateway(sock, agentDir, cliPath);
 
 	const deadline = Date.now() + GATEWAY_BOOT_TIMEOUT;
 	while (Date.now() < deadline) {

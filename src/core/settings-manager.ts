@@ -5,7 +5,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import type { SchedulerPolicy } from "@tomsun28/pizza-protocol";
+import type { NetworkSettings, SchedulerPolicy } from "@tomsun28/pizza-protocol";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -148,6 +148,7 @@ export interface Settings {
 	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	scheduler?: SchedulerPolicy; // Defaults applied to newly-created scheduled tasks
+	network?: NetworkSettings; // Outbound proxy for channel adapters etc. ("auto" | "off" | URL)
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
@@ -906,6 +907,17 @@ export class SettingsManager {
 	setSchedulerPolicy(policy: SchedulerPolicy): void {
 		this.globalSettings.scheduler = policy;
 		this.markModified("scheduler");
+		this.save();
+	}
+
+	getNetworkSettings(): NetworkSettings {
+		return this.globalSettings.network ?? {};
+	}
+
+	setNetworkSettings(network: NetworkSettings): void {
+		const proxy = network.proxy?.trim() || "auto";
+		this.globalSettings.network = { ...this.globalSettings.network, proxy };
+		this.markModified("network");
 		this.save();
 	}
 

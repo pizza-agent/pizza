@@ -42,7 +42,7 @@
 		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"start": "node dist/src/cli.js",
 		"build:protocol": "npm run build -w @tomsun28/pizza-protocol",
-		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
+		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets && npm run build --workspaces --if-present",
 		"build:release": "npm run build && npm run vendor-tools",
 		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --outfile dist/pizza && npm run copy-binary-assets",
 		"build:desktop": "npm run build:binary && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",

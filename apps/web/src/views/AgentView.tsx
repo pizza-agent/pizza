@@ -12,7 +12,7 @@ import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/compo
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
 import { cn, samePath } from "@/lib/utils";
-import { hasGatewayTrailer, parseAgentMessage } from "@/lib/agent-messages";
+import { parseAgentMessage } from "@/lib/agent-messages";
 import type { LayoutOutletContext } from "@/components/Layout";
 
 function blockToDataUrl(block: Record<string, unknown>): string | null {
@@ -199,10 +199,10 @@ function messageText(message: unknown): string {
  * the TimelineItem fields that make Conversation render it as a dedicated
  * "workspace message" card. Returns {} for ordinary user messages.
  */
-function agentMessageFields(text: string): Pick<TimelineItem, "agentMessage" | "gatewayTrailer"> {
+function agentMessageFields(text: string): Pick<TimelineItem, "agentMessage"> {
 	const parsed = parseAgentMessage(text);
 	if (!parsed) return {};
-	return { agentMessage: parsed, gatewayTrailer: hasGatewayTrailer(text) };
+	return { agentMessage: parsed };
 }
 
 /** Build a TimelineItem[] from a get_messages response, matching tool cards to results. */

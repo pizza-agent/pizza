@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, Badge, Button, MoreMenu, type ContextMenuItem } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
-import { cn, pathBasename } from "@/lib/utils";
+import { cn, isMainChatCwd, pathBasename } from "@/lib/utils";
 import {
 	fetchSkillsSh,
 	getCachedSkillsSh,
@@ -884,7 +884,9 @@ function ChannelCard({
 	const statusTone =
 		channel.status === "connected" ? "success" : channel.status === "error" ? "danger" : "neutral";
 	const statusKey = channel.enabled ? channel.status : "disconnected";
-	const wsName = channel.workspace ? pathBasename(channel.workspace) : "";
+	// A channel delivering to the persistent main assistant shows the same name
+	// the sidebar uses for it — not the raw directory basename.
+	const wsName = channel.workspace ? (isMainChatCwd(channel.workspace) ? t("layout.agent") : pathBasename(channel.workspace)) : "";
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
@@ -894,11 +896,6 @@ function ChannelCard({
 						<span className="truncate text-sm font-medium text-fg">{channel.name}</span>
 						<code className="font-mono text-[10px] text-muted">{t(`channels.types.${channel.type}`)}</code>
 					</div>
-					{(channel.server || channel.channel) && (
-						<p className="mt-1.5 truncate font-mono text-xs text-muted">
-							{[channel.server, channel.channel].filter(Boolean).join(" / ")}
-						</p>
-					)}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
 						<Badge tone={statusTone}>{t(`channels.status.${statusKey}`)}</Badge>
 						{wsName ? (

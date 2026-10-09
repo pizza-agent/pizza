@@ -1284,6 +1284,14 @@ export async function runRpcModeWithFacade(
 				facade.settingsManager.setSchedulerPolicy(policy);
 				return success(id, "set_scheduler_policy", { policy: facade.settingsManager.getSchedulerPolicy() });
 			}
+			case "get_network": {
+				return success(id, "get_network", { network: facade.settingsManager.getNetworkSettings() });
+			}
+			case "set_network": {
+				const network = (command as unknown as { network: import("@tomsun28/pizza-protocol").NetworkSettings }).network;
+				facade.settingsManager.setNetworkSettings(network ?? {});
+				return success(id, "set_network", { network: facade.settingsManager.getNetworkSettings() });
+			}
 		case "new_session": {
 			// Long-lived agents cache skills from process start; pick up skills
 			// added/removed on disk so each new conversation sees the current set.
