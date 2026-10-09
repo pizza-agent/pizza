@@ -13,7 +13,8 @@
  *
  * Env:
  *   DISCORD_TOKEN    bot token (https://discord.com/developers/applications)
- *   PIZZA_ROUTES     "#channel=workspace,…" — which Discord channel → which agent workspace
+ *   PIZZA_WORKSPACE  default target workspace for channels without a route
+ *   PIZZA_ROUTES     "#channel=workspace,…" — per-channel routing (optional)
  *   PIZZA_ANSWER_ALL set "1" to reply to every message (default: only @bot / DMs)
  *   PIZZA_TELL_TIMEOUT  per-message timeout ms (default 120000)
  */
@@ -30,6 +31,7 @@ import {
 } from "@tomsun28/pizza-channel-core";
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const WORKSPACE = process.env.PIZZA_WORKSPACE;
 const ROUTES = parseRoutes(process.env.PIZZA_ROUTES ?? "");
 const ANSWER_ALL = process.env.PIZZA_ANSWER_ALL === "1";
 // discord.com and gateway.discord.gg are unreachable from some networks —
@@ -70,8 +72,8 @@ if (!DISCORD_TOKEN) {
 	console.error("Missing DISCORD_TOKEN. Create a bot at https://discord.com/developers/applications.");
 	process.exit(1);
 }
-if (Object.keys(ROUTES).length === 0) {
-	console.error('Missing PIZZA_ROUTES, e.g. PIZZA_ROUTES="#dev-alerts=myrepo,#general=myrepo".');
+if (!WORKSPACE && Object.keys(ROUTES).length === 0) {
+	console.error('Set PIZZA_WORKSPACE (or PIZZA_ROUTES="#general=myrepo") so Discord messages have a target.');
 	process.exit(1);
 }
 
@@ -99,7 +101,7 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		if (msg.author.bot) return; // never loop on bots
 
 		const channelName = msg.channel.isDMBased() ? "dm" : `#${msg.channel.name ?? "unknown"}`;
-		const workspace = ROUTES[channelName];
+		const workspace = ROUTES[channelName] ?? WORKSPACE;
 		if (!workspace) return; // no route for this channel
 
 		// Default: answer only @mentions or DMs. ANSWER_ALL replies to everything.
