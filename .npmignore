@@ -1,27 +1,27 @@
-# 源码
+# Source
 src/
 packages/
 apps/
 *.ts
 !*.d.ts
 
-# 构建产物
+# Build output
 dist/*.map
 dist/**/*.map
 
-# 开发文件
+# Development files
 .gitignore
 tsconfig*.json
 vitest.config.ts
 test/
 scripts/
 
-# 文档（可选，如果不需要发布docs和examples）
+# Docs (optional — uncomment if docs/examples should not be published)
 # docs/
 examples/**/*.ts
 examples/**/*.tsx
 
-# 其他
+# Other
 .DS_Store
 *.log
 .env

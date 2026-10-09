@@ -1,18 +1,19 @@
 /**
- * Pizza SDK 嵌入 Node 服务示例。
+ * Example: embedding the Pizza SDK in a Node server.
  *
- * 用 Node 内置 http 模块起一个 HTTP 服务，把 Pizza agent 包装成一个
- * POST /ask 接口。请求体: { "prompt": "..." }
- * 响应体: { "text": "...", "events": [...] }
+ * Uses Node's built-in http module to wrap the Pizza agent in a
+ * POST /ask endpoint. Request body: { "prompt": "..." }
+ * Response body: { "text": "...", "events": [...] }
  *
- * 用法:
- *   1. 先构建 Pizza:  npm run build
- *   2. 设置 API key:   export ANTHROPIC_API_KEY=sk-...
- *   3. 运行:           node examples/sdk-server.mjs
- *   4. 测试:           curl -s localhost:3001/ask -d '{"prompt":"hi"}' -H 'Content-Type: application/json'
+ * Usage:
+ *   1. Build Pizza:     npm run build
+ *   2. Set an API key:  export ANTHROPIC_API_KEY=sk-...
+ *   3. Run:             node examples/sdk-server.mjs
+ *   4. Test:            curl -s localhost:3001/ask -d '{"prompt":"hi"}' -H 'Content-Type: application/json'
  *
- * 同一个 facade 在多个请求间复用 —— Pizza 会自动管理上下文/压缩/分支。
- * 如果想要每个请求独立会话，把 createFacade() 移到 handleAsk 里每次新建即可。
+ * One facade is reused across requests — Pizza manages context/compaction/
+ * branching automatically. For a fresh session per request, move
+ * createFacade() inside handleAsk instead.
  */
 
 import { createServer } from "node:http";
@@ -29,7 +30,7 @@ const PORT = Number(process.env.PORT ?? 3001);
 const CWD = process.cwd();
 const AGENT_DIR = process.env.PIZZA_AGENT_DIR ?? join(process.env.HOME ?? "~", ".pizza", "agent");
 
-// ---------- 1. 构造 services（auth / model / settings / resource loader） ----------
+// ---------- 1. Build services (auth / model / settings / resource loader) ----------
 const authStorage = AuthStorage.create(join(AGENT_DIR, "auth.json"));
 const settingsManager = SettingsManager.create(CWD, AGENT_DIR);
 const modelRegistry = ModelRegistry.create(authStorage, join(AGENT_DIR, "models.json"));
@@ -40,7 +41,7 @@ const resourceLoader = new DefaultResourceLoader({
 });
 await resourceLoader.reload();
 
-// ---------- 2. 创建 facade（事件溯源 Session） ----------
+// ---------- 2. Create the facade (event-sourced session) ----------
 const { facade, model } = await createSessionFacade({
   cwd: CWD,
   agentDir: AGENT_DIR,
@@ -48,8 +49,8 @@ const { facade, model } = await createSessionFacade({
   settingsManager,
   modelRegistry,
   resourceLoader,
-  // storagePath 留空 -> 默认 SQLite 持久化到 ~/.pizza/agent
-  // storagePath: ":memory:",  // 测试用内存库
+  // storagePath left unset -> defaults to SQLite persistence at ~/.pizza/agent
+  // storagePath: ":memory:",  // in-memory store for tests
 });
 
 if (!model) {
@@ -58,7 +59,7 @@ if (!model) {
 }
 console.log(`[pizza-sdk] facade ready, model=${model.provider}/${model.id}`);
 
-// ---------- 3. HTTP 服务 ----------
+// ---------- 3. HTTP server ----------
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = "";
@@ -87,7 +88,7 @@ async function handleAsk(req, res) {
   const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
   if (!prompt) return sendJson(res, 400, { error: "missing 'prompt'" });
 
-  // 收集本轮事件（可选 —— 给前端做实时渲染用）
+  // Collect this turn's events (optional — for real-time rendering on the frontend)
   const events = [];
   const unsub = facade.subscribe((event) => events.push(event));
 
@@ -120,7 +121,7 @@ server.listen(PORT, () => {
   console.log(`[pizza-sdk] try: curl -s localhost:${PORT}/ask -d '{"prompt":"hi"}' -H 'Content-Type: application/json'`);
 });
 
-// ---------- 4. 优雅退出 ----------
+// ---------- 4. Graceful shutdown ----------
 async function shutdown() {
   console.log("\n[pizza-sdk] shutting down...");
   server.close();
