@@ -624,6 +624,7 @@
       "accountSection": "使用账号登录",
       "apiKeySection": "使用 API 密钥登录",
       "signIn": "登录",
+      "signOut": "退出登录",
       "accountLoginTitle": "登录 — {{name}}",
       "loginWaiting": "等待登录流程…",
       "loginIdle": "登录流程已结束。",

@@ -624,6 +624,7 @@
       "accountSection": "Sign in with an account",
       "apiKeySection": "Sign in with an API key",
       "signIn": "Sign in",
+      "signOut": "Sign out",
       "accountLoginTitle": "Sign in — {{name}}",
       "loginWaiting": "Waiting for the login flow…",
       "loginIdle": "Login flow finished.",

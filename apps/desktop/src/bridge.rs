@@ -274,6 +274,11 @@ pub struct BridgeState {
 	restarting: Mutex<HashSet<String>>,
 	/// Active OAuth login child (`pizza auth login --mode jsonl`), if any.
 	oauth_login: Mutex<Option<OAuthLoginChild>>,
+	/// Cached `pizza auth list --json` result. The option list only changes
+	/// when the pizza binary is upgraded, so it is warmed at app startup and
+	/// kept for the session — spawning the CLI for every Settings open takes
+	/// >1s and made the "Sign in with an account" section visibly delayed.
+	auth_options_cache: Mutex<Option<Vec<AuthLoginOption>>>,
 }
 
 /// A running `pizza auth login --mode jsonl` child plus its stdin writer.
@@ -290,6 +295,7 @@ impl Default for BridgeState {
 			active: Mutex::new(HashMap::new()),
 			restarting: Mutex::new(HashSet::new()),
 			oauth_login: Mutex::new(None),
+			auth_options_cache: Mutex::new(None),
 		}
 	}
 }
@@ -3851,16 +3857,34 @@ pub async fn oauth_login(
 	std::thread::spawn(move || {
 		use std::io::BufRead;
 		let reader = std::io::BufReader::new(stdout);
+		let mut ok_done = false;
 		for line in reader.lines() {
 			let Ok(line) = line else { break };
 			let parsed: Option<serde_json::Value> = serde_json::from_str(&line).ok();
 			if let Some(value) = parsed {
 				let done = value.get("type").and_then(|t| t.as_str()) == Some("done");
+				if done && value.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+					ok_done = true;
+				}
 				let _ = app.emit("auth_login_event", value);
 				if done {
 					break;
 				}
 			}
+		}
+		// A successful login rewrote auth.json, which sidecars keep cached in
+		// memory — fan out reload_providers like set_provider_api_key does, or
+		// the new credential stays invisible until the next app restart.
+		if ok_done {
+			if let Some(state) = app.try_state::<BridgeState>() {
+				broadcast_to_all_sidecars(state.inner(), "reload_providers");
+			}
+			let channel_app = app.clone();
+			tauri::async_runtime::spawn(async move {
+				if let Some(state) = channel_app.try_state::<BridgeState>() {
+					broadcast_to_all_channels(state.inner(), "reload_providers").await;
+				}
+			});
 		}
 		// Ensure the child is reaped and the slot freed.
 		if let Some(state) = app.try_state::<BridgeState>() {
@@ -3911,10 +3935,8 @@ pub struct AuthLoginOption {
 	pub kind: String, // "account" | "apiKey"
 }
 
-/// `pizza auth list --json` — both login categories.
-#[tauri::command]
-pub async fn list_auth_options(app: AppHandle) -> Result<Vec<AuthLoginOption>, String> {
-	let (program, mut base_args) = resolve_pizza_command_binary(&app);
+fn run_auth_list(app: &AppHandle) -> Result<Vec<AuthLoginOption>, String> {
+	let (program, mut base_args) = resolve_pizza_command_binary(app);
 	base_args.retain(|a| a != "rpc" && a != "--mode");
 	let output = std::process::Command::new(&program)
 		.args(base_args)
@@ -3942,6 +3964,32 @@ pub async fn list_auth_options(app: AppHandle) -> Result<Vec<AuthLoginOption>, S
 		}
 	}
 	Ok(options)
+}
+
+/// `pizza auth list --json` — both login categories. Served from the
+/// session cache when warm (see `warm_auth_options`).
+#[tauri::command]
+pub async fn list_auth_options(
+	app: AppHandle,
+	state: tauri::State<'_, BridgeState>,
+) -> Result<Vec<AuthLoginOption>, String> {
+	if let Some(cached) = state.auth_options_cache.lock().unwrap().clone() {
+		return Ok(cached);
+	}
+	let options = run_auth_list(&app)?;
+	*state.auth_options_cache.lock().unwrap() = Some(options.clone());
+	Ok(options)
+}
+
+/// Warm the auth-options cache in the background at app startup so the first
+/// Settings open doesn't wait on a pizza CLI spawn.
+pub(crate) fn warm_auth_options(app: &AppHandle) {
+	if app.state::<BridgeState>().auth_options_cache.lock().unwrap().is_some() {
+		return;
+	}
+	if let Ok(options) = run_auth_list(app) {
+		*app.state::<BridgeState>().auth_options_cache.lock().unwrap() = Some(options);
+	}
 }
 
 // ─── App update check ───────────────────────────────────────────────────────
