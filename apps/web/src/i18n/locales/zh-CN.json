@@ -550,7 +550,7 @@
       "webhookUrl": "Webhook URL",
       "urlHint": "入站消息到达此 URL，回复将被 POST 回去。",
       "workspace": "投递到工作区",
-      "workspaceHint": "入站消息会路由到该工作区的助理。",
+      "workspaceHint": "入站消息会路由到该工作区。",
       "workspacePlaceholder": "选择一个工作区…",
       "noWorkspaces": "暂无可用工作区，请先创建。",
       "enabled": "启用",

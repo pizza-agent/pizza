@@ -550,7 +550,7 @@
       "webhookUrl": "Webhook URL",
       "urlHint": "Inbound messages arrive at this URL; replies are POSTed back.",
       "workspace": "Deliver to workspace",
-      "workspaceHint": "Inbound messages route to this workspace's agent.",
+      "workspaceHint": "Inbound messages route to this workspace.",
       "workspacePlaceholder": "Select a workspace…",
       "noWorkspaces": "No workspaces available. Create one first.",
       "enabled": "Enabled",
