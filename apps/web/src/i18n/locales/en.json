@@ -543,6 +543,8 @@
       "appSecret": "App Secret",
       "appSecretHint": "The app's secret credential — keep it private.",
       "larkHint": "Routing is per-chat and automatic: DMs are always answered, group chats need an @mention.",
+      "appToken": "App-Level Token",
+      "appTokenHint": "Slack → Basic Information → App-Level Tokens, with the connections:write scope (starts with xapp-). Powers Socket Mode — no public URL needed.",
       "webhookUrl": "Webhook URL",
       "urlHint": "Inbound messages arrive at this URL; replies are POSTed back.",
       "workspace": "Deliver to workspace",
@@ -557,6 +559,7 @@
       "tokenRequired": "Bot token is required",
       "appIdRequired": "App ID is required",
       "appSecretRequired": "App Secret is required",
+      "appTokenRequired": "App-level token (xapp-…) is required — enable Socket Mode first",
       "urlRequired": "Webhook URL is required"
     }
   },

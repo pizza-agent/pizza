@@ -41,6 +41,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 	const [token, setToken] = useState(existing?.token ?? "");
 	const [appId, setAppId] = useState(existing?.appId ?? "");
 	const [appSecret, setAppSecret] = useState(existing?.appSecret ?? "");
+	const [appToken, setAppToken] = useState(existing?.appToken ?? "");
 	const [webhookUrl, setWebhookUrl] = useState(existing?.webhookUrl ?? "");
 	// New channels default to the persistent main assistant — same target the
 	// sidebar's top "Agent" entry chats with.
@@ -60,6 +61,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setToken(existing?.token ?? "");
 		setAppId(existing?.appId ?? "");
 		setAppSecret(existing?.appSecret ?? "");
+		setAppToken(existing?.appToken ?? "");
 		setWebhookUrl(existing?.webhookUrl ?? "");
 		setWorkspace(existing?.workspace ?? MAIN_CHAT_CWD);
 		setEnabled(existing?.enabled ?? true);
@@ -82,6 +84,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		if (spec.token && !token.trim()) return t("channels.dialog.tokenRequired");
 		if (spec.appCredentials && !appId.trim()) return t("channels.dialog.appIdRequired");
 		if (spec.appCredentials && !appSecret.trim()) return t("channels.dialog.appSecretRequired");
+		if (spec.appToken && !appToken.trim()) return t("channels.dialog.appTokenRequired");
 		if (spec.webhook && !webhookUrl.trim()) return t("channels.dialog.urlRequired");
 		return null;
 	}
@@ -97,7 +100,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setTestMessage(null);
 		try {
 			// Save first (so testChannel has the latest config), then test.
-			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, appToken, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			const result = await testChannel(saved.id);
 			setTestMessage(result.message);
@@ -118,7 +121,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 		setError(null);
 		setSaving(true);
 		try {
-			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, webhookUrl, workspace, enabled };
+			const input: ChannelInput = { type, name: name.trim(), token, appId, appSecret, appToken, webhookUrl, workspace, enabled };
 			const saved = await saveChannel(existing?.id ?? null, input);
 			onSaved(saved);
 			onClose();
@@ -209,6 +212,17 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 							value={token}
 							onChange={(e) => setToken(e.target.value)}
 							placeholder="••••••••"
+							className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+						/>
+					</Field>
+				)}
+				{spec.appToken && (
+					<Field label={t("channels.dialog.appToken")} hint={t("channels.dialog.appTokenHint")}>
+						<input
+							type="password"
+							value={appToken}
+							onChange={(e) => setAppToken(e.target.value)}
+							placeholder="xapp-…"
 							className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 						/>
 					</Field>

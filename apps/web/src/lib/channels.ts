@@ -38,6 +38,8 @@ export interface ChannelConfig {
 	/** Lark/Feishu app credentials (LARK_APP_ID / LARK_APP_SECRET). */
 	appId?: string;
 	appSecret?: string;
+	/** Slack app-level token for Socket Mode (SLACK_APP_TOKEN, xapp-…). */
+	appToken?: string;
 	/** Discord guild. */
 	server?: string;
 	/** Discord channel / Slack channel name. */
@@ -70,6 +72,7 @@ export function isTokenType(type: ChannelType): boolean {
 export interface ChannelFieldSpec {
 	appCredentials?: boolean;
 	token?: boolean;
+	appToken?: boolean;
 	webhook?: boolean;
 }
 
@@ -77,6 +80,8 @@ export function channelFieldSpec(type: ChannelType): ChannelFieldSpec {
 	switch (type) {
 		case "lark":
 			return { appCredentials: true };
+		case "slack":
+			return { token: true, appToken: true };
 		case "webhook":
 			return { webhook: true };
 		default:
@@ -157,6 +162,7 @@ export interface ChannelInput {
 	token?: string;
 	appId?: string;
 	appSecret?: string;
+	appToken?: string;
 	server?: string;
 	channel?: string;
 	webhookUrl?: string;

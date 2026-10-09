@@ -543,6 +543,8 @@
       "appSecret": "App Secret",
       "appSecretHint": "应用凭证，请妥善保管。",
       "larkHint": "按会话自动路由：私聊直接回复，群聊需 @机器人。",
+      "appToken": "App-Level Token",
+      "appTokenHint": "Slack → Basic Information → App-Level Tokens，需 connections:write 权限（xapp- 开头）。用于 Socket Mode，无需公网地址。",
       "webhookUrl": "Webhook URL",
       "urlHint": "入站消息到达此 URL，回复将被 POST 回去。",
       "workspace": "投递到工作区",
@@ -557,6 +559,7 @@
       "tokenRequired": "请填写机器人 Token",
       "appIdRequired": "请填写 App ID",
       "appSecretRequired": "请填写 App Secret",
+      "appTokenRequired": "请填写 App-Level Token（xapp- 开头），需先开启 Socket Mode",
       "urlRequired": "请填写 Webhook URL"
     }
   },

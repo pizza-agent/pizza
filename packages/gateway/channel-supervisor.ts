@@ -32,6 +32,8 @@ export interface ManagedChannelConfig {
 	token?: string;
 	appId?: string;
 	appSecret?: string;
+	/** Slack app-level token for Socket Mode (xapp-…). */
+	appToken?: string;
 	server?: string;
 	channel?: string;
 	webhookUrl?: string;
@@ -144,8 +146,7 @@ function envFor(config: ManagedChannelConfig): Record<string, string> {
 			break;
 		case "slack":
 			env.SLACK_BOT_TOKEN = config.token ?? "";
-			env.SLACK_SIGNING_SECRET = config.appSecret ?? "";
-			if (config.appId) env.SLACK_APP_TOKEN = config.appId;
+			env.SLACK_APP_TOKEN = config.appToken ?? "";
 			break;
 		case "webhook":
 			env.WEBHOOK_TOKEN = config.token ?? "";
@@ -174,8 +175,11 @@ function validate(input: Partial<ManagedChannelConfig>): string | null {
 		case "webhook":
 			if (!input.webhookUrl?.trim()) return "Webhook URL is required";
 			return null;
-		case "discord":
 		case "slack":
+			if (!input.token?.trim()) return "Bot token is required";
+			if (!input.appToken?.trim()) return "App-level token (xapp-…) is required — enable Socket Mode first";
+			return null;
+		case "discord":
 		case "telegram":
 			if (!input.token?.trim()) return "Bot token is required";
 			return null;
@@ -382,6 +386,7 @@ export class ChannelSupervisor {
 			token: input.token,
 			appId: input.appId,
 			appSecret: input.appSecret,
+			appToken: input.appToken,
 			server: input.server,
 			channel: input.channel,
 			webhookUrl: input.webhookUrl,
