@@ -1441,17 +1441,28 @@ export async function runRpcModeWithFacade(
 				registry.authStorage.reload();
 				registry.refresh();
 			}
-			// If the facade is still using the placeholder model (provider="none",
-			// set at startup when no API key was configured), try to resolve a real
-			// model now that credentials have been reloaded. This is critical for
-			// gateway mode where restart_sidecar can't respawn the agent process —
-			// without this, get_state keeps returning model=undefined and the GUI
-			// bounces the user back to the setup page forever.
+			// If the facade's current model no longer resolves — either the
+			// placeholder (provider="none", set at startup when no API key was
+			// configured) or a model whose provider was removed/reconfigured in
+			// models.json while the agent kept running — try to resolve a real
+			// model now that credentials have been reloaded. This is critical
+			// for gateway mode where restart_sidecar can't respawn the agent
+			// process — without this, get_state keeps returning model=undefined
+			// and the GUI bounces the user back to the setup page forever.
 			const currentModel = facade.model;
-			if (currentModel.provider === "none" && registry) {
+			if (registry && !registry.find(currentModel.provider, currentModel.model_id)) {
 				const available = registry.getAvailable();
-				if (available.length > 0) {
-					facade.setModel(available[0]);
+				// Prefer the saved default when it still resolves and has auth;
+				// otherwise fall back to the first available model, mirroring
+				// findInitialModel's priority order.
+				const defaultProvider = facade.settingsManager.getDefaultProvider();
+				const defaultModelId = facade.settingsManager.getDefaultModel();
+				let next =
+					defaultProvider && defaultModelId ? registry.find(defaultProvider, defaultModelId) : undefined;
+				if (next && !registry.hasConfiguredAuth(next)) next = undefined;
+				if (!next && available.length > 0) next = available[0];
+				if (next) {
+					facade.setModel(next);
 					// The runtime's llmClient was left as null at startup (no model
 					// → no client). Build and inject one now so the reactor can
 					// actually call the provider on the first prompt — without this
