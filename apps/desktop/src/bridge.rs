@@ -643,7 +643,10 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 		.unwrap_or(false);
 
 	if !stop_result {
-		return Err(format!("Failed to stop the old main agent process (PID {})", pid));
+		return Err(format!(
+			"Failed to stop the old main agent process (PID {})",
+			pid
+		));
 	}
 
 	for _ in 0..30 {
@@ -3984,11 +3987,20 @@ pub async fn list_auth_options(
 /// Warm the auth-options cache in the background at app startup so the first
 /// Settings open doesn't wait on a pizza CLI spawn.
 pub(crate) fn warm_auth_options(app: &AppHandle) {
-	if app.state::<BridgeState>().auth_options_cache.lock().unwrap().is_some() {
+	if app
+		.state::<BridgeState>()
+		.auth_options_cache
+		.lock()
+		.unwrap()
+		.is_some()
+	{
 		return;
 	}
 	if let Ok(options) = run_auth_list(app) {
-		*app.state::<BridgeState>().auth_options_cache.lock().unwrap() = Some(options);
+		*app.state::<BridgeState>()
+			.auth_options_cache
+			.lock()
+			.unwrap() = Some(options);
 	}
 }
 
