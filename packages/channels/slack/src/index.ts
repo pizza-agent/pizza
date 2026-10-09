@@ -29,7 +29,9 @@
  */
 
 import https from "node:https";
-import { App } from "@slack/bolt";
+// @slack/bolt is CJS — it has no named ESM exports, so default-import and
+// destructure App off the package object.
+import bolt from "@slack/bolt";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import {
 	ChannelRuntime,
@@ -52,6 +54,7 @@ const PROXY =
 	process.env.https_proxy ??
 	process.env.ALL_PROXY ??
 	process.env.all_proxy;
+const { App } = bolt;
 const proxyAgent = PROXY ? new HttpsProxyAgent(PROXY) : undefined;
 
 if (proxyAgent) {
