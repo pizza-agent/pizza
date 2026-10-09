@@ -165,6 +165,26 @@ describe("gateway tell provenance", () => {
 		expect(afterBlock).toContain("crossed a workspace boundary");
 	});
 
+	it("frames external channel sources as outside parties, not workspace traffic", async () => {
+		const cwd = "/proj/web";
+		const fake = await startWithFake(cwd);
+		const res = await sendAndWait(server!.socketPath, {
+			type: "tell",
+			id: "r1b",
+			to: cwd,
+			message: "hi from telegram",
+			from: { kind: "telegram", id: "123456" },
+		});
+		expect(JSON.parse(res).ok).toBe(true);
+		expect(fake.received).toHaveLength(1);
+		const delivered = fake.received[0]!;
+		expect(delivered).toContain('<message from="telegram:123456"');
+		// External channel → outside-party trailer, not the workspace-boundary
+		// wording used for agent-to-agent tells.
+		expect(delivered).toContain('external "telegram" channel');
+		expect(delivered).not.toContain("crossed a workspace boundary");
+	});
+
 	it("delivers the bare message when `from` is absent (back-compat)", async () => {
 		const cwd = "/proj/web";
 		const fake = await startWithFake(cwd);
