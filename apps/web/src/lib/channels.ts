@@ -72,6 +72,8 @@ export function isTokenType(type: ChannelType): boolean {
 export interface ChannelFieldSpec {
 	appCredentials?: boolean;
 	token?: boolean;
+	/** Token field is shown but optional (e.g. webhook shared secret). */
+	tokenOptional?: boolean;
 	appToken?: boolean;
 	webhook?: boolean;
 }
@@ -83,7 +85,7 @@ export function channelFieldSpec(type: ChannelType): ChannelFieldSpec {
 		case "slack":
 			return { token: true, appToken: true };
 		case "webhook":
-			return { webhook: true };
+			return { webhook: true, token: true, tokenOptional: true };
 		default:
 			return { token: true };
 	}

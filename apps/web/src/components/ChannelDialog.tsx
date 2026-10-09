@@ -81,7 +81,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 	function validate(): string | null {
 		if (!name.trim()) return t("channels.dialog.nameRequired");
 		if (!workspace) return t("channels.dialog.workspaceRequired");
-		if (spec.token && !token.trim()) return t("channels.dialog.tokenRequired");
+		if (spec.token && !spec.tokenOptional && !token.trim()) return t("channels.dialog.tokenRequired");
 		if (spec.appCredentials && !appId.trim()) return t("channels.dialog.appIdRequired");
 		if (spec.appCredentials && !appSecret.trim()) return t("channels.dialog.appSecretRequired");
 		if (spec.appToken && !appToken.trim()) return t("channels.dialog.appTokenRequired");
@@ -206,7 +206,10 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 					</>
 				)}
 				{spec.token && (
-					<Field label={t("channels.dialog.token")} hint={t("channels.dialog.tokenHint")}>
+					<Field
+						label={t(spec.tokenOptional ? "channels.dialog.tokenOptional" : "channels.dialog.token")}
+						hint={t(spec.tokenOptional ? "channels.dialog.tokenOptionalHint" : "channels.dialog.tokenHint")}
+					>
 						<input
 							type="password"
 							value={token}
@@ -233,7 +236,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 							type="text"
 							value={webhookUrl}
 							onChange={(e) => setWebhookUrl(e.target.value)}
-							placeholder="https://hooks.example.com/…"
+							placeholder="http://127.0.0.1:3002"
 							className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 						/>
 					</Field>

@@ -15,6 +15,7 @@
  */
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:http";
 import { chmodSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,8 +148,8 @@ function systemProxy(agentDir: string): ProxyResolution {
  *  proxy off, so a proxied shell that launched the gateway can't leak through. */
 const PROXY_ENV_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] as const;
 
-/** Translate a UI config into the adapter's env contract. */
-function envFor(config: ManagedChannelConfig, agentDir: string): Record<string, string> {
+/** Translate a UI config into the adapter's env contract. Exported for tests. */
+export function envFor(config: ManagedChannelConfig, agentDir: string): Record<string, string> {
 	const env: Record<string, string> = { ...(process.env as Record<string, string>) };
 	env.PIZZA_WORKSPACE = config.workspace;
 	const proxy = systemProxy(agentDir);
@@ -186,10 +187,11 @@ function envFor(config: ManagedChannelConfig, agentDir: string): Record<string, 
 			env.WEBHOOK_TOKEN = config.token ?? "";
 			if (config.webhookUrl) {
 				try {
-					const port = new URL(config.webhookUrl).port;
-					if (port) env.PORT = port;
+					const url = new URL(config.webhookUrl);
+					if (url.port) env.PORT = url.port;
+					if (url.hostname) env.WEBHOOK_HOST = url.hostname;
 				} catch {
-					/* unparsable — keep the adapter default */
+					/* unparsable — keep the adapter defaults */
 				}
 			}
 			break;
@@ -197,8 +199,9 @@ function envFor(config: ManagedChannelConfig, agentDir: string): Record<string, 
 	return env;
 }
 
-/** Validate a save input. Returns an error string, or null when valid. */
-function validate(input: Partial<ManagedChannelConfig>): string | null {
+/** Validate a save input. Returns an error string, or null when valid.
+ *  Exported for tests. */
+export function validate(input: Partial<ManagedChannelConfig>): string | null {
 	if (!input.name?.trim()) return "Display name is required";
 	if (!input.workspace?.trim()) return "Select a workspace";
 	switch (input.type) {
@@ -280,13 +283,30 @@ async function probeCredentials(
 					? { ok: true, message: "Bot token is valid" }
 					: { ok: false, message: `Slack rejected the token: ${body.error ?? `HTTP ${res.status}`}` };
 			}
-			case "webhook":
+			case "webhook": {
+				// No remote credentials to check — "can we listen" is the test.
+				let url: URL;
 				try {
-					new URL(config.webhookUrl ?? "");
-					return { ok: true, message: "Webhook URL is valid" };
+					url = new URL(config.webhookUrl ?? "");
 				} catch {
 					return { ok: false, message: "Webhook URL is not a valid URL" };
 				}
+				const port = url.port ? Number(url.port) : 3002;
+				const host = url.hostname || "127.0.0.1";
+				try {
+					await new Promise<void>((resolve, reject) => {
+						const probe = createServer();
+						probe.once("error", reject);
+						probe.listen(port, host, () => probe.close(() => resolve()));
+					});
+					return { ok: true, message: `Webhook will listen on ${host}:${port}` };
+				} catch (err) {
+					if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+						return { ok: true, message: `${host}:${port} is already listening` };
+					}
+					return { ok: false, message: `Cannot listen on ${host}:${port}: ${err instanceof Error ? err.message : String(err)}` };
+				}
+			}
 		}
 	} catch (error) {
 		return { ok: false, message: `Connectivity check failed: ${error instanceof Error ? error.message : String(error)}` };
