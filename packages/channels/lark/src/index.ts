@@ -70,9 +70,9 @@ void runChannel(async (runtime: ChannelRuntime) => {
 		const text = msg.content.trim();
 		if (!text) return;
 
-		// Instant read-receipt — an EYES reaction says "received" without waiting
-		// on the LLM turn. Fire-and-forget: a failed reaction is fine.
-		void lark.addReaction(msg.messageId, "EYES").catch(() => {});
+		// Instant read-receipt — a "收到" (Get) reaction says "received" without
+		// waiting on the LLM turn. Fire-and-forget: a failed reaction is fine.
+		void lark.addReaction(msg.messageId, "Get").catch(() => {});
 
 		try {
 			const reply = await runtime.deliver(workspace, text, provenance("lark", chatId, msg.senderName));
