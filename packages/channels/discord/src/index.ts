@@ -18,7 +18,10 @@
  *   PIZZA_TELL_TIMEOUT  per-message timeout ms (default 120000)
  */
 
+import https from "node:https";
 import { Client, GatewayIntentBits, type Message } from "discord.js";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import {
 	ChannelRuntime,
 	parseRoutes,
@@ -29,6 +32,39 @@ import {
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ROUTES = parseRoutes(process.env.PIZZA_ROUTES ?? "");
 const ANSWER_ALL = process.env.PIZZA_ANSWER_ALL === "1";
+// discord.com and gateway.discord.gg are unreachable from some networks —
+// honor the standard proxy env vars (the gateway supervisor injects the OS
+// proxy when set).
+const PROXY =
+	process.env.DISCORD_PROXY ??
+	process.env.HTTPS_PROXY ??
+	process.env.https_proxy ??
+	process.env.ALL_PROXY ??
+	process.env.all_proxy;
+
+if (PROXY) {
+	// @discordjs/rest fetches through undici → global dispatcher.
+	setGlobalDispatcher(new EnvHttpProxyAgent());
+	// The gateway WebSocket (`ws` package) handshakes via https.request with a
+	// pinned `createConnection: tlsConnect`, so it ignores agent/globalAgent —
+	// and @discordjs/ws never passes options to `new WebSocket()`. Patch
+	// https.request (read at call time) to route its upgrade through the proxy
+	// agent instead. Process-local: this adapter only exists to reach Discord.
+	const agent = new HttpsProxyAgent(PROXY);
+	const origRequest = https.request.bind(https);
+	const patched: typeof https.request = ((opts: unknown, ...rest: unknown[]) => {
+		if (opts && typeof opts === "object" && !Array.isArray(opts) && !(opts instanceof URL)) {
+			const options = { ...(opts as https.RequestOptions), agent } as https.RequestOptions & {
+				createConnection?: unknown;
+			};
+			delete options.createConnection;
+			return origRequest(options, ...(rest as [never]));
+		}
+		return (origRequest as (...a: unknown[]) => ReturnType<typeof origRequest>)(opts, ...rest);
+	}) as typeof https.request;
+	https.request = patched;
+	console.log(`[discord] routing API+gateway via proxy ${PROXY.replace(/\/\/[^/@]*@/, "//***@")}`);
+}
 
 if (!DISCORD_TOKEN) {
 	console.error("Missing DISCORD_TOKEN. Create a bot at https://discord.com/developers/applications.");
