@@ -98,7 +98,7 @@
     "approvalOff": "自动",
     "approvalOffHint": "全部工具直接执行,不做任何确认",
     "approvalGated": "审批",
-    "approvalGatedHint": "未知工具和危险命令需确认,其余自动执行",
+    "approvalGatedHint": "未知工具和危险命令需确认",
     "contextUsed": "上下文",
     "inputTokens": "输入",
     "outputTokens": "输出",

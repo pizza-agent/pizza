@@ -98,7 +98,7 @@
     "approvalOff": "Auto",
     "approvalOffHint": "Run all tools without asking",
     "approvalGated": "Approve",
-    "approvalGatedHint": "Unknown tools and dangerous commands ask first; the rest auto-run",
+    "approvalGatedHint": "Ask before unknown tools & dangerous commands",
     "contextUsed": "Context",
     "inputTokens": "Input",
     "outputTokens": "Output",
