@@ -1192,6 +1192,26 @@ export async function setSchedulerPolicy(policy: import("./types.js").SchedulerP
 	);
 	return r.data?.policy ?? policy;
 }
+
+// --- Network (proxy for channel adapters) -----------------------------------
+
+export interface NetworkSettings {
+	/** "auto" (env/OS detection), "off" (direct), or an explicit proxy URL. */
+	proxy?: string;
+}
+
+export async function getNetwork(): Promise<NetworkSettings> {
+	const r = await sendCommandAwait<{ network: NetworkSettings }>({ type: "get_network" }, 5000);
+	return r.data?.network ?? {};
+}
+
+export async function setNetwork(network: NetworkSettings): Promise<NetworkSettings> {
+	const r = await sendCommandAwait<{ network: NetworkSettings }>(
+		{ type: "set_network", network },
+		5000,
+	);
+	return r.data?.network ?? network;
+}
 export async function getScheduledTaskHistory(
 	taskId: string,
 	scope: "main" | "workspace",

@@ -595,6 +595,16 @@
         "current": "Current"
       }
     },
+    "network": {
+      "title": "Network",
+      "subtitle": "Outbound proxy for integrations like message channels. Channel adapters restart automatically when this changes.",
+      "proxy": "Proxy",
+      "proxyAuto": "Auto-detect",
+      "proxyCustom": "Custom",
+      "proxyOff": "Direct",
+      "proxyUrl": "Proxy URL",
+      "proxyUrlHint": "e.g. http://127.0.0.1:7897 or socks5://… — empty falls back to auto-detect."
+    },
     "provider": {
       "title": "Providers",
       "addProvider": "Add Provider",

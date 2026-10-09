@@ -25,6 +25,8 @@ import {
 	type AppUpdateInfo,
 	getSchedulerPolicy,
 	setSchedulerPolicy,
+	getNetwork,
+	setNetwork,
 	getApprovalPolicy,
 	setApprovalPolicy,
 	type ApprovalPolicy,
@@ -126,6 +128,32 @@ function GeneralPage() {
 		void setApprovalPolicy(policy).catch(() => {});
 	}, []);
 
+	// Proxy for channel adapters — "auto" (env/OS detection), "off" (direct),
+	// or a custom URL. Edits write settings.json; the gateway watches the file
+	// and respawns adapters so the change applies immediately.
+	const [proxyMode, setProxyMode] = useState<string>("auto");
+	const [proxyUrl, setProxyUrl] = useState("");
+	const networkLoadedRef = useRef(false);
+	useEffect(() => {
+		getNetwork()
+			.then((n) => {
+				const p = n.proxy ?? "auto";
+				if (p === "auto" || p === "off") {
+					setProxyMode(p);
+				} else {
+					setProxyMode("custom");
+					setProxyUrl(p);
+				}
+				networkLoadedRef.current = true;
+			})
+			.catch(() => {});
+	}, []);
+	const saveNetwork = useCallback((mode: string, url: string) => {
+		if (!networkLoadedRef.current) return;
+		const proxy = mode === "custom" ? url.trim() || "auto" : mode;
+		void setNetwork({ proxy }).catch(() => {});
+	}, []);
+
 	const [language, setLanguage] = useState<AppLanguage>(
 		(SUPPORTED_LANGUAGES.includes(i18n.language as AppLanguage) ? i18n.language : DEFAULT_LANGUAGE) as AppLanguage,
 	);
@@ -191,6 +219,42 @@ function GeneralPage() {
 						/>
 					</div>
 				</SettingsRow>
+			</SettingsSection>
+
+			<SettingsSection title={t("settings.network.title")} description={t("settings.network.subtitle")}>
+				<SettingsRow title={t("settings.network.proxy")}>
+					<div className="w-44">
+						<PixelSelect
+							value={proxyMode}
+							options={[
+								{ value: "auto", label: t("settings.network.proxyAuto") },
+								{ value: "custom", label: t("settings.network.proxyCustom") },
+								{ value: "off", label: t("settings.network.proxyOff") },
+							]}
+							onChange={(value) => {
+								setProxyMode(value);
+								saveNetwork(value, proxyUrl);
+							}}
+							size="sm"
+							tone="cyan"
+						/>
+					</div>
+				</SettingsRow>
+				{proxyMode === "custom" && (
+					<SettingsRow title={t("settings.network.proxyUrl")} description={t("settings.network.proxyUrlHint")}>
+						<input
+							type="text"
+							value={proxyUrl}
+							onChange={(e) => setProxyUrl(e.target.value)}
+							onBlur={() => saveNetwork("custom", proxyUrl)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") saveNetwork("custom", proxyUrl);
+							}}
+							placeholder="http://127.0.0.1:7897"
+							className="h-8 w-56 rounded-lg border border-border bg-bg px-2 font-mono text-sm text-fg outline-none focus:border-muted"
+						/>
+					</SettingsRow>
+				)}
 			</SettingsSection>
 		</>
 	);

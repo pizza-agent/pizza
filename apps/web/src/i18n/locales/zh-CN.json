@@ -595,6 +595,16 @@
         "current": "当前"
       }
     },
+    "network": {
+      "title": "网络",
+      "subtitle": "消息渠道等集成的出站代理。修改后渠道会自动重启生效。",
+      "proxy": "代理",
+      "proxyAuto": "自动检测",
+      "proxyCustom": "自定义",
+      "proxyOff": "直连",
+      "proxyUrl": "代理地址",
+      "proxyUrlHint": "例如 http://127.0.0.1:7897 或 socks5://… —— 留空则回落到自动检测。"
+    },
     "provider": {
       "title": "服务商",
       "addProvider": "添加服务商",

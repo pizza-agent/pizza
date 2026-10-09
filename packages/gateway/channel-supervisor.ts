@@ -15,7 +15,7 @@
  */
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ProxyAgent } from "undici";
@@ -86,16 +86,42 @@ function nodeBin(): string {
 	return /node(?:\.exe)?$/i.test(process.execPath) ? process.execPath : "node";
 }
 
+/** systemProxy() returns a URL, `false` for a user-disabled proxy ("off" in
+ *  settings.json — also strips proxy vars inherited from the gateway's env),
+ *  or undefined when nothing was detected. */
+type ProxyResolution = string | false | undefined;
+
 let detectedProxy: string | null | undefined; // undefined = not probed yet
 
+/** The user's configured proxy from `<agentDir>/settings.json`
+ *  (`network.proxy`). Read fresh each call — spawning an adapter should pick
+ *  up the latest setting, not a value cached at gateway start. */
+function configuredProxy(agentDir: string): string | undefined {
+	try {
+		const raw = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")) as {
+			network?: { proxy?: unknown };
+		};
+		const proxy = raw.network?.proxy;
+		return typeof proxy === "string" && proxy.trim() ? proxy.trim() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
- * Proxy the adapters should use to reach platform APIs: explicit env vars
- * first, then the macOS system proxy (`scutil --proxy`). Telegram/Discord/
- * Slack endpoints are unreachable on some networks — when the gateway runs
- * as a desktop daemon the shell's proxy env is absent, so the OS setting is
- * the only usable hint. Result is cached for the process lifetime.
+ * Proxy the adapters should use to reach platform APIs. Resolution order:
+ *   1. settings.json `network.proxy` — explicit URL wins, "off" disables
+ *   2. proxy env vars already present on the gateway process
+ *   3. the macOS system proxy (`scutil --proxy`)
+ * Telegram/Discord/Slack endpoints are unreachable on some networks — when
+ * the gateway runs as a desktop daemon the shell's proxy env is absent, so
+ * the OS setting is the only usable hint. Detection results are cached for
+ * the process lifetime (the configured value is not — see configuredProxy).
  */
-function systemProxy(): string | undefined {
+function systemProxy(agentDir: string): ProxyResolution {
+	const configured = configuredProxy(agentDir);
+	if (configured === "off") return false;
+	if (configured && configured !== "auto") return configured;
 	if (detectedProxy !== undefined) return detectedProxy ?? undefined;
 	detectedProxy = null;
 	const envProxy =
@@ -117,14 +143,22 @@ function systemProxy(): string | undefined {
 	return detectedProxy ?? undefined;
 }
 
+/** Proxy env var names — stripped from the child env when the user turns the
+ *  proxy off, so a proxied shell that launched the gateway can't leak through. */
+const PROXY_ENV_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] as const;
+
 /** Translate a UI config into the adapter's env contract. */
-function envFor(config: ManagedChannelConfig): Record<string, string> {
+function envFor(config: ManagedChannelConfig, agentDir: string): Record<string, string> {
 	const env: Record<string, string> = { ...(process.env as Record<string, string>) };
 	env.PIZZA_WORKSPACE = config.workspace;
-	const proxy = systemProxy();
-	if (proxy) {
+	const proxy = systemProxy(agentDir);
+	if (proxy === false) {
+		for (const name of PROXY_ENV_VARS) delete env[name];
+	} else if (proxy) {
 		env.HTTPS_PROXY ??= proxy;
 		env.https_proxy ??= proxy;
+		env.HTTP_PROXY ??= proxy;
+		env.http_proxy ??= proxy;
 	}
 	// A configured channel/chat becomes a PIZZA_ROUTES entry — same syntax the
 	// adapters accept by hand ("#target=workspace"). Lark chat ids and Discord
@@ -193,10 +227,13 @@ function validate(input: Partial<ManagedChannelConfig>): string | null {
  * (Lark: tenant_access_token; Discord: users/@me; Telegram: getMe; Slack:
  * auth.test). Webhook is inbound-only: the URL just has to parse.
  */
-async function probeCredentials(config: ManagedChannelConfig): Promise<{ ok: boolean; message: string }> {
+async function probeCredentials(
+	config: ManagedChannelConfig,
+	agentDir: string,
+): Promise<{ ok: boolean; message: string }> {
 	// Mirror the adapter's network path — the spawned adapter gets the proxy
 	// via env, the probe (global fetch) gets it via an explicit dispatcher.
-	const proxy = systemProxy();
+	const proxy = systemProxy(agentDir);
 	const dispatcher = proxy ? new ProxyAgent(proxy) : undefined;
 	const proxiedFetch = (url: string, init?: RequestInit) =>
 		fetch(url, { ...init, dispatcher } as RequestInit);
@@ -257,10 +294,14 @@ async function probeCredentials(config: ManagedChannelConfig): Promise<{ ok: boo
 }
 
 export class ChannelSupervisor {
+	private readonly agentDir: string;
 	private readonly configPath: string;
 	private readonly entries = new Map<string, RuntimeEntry>();
+	private settingsWatcher?: FSWatcher;
+	private respawnTimer?: NodeJS.Timeout;
 
 	constructor(agentDir: string) {
+		this.agentDir = agentDir;
 		this.configPath = join(agentDir, "channels.json");
 	}
 
@@ -272,10 +313,29 @@ export class ChannelSupervisor {
 		for (const entry of this.entries.values()) {
 			if (entry.config.enabled) this.spawn(entry);
 		}
+		// Respawn adapters when settings.json changes so a proxy toggle in the
+		// Settings UI takes effect immediately instead of waiting for a manual
+		// channel restart. Watch the directory — settings.json may not exist
+		// until the first save.
+		try {
+			this.settingsWatcher = watch(dirname(this.configPath), (_event, filename) => {
+				if (filename !== "settings.json") return;
+				clearTimeout(this.respawnTimer);
+				this.respawnTimer = setTimeout(() => {
+					for (const entry of this.entries.values()) {
+						if (entry.config.enabled) this.spawn(entry);
+					}
+				}, 300);
+			});
+		} catch {
+			/* unwatchable dir — proxy changes apply on next manual restart */
+		}
 	}
 
 	/** Stop every adapter process. Call at gateway shutdown. */
 	async shutdown(): Promise<void> {
+		this.settingsWatcher?.close();
+		clearTimeout(this.respawnTimer);
 		for (const entry of this.entries.values()) {
 			this.stop(entry);
 		}
@@ -332,7 +392,7 @@ export class ChannelSupervisor {
 		let child: ChildProcess;
 		try {
 			child = spawn(nodeBin(), [entryPoint], {
-				env: envFor(config),
+				env: envFor(config, this.agentDir),
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 		} catch (error) {
@@ -423,7 +483,7 @@ export class ChannelSupervisor {
 	async test(id: string): Promise<{ ok: boolean; message: string }> {
 		const entry = this.entries.get(id);
 		if (!entry) throw new Error(`Channel "${id}" not found`);
-		const probe = await probeCredentials(entry.config);
+		const probe = await probeCredentials(entry.config, this.agentDir);
 		if (!probe.ok) entry.lastError = probe.message;
 		return probe;
 	}
