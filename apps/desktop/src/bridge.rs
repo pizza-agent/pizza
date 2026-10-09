@@ -1535,7 +1535,11 @@ pub async fn channel_op(
 		.ok_or_else(|| "HOME not set; cannot resolve gateway socket".to_string())?;
 	let (program, args) = gateway_command(resolve_pizza_command(&app));
 	tauri::async_runtime::spawn_blocking(move || {
-		gateway_channel::ensure_gateway(&socket, (&program, &args), Some(env!("CARGO_PKG_VERSION")))?;
+		gateway_channel::ensure_gateway(
+			&socket,
+			(&program, &args),
+			Some(env!("CARGO_PKG_VERSION")),
+		)?;
 		let channel = gateway_channel::GatewayChannel::connect(&socket)?;
 		let result = channel.channel_op(request);
 		channel.close();
