@@ -1,7 +1,7 @@
 /**
  * Gateway scheduler-guard tests.
  *
- * The guard is the終态 replacement for the desktop's Rust sidecar keep-alive:
+ * The guard is the final replacement for the desktop's Rust sidecar keep-alive:
  * the gateway daemon scans scheduler scopes on disk, spawns a pooled agent for
  * any cwd with runnable scheduled tasks, and pins those agents against idle
  * eviction. These tests use a fake AgentConnection and tiny intervals.

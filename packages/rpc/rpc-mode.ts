@@ -735,7 +735,7 @@ export async function runRpcModeWithFacade(
 		dispatcher: schedulerDispatcher,
 		listener: (event) => {
 			// Forward scheduler lifecycle events over the rpc_event stream so
-			// the UI can render the "⏰ 已触发" notice + history in real time.
+			// the UI can render the "⏰ task fired" notice + history in real time.
 			if (event.type === "task.fired") {
 				const p = event.payload as { taskId: string; at: number; sessionId?: string };
 				writeRawStdout(serializeJsonLine({

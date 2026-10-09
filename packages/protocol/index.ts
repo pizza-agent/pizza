@@ -20,7 +20,8 @@
  * Two layers of scheduling are supported:
  *   - "visual" modes: every_n_minutes / every_n_hours / daily / weekdays /
  *     weekly / monthly. Each "time" field is an array so multiple time
- *     points are first-class (e.g. "每天 02:00 和 03:00").
+ *     points are first-class (e.g. "every day at 02:00 and 03:00" /
+ *     "每天 02:00 和 03:00").
  *   - "advanced" mode: cron expression with optional timezone.
  *
  * The two layers are equivalent at runtime: any visual schedule can be
@@ -693,7 +694,7 @@ export type RpcExtensionUIResponse =
 
 // Well-known event types emitted by the scheduler. The UI subscribes to
 // these over the rpc_event stream so it can update task status, history,
-// and the "⏰ 已触发" notice card in real time.
+// and the "⏰ task fired" notice card in real time.
 export const SCHEDULED_TASK_FIRED = "SCHEDULED_TASK_FIRED";
 export const SCHEDULED_TASK_COMPLETED = "SCHEDULED_TASK_COMPLETED";
 export const SCHEDULE_INTENT_RESOLVED = "SCHEDULE_INTENT_RESOLVED";
