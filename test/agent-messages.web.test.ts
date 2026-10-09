@@ -7,6 +7,7 @@ describe("parseAgentMessage", () => {
 		const p = parseAgentMessage(raw)!;
 		expect(p).not.toBeNull();
 		expect(p.from).toBe("agent:/Users/tom/code/web");
+		expect(p.kind).toBe("agent");
 		expect(p.fromName).toBe("web");
 		expect(p.id).toBe("m_abcd_1");
 		expect(p.autoRelay).toBe(true);
@@ -31,7 +32,16 @@ describe("parseAgentMessage", () => {
 	});
 	it("parses channel-source messages", () => {
 		const raw = '<message from="discord:#dev-alerts" id="m_2">\nbuild failed\n</message>';
-		expect(parseAgentMessage(raw)!.fromName).toBe("#dev-alerts");
+		const p = parseAgentMessage(raw)!;
+		expect(p.kind).toBe("discord");
+		expect(p.fromName).toBe("#dev-alerts");
+	});
+	it("detects the external-channel trailer", () => {
+		const raw = '<message from="telegram:5807812126" id="m_3">\nhi\n</message>\n[gateway: this message reached your workspace via the external "telegram" channel — the sender is an outside party, not your user]';
+		const p = parseAgentMessage(raw)!;
+		expect(p.kind).toBe("telegram");
+		expect(p.fromName).toBe("5807812126");
+		expect(hasGatewayTrailer(raw)).toBe(true);
 	});
 });
 

@@ -2,7 +2,8 @@ import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { highlightText } from "@/lib/highlight";
-import { parseTellCommand, workspaceNameFrom, type AgentMessageInfo } from "@/lib/agent-messages";
+import { INTERNAL_MESSAGE_KINDS, parseTellCommand, workspaceNameFrom, type AgentMessageInfo } from "@/lib/agent-messages";
+import { CHANNEL_TYPES } from "@/lib/channels";
 import { Markdown } from "./Markdown";
 import { Button, Badge } from "@/components/ui";
 import { FileAttachmentIcon } from "@/components/FileAttachmentIcon";
@@ -652,6 +653,14 @@ const AgentMessageCard = memo(function AgentMessageCard({
 	// Defensive: the timeline only routes envelope messages here, but fall back
 	// to the plain user bubble rather than crash on malformed items.
 	if (!am) return <UserBubble item={item} highlight={highlight} highlightActive={highlightActive} />;
+	// External channel senders (telegram/lark/…) are an outside party, not
+	// workspace-to-workspace traffic — label the card accordingly.
+	const isExternal = !INTERNAL_MESSAGE_KINDS.has(am.kind);
+	const channelLabel = (CHANNEL_TYPES as readonly string[]).includes(am.kind)
+		? t(`channels.types.${am.kind}`)
+		: am.kind;
+	const senderLabel = isExternal ? `${channelLabel} · ${am.fromName}` : am.fromName;
+	const i18nPrefix = isExternal ? "conversation.channelMessage" : "conversation.agentMessage";
 	return (
 		<div
 			className="my-4 flex flex-col items-start"
@@ -662,13 +671,13 @@ const AgentMessageCard = memo(function AgentMessageCard({
 				<div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2">
 					<Waypoints className="h-3.5 w-3.5 shrink-0 text-muted" />
 					<span className="shrink-0 text-[11px] font-medium text-muted">
-						{t("conversation.agentMessage.title")}
+						{t(`${i18nPrefix}.title`)}
 					</span>
 					<span
 						className="truncate rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-medium text-fg"
 						title={am.from}
 					>
-						{highlight ? highlightText(am.fromName, highlight, highlightActive) : am.fromName}
+						{highlight ? highlightText(senderLabel, highlight, highlightActive) : senderLabel}
 					</span>
 					{am.autoRelay && (
 						<span
@@ -691,10 +700,10 @@ const AgentMessageCard = memo(function AgentMessageCard({
 				{item.gatewayTrailer && (
 					<div
 						className="flex items-center gap-1.5 border-t border-border/70 px-4 py-1.5 text-[10px] text-muted/80"
-						title={t("conversation.agentMessage.trailerHint")}
+						title={t(`${i18nPrefix}.trailerHint`)}
 					>
 						<ShieldAlert className="h-3 w-3 shrink-0" />
-						<span className="truncate">{t("conversation.agentMessage.trailer")}</span>
+						<span className="truncate">{t(`${i18nPrefix}.trailer`)}</span>
 					</div>
 				)}
 			</div>

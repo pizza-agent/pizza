@@ -22,6 +22,9 @@
 export interface AgentMessageInfo {
 	/** Serialized sender source, e.g. "agent:/Users/tom/code/web". */
 	from: string;
+	/** Source kind — "agent" for workspace-to-workspace, a channel type
+	 *  ("telegram"/"lark"/…) for an outside party reaching in. */
+	kind: string;
 	/** Short workspace label (last path segment of the sender id). */
 	fromName: string;
 	/** Gateway-generated message id, for future inReplyTo threading. */
@@ -31,6 +34,14 @@ export interface AgentMessageInfo {
 	/** Message body with the envelope stripped and HTML entities unescaped. */
 	body: string;
 }
+
+/**
+ * Source kinds produced inside the gateway's own trust domain — mirrors
+ * INTERNAL_SOURCE_KINDS in packages/gateway/gateway-server.ts. Any other
+ * kind arrived through an external channel and the card should say so
+ * rather than labelling it cross-workspace traffic.
+ */
+export const INTERNAL_MESSAGE_KINDS = new Set(["agent", "cron", "watcher", "user"]);
 
 export interface TellCommandInfo {
 	/** "send" delivers a message; "list" shows known workspaces. */
@@ -86,10 +97,12 @@ export function parseAgentMessage(text: string): AgentMessageInfo | null {
 	if (!body) return null;
 	// "agent:/a/b/web" -> kind "agent", id "/a/b/web".
 	const colon = from.indexOf(":");
+	const kind = colon === -1 ? from : from.slice(0, colon);
 	const fromId = colon === -1 ? from : from.slice(colon + 1);
 	const id = attrs.get("id");
 	return {
 		from,
+		kind,
 		fromName: workspaceNameFrom(fromId),
 		id: id || undefined,
 		autoRelay: attrs.get("relay") === "auto",
