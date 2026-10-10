@@ -505,6 +505,13 @@ export async function main(args: string[], options?: MainOptions) {
 			console.error(chalk.yellow(`Gateway: another gateway already owns ${sock}; exiting duplicate.`));
 			process.exit(0);
 		});
+		// Our socket path was stolen by a newer gateway — this process is now
+		// an unreachable zombie. stop() is already running; hard-exit shortly
+		// in case a wedged agent or adapter keeps the event loop alive.
+		server.on("displaced", (sock: string) => {
+			console.error(chalk.yellow(`Gateway: socket ${sock} was taken over by another gateway; exiting.`));
+			setTimeout(() => process.exit(0), 5000).unref();
+		});
 		server.on("error", (error: Error) => {
 			console.error(chalk.red(`Gateway error: ${error.message}`));
 		});

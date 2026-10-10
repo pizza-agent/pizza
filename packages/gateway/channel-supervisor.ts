@@ -39,9 +39,18 @@ interface RuntimeEntry {
 	lastError?: string;
 	/** Rolling stderr/stdout tail — surfaced as lastError context. */
 	tail: string;
+	/** Crash-respawn bookkeeping. */
+	restarts: number;
+	spawnedAt: number;
+	respawnTimer?: NodeJS.Timeout;
 }
 
 const TAIL_LIMIT = 8 * 1024;
+/** Give up respawning after this many rapid crashes; an adapter alive for
+ *  longer than STABLE_MS resets the budget. */
+const RESPAWN_MAX = 5;
+const RESPAWN_DELAY_MS = 5000;
+const STABLE_MS = 60_000;
 
 function newId(): string {
 	return `ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -166,6 +175,7 @@ export class ChannelSupervisor {
 	private readonly entries = new Map<string, RuntimeEntry>();
 	private settingsWatcher?: FSWatcher;
 	private respawnTimer?: NodeJS.Timeout;
+	private shuttingDown = false;
 
 	constructor(agentDir: string) {
 		this.agentDir = agentDir;
@@ -175,7 +185,7 @@ export class ChannelSupervisor {
 	/** Load persisted configs and spawn every enabled channel. Call at gateway start. */
 	start(): void {
 		for (const config of loadChannelConfigs(this.agentDir)) {
-			this.entries.set(config.id, { config, tail: "" });
+			this.entries.set(config.id, { config, tail: "", restarts: 0, spawnedAt: 0 });
 		}
 		for (const entry of this.entries.values()) {
 			if (entry.config.enabled) this.spawn(entry);
@@ -201,6 +211,7 @@ export class ChannelSupervisor {
 
 	/** Stop every adapter process. Call at gateway shutdown. */
 	async shutdown(): Promise<void> {
+		this.shuttingDown = true;
 		this.settingsWatcher?.close();
 		clearTimeout(this.respawnTimer);
 		for (const entry of this.entries.values()) {
@@ -240,6 +251,7 @@ export class ChannelSupervisor {
 		this.stop(entry);
 		entry.lastError = undefined;
 		entry.tail = "";
+		entry.spawnedAt = Date.now();
 		// Re-run the CLI we're running from: `node cli.js …` or the compiled binary.
 		const { cliPath, binary } = resolveCliSpawn();
 		const args = ["channel", "run", entry.config.id, "--agent-dir", this.agentDir];
@@ -267,6 +279,7 @@ export class ChannelSupervisor {
 			const reason = signal ? `signal ${signal}` : `code ${code}`;
 			if (crashed && entry.config.enabled && code !== 0) {
 				entry.lastError = `adapter exited (${reason})${entry.tail.trim() ? `: ${entry.tail.trim().slice(-400)}` : ""}`;
+				this.scheduleRespawn(entry);
 			}
 		});
 		child.on("error", (error) => {
@@ -274,7 +287,22 @@ export class ChannelSupervisor {
 		});
 	}
 
+	/** Retry a crashed adapter — e.g. a port freed when a stale duplicate
+	 *  dies. An adapter that stayed up for STABLE_MS gets a fresh budget; a
+	 *  rapid crash loop gives up after RESPAWN_MAX attempts. */
+	private scheduleRespawn(entry: RuntimeEntry): void {
+		entry.restarts = Date.now() - entry.spawnedAt > STABLE_MS ? 1 : entry.restarts + 1;
+		if (this.shuttingDown || entry.restarts > RESPAWN_MAX) return;
+		entry.respawnTimer = setTimeout(() => {
+			entry.respawnTimer = undefined;
+			if (this.shuttingDown || !entry.config.enabled || entry.child) return;
+			this.spawn(entry);
+		}, RESPAWN_DELAY_MS);
+	}
+
 	private stop(entry: RuntimeEntry): void {
+		clearTimeout(entry.respawnTimer);
+		entry.respawnTimer = undefined;
 		const child = entry.child;
 		entry.child = undefined;
 		if (child && child.exitCode === null && !child.killed) {
@@ -306,10 +334,11 @@ export class ChannelSupervisor {
 			webhookUrl: input.webhookUrl,
 			workspace: input.workspace!.trim(),
 		};
-		const entry: RuntimeEntry = existing ?? { config, tail: "" };
+		const entry: RuntimeEntry = existing ?? { config, tail: "", restarts: 0, spawnedAt: 0 };
 		entry.config = config;
 		this.entries.set(config.id, entry);
 		this.persist();
+		entry.restarts = 0;
 		if (config.enabled) this.spawn(entry);
 		else this.stop(entry);
 		return this.toInfo(entry);
@@ -328,6 +357,7 @@ export class ChannelSupervisor {
 		if (!entry) throw new Error(`Channel "${id}" not found`);
 		entry.config = { ...entry.config, enabled };
 		this.persist();
+		entry.restarts = 0;
 		if (enabled) this.spawn(entry);
 		else this.stop(entry);
 		return this.toInfo(entry);

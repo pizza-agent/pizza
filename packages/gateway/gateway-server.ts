@@ -17,7 +17,7 @@
  */
 
 import { type Server, type Socket, connect, createServer } from "node:net";
-import { chmodSync, unlinkSync } from "node:fs";
+import { chmodSync, statSync, unlinkSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { platform } from "node:os";
 import { basename, join } from "node:path";
@@ -193,6 +193,11 @@ export interface GatewayServerEvents {
 	 * run. Emitted instead of `listening`; a duplicate daemon exits.
 	 */
 	duplicate: (socketPath: string) => void;
+	/**
+	 * The socket path was stolen by a newer gateway — this daemon can no
+	 * longer serve clients and shuts down. Emitted before stop() runs.
+	 */
+	displaced: (socketPath: string) => void;
 	/** An unexpected error. */
 	error: (error: Error) => void;
 }
@@ -1070,6 +1075,31 @@ function nextMessageId(): string {
 	}
 
 	/**
+	 * Detect the socket path being stolen: a second gateway that unlinks and
+	 * rebinds the path leaves this listener bound to a detached inode —
+	 * unreachable by any client, yet the process keeps running agents and
+	 * channel adapters forever. The zombie then fights the new owner (two
+	 * supervisors spawning the same channels → e.g. webhook EADDRINUSE).
+	 * Watch the path's inode and shut down gracefully once it no longer
+	 * points at our socket. Unix only: on Windows a named pipe can never be
+	 * stolen this way (EADDRINUSE means a live owner, probed before listen).
+	 */
+	function startOwnershipWatch(): void {
+		if (platform() === "win32" || !socketIno) return;
+		ownershipTimer = setInterval(() => {
+			try {
+				const s = statSync(socketPath);
+				if (s.dev === socketDev && s.ino === socketIno) return;
+			} catch {
+				/* path gone — the listener is unreachable either way */
+			}
+			emitter.emit("displaced", socketPath as never);
+			void stop();
+		}, 5000);
+		ownershipTimer.unref?.();
+	}
+
+	/**
 	 * Probe whether the process currently bound to the gateway socket is
 	 * alive and answering. Used on EADDRINUSE: the classic "stale socket
 	 * from a crashed daemon" is only ONE cause — another is a LIVE gateway
@@ -1100,6 +1130,11 @@ function nextMessageId(): string {
 
 	/** Set once we actually own the socket; a duplicate never does. */
 	let listening = false;
+	/** dev/ino of the socket file we bound — lets the ownership watchdog
+	 *  tell our socket from one a newer gateway rebound over us. */
+	let socketDev = 0;
+	let socketIno = 0;
+	let ownershipTimer: ReturnType<typeof setInterval> | undefined;
 	/** Report that a live gateway owns the socket; this instance must not run. */
 	const reportDuplicate = (): void => {
 		emitter.emit("duplicate", socketPath as never);
@@ -1123,6 +1158,13 @@ function nextMessageId(): string {
 				server!.off("error", onError);
 				listening = true;
 				restrictSocketPermissions(socketPath);
+				try {
+					const s = statSync(socketPath);
+					socketDev = s.dev;
+					socketIno = s.ino;
+				} catch {
+					/* best effort — watchdog stays off */
+				}
 				emitter.emit("listening", socketPath as never);
 				resolve(false);
 			};
@@ -1170,6 +1212,7 @@ function nextMessageId(): string {
 		}
 		startHealthCheck();
 		startSchedulerGuard();
+		startOwnershipWatch();
 		// After the socket is listening: adapters the supervisor spawns connect
 		// back to this gateway immediately, so start it only once we can serve.
 		channelSupervisor.start();
@@ -1178,6 +1221,7 @@ function nextMessageId(): string {
 	async function stop(): Promise<void> {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		if (ownershipTimer) { clearInterval(ownershipTimer); ownershipTimer = undefined; }
 		stopHealthCheck();
 		stopSchedulerGuard();
 		await channelSupervisor.shutdown();
@@ -1198,13 +1242,17 @@ function nextMessageId(): string {
 			server.close(() => resolve());
 		});
 		// Remove the socket file (Unix only) — but only if it is OURS: a
-		// duplicate that never listened would otherwise unlink the live
-		// gateway's socket out from under it.
+		// duplicate that never listened, or a displaced zombie whose path was
+		// stolen, would otherwise unlink the live gateway's socket out from
+		// under it.
 		if (listening && platform() !== "win32") {
 			try {
-				unlinkSync(socketPath);
+				const s = statSync(socketPath);
+				if (socketIno === 0 || (s.dev === socketDev && s.ino === socketIno)) {
+					unlinkSync(socketPath);
+				}
 			} catch {
-				/* ignore */
+				/* already gone or unreadable */
 			}
 		}
 	}
