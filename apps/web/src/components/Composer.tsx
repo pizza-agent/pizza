@@ -257,6 +257,8 @@ export function Composer({
 		};
 	}, []);
 	const [models, setModels] = useState<ModelInfo[]>([]);
+	// Registry size, including unconfigured models (not sent with authOnly).
+	const [modelTotal, setModelTotal] = useState(0);
 	const [recording, setRecording] = useState(false);
 	const [transcribing, setTranscribing] = useState(false);
 	const [modelMenuOpen, setModelMenuOpen] = useState(false);
@@ -320,12 +322,15 @@ export function Composer({
 		let cancelled = false;
 		(async () => {
 			try {
-				const r = await sendCommandAwait<{ models: ModelInfo[] }>(
-					{ type: "get_available_models" },
+				const r = await sendCommandAwait<{ models: ModelInfo[]; total?: number }>(
+					{ type: "get_available_models", authOnly: true },
 					30000,
 				);
 				if (cancelled) return;
-				setModels(r.data?.models ?? []);
+				const list = r.data?.models ?? [];
+				setModels(list);
+				// Older agents ignore authOnly and omit total — they send everything.
+				setModelTotal(r.data?.total ?? list.length);
 			} catch {
 				// Silently ignore — models list will be empty until sidecar recovers.
 			}
@@ -1468,7 +1473,7 @@ ${insert}`;
 									</div>
 								</div>
 							)}
-							{modelMenuOpen && visibleModels.length === 0 && models.length > 0 && (
+							{modelMenuOpen && visibleModels.length === 0 && modelTotal > 0 && (
 									<div className={cn("absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}>
 										<a
 											href="/#/settings"

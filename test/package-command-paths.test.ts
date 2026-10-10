@@ -42,31 +42,31 @@ describe("package commands", () => {
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	it("should persist global relative local package paths relative to settings.json", async () => {
+	const readPackageRecords = () => {
+		const registry = JSON.parse(readFileSync(join(agentDir, "extensions.json"), "utf-8")) as {
+			extensions: Record<string, { source: string }>;
+		};
+		return Object.values(registry.extensions).filter((record) => record.source !== "builtin");
+	};
+
+	it("should persist global relative local package paths relative to the registry base", async () => {
 		const relativePkgDir = join(projectDir, "packages", "local-package");
 		mkdirSync(relativePkgDir, { recursive: true });
 
 		await main(["plugin", "install", "./packages/local-package"]);
 
-		const settingsPath = join(agentDir, "settings.json");
-		const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
-		expect(settings.packages?.length).toBe(1);
-		const stored = settings.packages?.[0] ?? "";
-		const resolvedFromSettings = realpathSync(join(agentDir, stored));
+		const records = readPackageRecords();
+		expect(records.length).toBe(1);
+		const resolvedFromSettings = realpathSync(join(agentDir, records[0].source));
 		expect(resolvedFromSettings).toBe(realpathSync(relativePkgDir));
 	});
 
 	it("should remove local packages using a path with a trailing slash", async () => {
 		await main(["plugin", "install", `${packageDir}/`]);
-
-		const settingsPath = join(agentDir, "settings.json");
-		const installedSettings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
-		expect(installedSettings.packages?.length).toBe(1);
+		expect(readPackageRecords().length).toBe(1);
 
 		await main(["plugin", "remove", `${packageDir}/`]);
-
-		const removedSettings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
-		expect(removedSettings.packages ?? []).toHaveLength(0);
+		expect(readPackageRecords()).toHaveLength(0);
 	});
 
 	it("shows install subcommand help", async () => {
@@ -78,7 +78,7 @@ describe("package commands", () => {
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stdout).toContain("Usage:");
-			expect(stdout).toContain("pizza plugin install <source> [-l]");
+			expect(stdout).toContain("pizza plugin install <source>");
 			expect(errorSpy).not.toHaveBeenCalled();
 			expect(process.exitCode).toBeUndefined();
 		} finally {
@@ -95,7 +95,7 @@ describe("package commands", () => {
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stderr).toContain('Unknown option --unknown for "install".');
-			expect(stderr).toContain('Use "pizza --help" or "pizza plugin install <source> [-l]".');
+			expect(stderr).toContain('Use "pizza --help" or "pizza plugin install <source>".');
 			expect(process.exitCode).toBe(1);
 		} finally {
 			errorSpy.mockRestore();
@@ -110,7 +110,7 @@ describe("package commands", () => {
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stderr).toContain("Missing install source.");
-			expect(stderr).toContain("Usage: pizza plugin install <source> [-l]");
+			expect(stderr).toContain("Usage: pizza plugin install <source>");
 			expect(stderr).not.toContain("at ");
 			expect(process.exitCode).toBe(1);
 		} finally {
@@ -134,8 +134,8 @@ describe("package commands", () => {
 			expect(stdout).not.toContain("Updated pizza-formatter");
 			expect(process.exitCode).toBe(1);
 
-			const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
-			expect(settings.packages).toContain("npm:pizza-formatter");
+			// The legacy packages key migrates into extensions.json on load.
+			expect(readPackageRecords().map((r) => r.source)).toContain("npm:pizza-formatter");
 		} finally {
 			errorSpy.mockRestore();
 			logSpy.mockRestore();

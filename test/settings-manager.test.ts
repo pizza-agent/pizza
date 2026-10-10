@@ -246,7 +246,7 @@ describe("SettingsManager", () => {
 			expect(existsSync(join(projectDir, ".pizza"))).toBe(false);
 
 			// Write a project-specific setting
-			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
+			manager.setProjectExtensionPaths(["./ext.ts"]);
 			await manager.flush();
 
 			// Now .pizza folder should exist
@@ -334,15 +334,15 @@ describe("SettingsManager", () => {
 			expect(reloaded.getDisabledBuiltinExtensions().has("agent-browser")).toBe(true);
 		});
 
-		it("re-enables a built-in extension and clears the key when empty", async () => {
+		it("re-enables a built-in extension and keeps it enabled in extensions.json", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			manager.setBuiltinExtensionDisabled("agent-browser", true);
 			manager.setBuiltinExtensionDisabled("agent-browser", false);
 			expect(manager.getDisabledBuiltinExtensions().has("agent-browser")).toBe(false);
 			await manager.flush();
 
-			const raw = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(raw.disabledBuiltinExtensions).toBeUndefined();
+			const raw = JSON.parse(readFileSync(join(agentDir, "extensions.json"), "utf-8"));
+			expect(raw.extensions["agent-browser"].enabled).toBe(true);
 		});
 	});
 });

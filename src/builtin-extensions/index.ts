@@ -3,14 +3,16 @@
  *
  * Built-in extensions ship with Pizza and are enabled by default. They behave
  * exactly like user extensions (loaded via the same `ExtensionFactory` path)
- * but are always present unless the user explicitly disables one in
- * `settings.json` under `disabledBuiltinExtensions`.
+ * but are always present unless the user explicitly disables one. Enabled and
+ * installed state live in `~/.pizza/agent/extensions.json` (ExtensionRegistry),
+ * shared with installed plugin packages.
  *
  * To add a new built-in extension:
  * 1. Create a folder under `src/builtin-extensions/<id>/` exporting an `ExtensionFactory`.
  * 2. Register it in `BUILTIN_EXTENSIONS` below with a stable id.
  */
 
+import { BUILTIN_EXTENSION_SOURCE, type ExtensionRegistry } from "../core/extension-registry.js";
 import type { ExtensionFactory } from "../core/extensions/types.js";
 import {
 	AGENT_BROWSER_EXTENSION_ID,
@@ -62,7 +64,7 @@ export interface ExtensionPermissionState {
 }
 
 export interface BuiltinExtension {
-	/** Stable id used in `settings.disabledBuiltinExtensions`. */
+	/** Stable id used as this extension's key in extensions.json. */
 	id: string;
 	/** Human-readable name shown in UI. Defaults to the id. */
 	name: string;
@@ -72,7 +74,11 @@ export interface BuiltinExtension {
 	factory: ExtensionFactory;
 	/** Whether this built-in ships an external dependency that can be installed/uninstalled (e.g. a CLI binary). */
 	installable?: boolean;
-	/** Check whether the external dependency is installed. Only when installable. */
+	/**
+	 * Legacy probe for whether the external dependency is installed. Only used
+	 * once, to seed extensions.json for installs made before the registry
+	 * existed — read state through {@link getBuiltinInstallState}.
+	 */
 	checkInstalled?: (cwd: string) => Promise<ExtensionInstallState>;
 	/** Install the external dependency. Only when installable. */
 	install?: (cwd: string) => Promise<ExtensionLifecycleResult>;
@@ -147,6 +153,45 @@ export function getBuiltinExtensionInfo(id: string): BuiltinExtensionInfo | unde
 	return BUILTIN_EXTENSIONS.find((ext) => ext.id === id);
 }
 
+
+/**
+ * Installed state of a built-in, read from extensions.json. Non-installable
+ * built-ins are always installed. A built-in with no recorded state yet
+ * (installed before the registry existed) is detected once with its legacy
+ * `checkInstalled` probe and the result recorded — after that, only Pizza's
+ * own install/uninstall actions change it.
+ */
+export async function getBuiltinInstallState(
+	registry: ExtensionRegistry,
+	id: string,
+	cwd: string,
+): Promise<ExtensionInstallState> {
+	const ext = BUILTIN_EXTENSIONS.find((e) => e.id === id);
+	if (!ext?.installable) return { installed: true };
+	const record = registry.get(id);
+	if (record?.installed !== undefined) return { installed: record.installed, version: record.version };
+	let state: ExtensionInstallState = { installed: false };
+	try {
+		state = (await ext.checkInstalled?.(cwd)) ?? state;
+	} catch {
+		// Probe failed: record "not installed"; installing through Pizza fixes it.
+	}
+	recordBuiltinInstallState(registry, id, state);
+	return state;
+}
+
+/** Record a built-in's install state (after Pizza installs/uninstalls it). */
+export function recordBuiltinInstallState(registry: ExtensionRegistry, id: string, state: ExtensionInstallState): void {
+	registry.patch(
+		id,
+		{
+			installed: state.installed,
+			version: state.installed ? state.version : undefined,
+			installedAt: state.installed ? new Date().toISOString() : undefined,
+		},
+		{ source: BUILTIN_EXTENSION_SOURCE, enabled: true },
+	);
+}
 
 /** Look up the install lifecycle (install/uninstall/checkInstalled) for a built-in id. */
 export function getBuiltinExtensionLifecycle(

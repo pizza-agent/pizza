@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import { waitForChildProcess } from "../utils/child-process.js";
 import { getShellEnv } from "../utils/shell.js";
+import { prefetchLoginShellPath } from "../utils/login-shell-path.js";
 
 /**
  * Options for executing shell commands.
@@ -40,6 +41,9 @@ export async function execCommand(
 	cwd: string,
 	options?: ExecOptions,
 ): Promise<ExecResult> {
+	// Capture the login-shell PATH without blocking the event loop; the
+	// sync getShellEnv() below then hits the cache.
+	await prefetchLoginShellPath();
 	return new Promise((resolve) => {
 		const proc = spawn(command, args, {
 			cwd,

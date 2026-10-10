@@ -409,7 +409,7 @@ function ExtensionCard({
 }) {
 	const { t } = useTranslation();
 	const kindLabel = t(`plugins.extensions.${ext.kind}`);
-	const busy = busyId === ext.id;
+	const busy = busyId === ext.id || (ext.packageSource !== undefined && busyId === ext.packageSource);
 	// An installable extension that hasn't had its external dependency installed
 	// is not yet usable — only offer Install, and hide the enabled/disabled badge
 	// and toggle to avoid implying the extension is operational.
@@ -433,16 +433,16 @@ function ExtensionCard({
 					icon: Power,
 					label: ext.enabled ? t("plugins.extensions.disable") : t("plugins.extensions.enable"),
 					disabled: busy,
-					onClick: () => onToggle(ext.id, !ext.enabled),
+					// Packages toggle/remove as a whole via their source.
+					onClick: () => onToggle(ext.packageSource ?? ext.id, !ext.enabled),
 				}]
 			: []),
-		// Resource packages (theme/skill/prompt packs) can only be removed, not toggled.
 		...(ext.kind === "package"
 			? [{
 					icon: Trash2,
 					label: busy ? t("plugins.extensions.uninstalling") : t("plugins.extensions.uninstall"),
 					disabled: busy,
-					onClick: () => onRemovePackage(ext.id),
+					onClick: () => onRemovePackage(ext.packageSource ?? ext.id),
 				}]
 			: []),
 	];
@@ -701,7 +701,10 @@ function ExtensionsTab() {
 			const requiresReload = await setExtensionEnabled(id, enabled);
 			setReloadHint(requiresReload);
 			// Optimistically flip the local state; a full refresh re-syncs with the agent.
-			setExtensions((prev) => prev.map((e) => (e.id === id ? { ...e, enabled } : e)));
+			// A package toggle (id is the package source) flips every extension it provides.
+			setExtensions((prev) =>
+				prev.map((e) => (e.id === id || e.packageSource === id ? { ...e, enabled } : e)),
+			);
 		},
 		[],
 	);
@@ -756,7 +759,7 @@ function ExtensionsTab() {
 				const result = await removePackage(source);
 				if (result.removed) {
 					setReloadHint(result.requiresReload);
-					setExtensions((prev) => prev.filter((e) => e.id !== source));
+					setExtensions((prev) => prev.filter((e) => e.id !== source && e.packageSource !== source));
 				} else {
 					setInstallMessage(result.error ?? t("plugins.extensions.removePackageFailed"));
 				}

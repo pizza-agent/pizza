@@ -13,10 +13,13 @@
  * - It exposes a `/browser` command for install / uninstall / status / disable /
  *   enable, so the lifecycle is user-controllable.
  *
- * Enable/disable state is persisted in `settings.json` under
- * `disabledBuiltinExtensions` (read by the resource loader on session start).
+ * Enable/disable and install state is persisted in `extensions.json`
+ * (ExtensionRegistry, read by the resource loader on session start).
  */
 
+import { constants as fsConstants } from "node:fs";
+import { access, readFile, realpath, stat } from "node:fs/promises";
+import { delimiter, dirname, join } from "node:path";
 import { getAgentDir, SettingsManager } from "../../index.js";
 import type {
 	ExtensionAPI,
@@ -39,26 +42,84 @@ For web automation, use the \`agent-browser\` CLI via the \`cli\` tool (not a se
 
 Full reference: \`agent-browser --help\`.`;
 
-/** Stable id used in `settings.disabledBuiltinExtensions`. */
+/** Stable id used as this extension's key in extensions.json. */
 export const AGENT_BROWSER_EXTENSION_ID = "agent-browser";
 
-/** Result of checking whether `agent-browser` is installed and runnable. */
+/**
+ * Persist this extension's install state to extensions.json. Dynamic import:
+ * builtin-extensions/index.js imports this module, so a static import back
+ * would be a cycle.
+ */
+async function recordInstallState(cwd: string, state: BrowserAvailability): Promise<void> {
+	const { recordBuiltinInstallState } = await import("../index.js");
+	const registry = SettingsManager.create(cwd, getAgentDir()).extensions;
+	recordBuiltinInstallState(registry, AGENT_BROWSER_EXTENSION_ID, state);
+}
+
+/** Result of checking whether `agent-browser` is installed. */
 interface BrowserAvailability {
 	installed: boolean;
 	version?: string;
 }
 
-export async function checkBrowserAvailable(cwd: string): Promise<BrowserAvailability> {
-	const { execCommand } = await import("../../core/exec.js");
-	try {
-		const result = await execCommand("agent-browser", ["--version"], cwd, { timeout: 8000 });
-		if (result.code === 0) {
-			return { installed: true, version: result.stdout.trim() || undefined };
+/**
+ * Locate an executable on the PATH child processes get (agent bin dir +
+ * inherited PATH + login-shell PATH) by looking at the filesystem only.
+ */
+async function findOnPath(name: string): Promise<string | undefined> {
+	const { prefetchLoginShellPath } = await import("../../utils/login-shell-path.js");
+	const { getShellEnv } = await import("../../utils/shell.js");
+	await prefetchLoginShellPath();
+	const env = getShellEnv();
+	const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+	const isWindows = process.platform === "win32";
+	const exts = isWindows ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean) : [""];
+	for (const dir of (env[pathKey] ?? "").split(delimiter)) {
+		if (!dir) continue;
+		for (const ext of exts) {
+			const candidate = join(dir, name + ext);
+			try {
+				if (!(await stat(candidate)).isFile()) continue;
+				await access(candidate, isWindows ? fsConstants.F_OK : fsConstants.X_OK);
+				return candidate;
+			} catch {
+				// not here
+			}
 		}
-	} catch {
-		// not on PATH or spawn failed
 	}
-	return { installed: false };
+	return undefined;
+}
+
+/**
+ * Read the version from the npm package that owns `bin`. Unix npm globals
+ * symlink `<prefix>/bin/agent-browser` into `lib/node_modules/agent-browser/bin/`,
+ * so walk up from the resolved target; Windows shims sit next to `node_modules/`.
+ */
+async function readPackageVersion(bin: string): Promise<string | undefined> {
+	const resolved = await realpath(bin).catch(() => bin);
+	const candidates = [join(dirname(bin), "node_modules", AGENT_BROWSER_EXTENSION_ID, "package.json")];
+	for (let dir = dirname(resolved), i = 0; i < 4; dir = dirname(dir), i++) {
+		candidates.push(join(dir, "package.json"));
+	}
+	for (const file of candidates) {
+		try {
+			const pkg = JSON.parse(await readFile(file, "utf-8")) as { name?: string; version?: string };
+			if (pkg.name === AGENT_BROWSER_EXTENSION_ID) return pkg.version;
+		} catch {
+			// keep looking
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Installed = an `agent-browser` executable is on PATH. Deliberately does not
+ * spawn it: this runs every time the plugins page opens.
+ */
+export async function checkBrowserAvailable(_cwd: string): Promise<BrowserAvailability> {
+	const bin = await findOnPath(AGENT_BROWSER_EXTENSION_ID);
+	if (!bin) return { installed: false };
+	return { installed: true, version: await readPackageVersion(bin) };
 }
 
 /** Run `agent-browser install` (downloads Chrome for Testing). */
@@ -75,6 +136,8 @@ export async function runAgentBrowserInstall(cwd: string): Promise<{ ok: boolean
 			}`,
 		};
 	}
+	// The CLI is installed at this point even if the Chrome download below fails.
+	await recordInstallState(cwd, await checkBrowserAvailable(cwd));
 	const browserInstall = await execCommand("agent-browser", ["install"], cwd, {
 		timeout: 300_000,
 	});
@@ -103,10 +166,11 @@ export async function runAgentBrowserUninstall(cwd: string): Promise<{ ok: boole
 			}`,
 		};
 	}
+	await recordInstallState(cwd, { installed: false });
 	return { ok: true, message: "agent-browser CLI uninstalled." };
 }
 
-/** Persist enable/disable for this built-in extension in settings.json. */
+/** Persist enable/disable for this built-in extension in extensions.json. */
 function persistDisabled(cwd: string, disabled: boolean): void {
 	const agentDir = getAgentDir();
 	const settings = SettingsManager.create(cwd, agentDir);
@@ -161,7 +225,9 @@ export const createAgentBrowserExtension: ExtensionFactory = (pizza: ExtensionAP
 					return;
 				}
 				case "status": {
-					const available = await checkBrowserAvailable(cwd);
+					const { getBuiltinInstallState } = await import("../index.js");
+					const registry = SettingsManager.create(cwd, getAgentDir()).extensions;
+					const available = await getBuiltinInstallState(registry, AGENT_BROWSER_EXTENSION_ID, cwd);
 					const lines = [
 						`Built-in extension: ${AGENT_BROWSER_EXTENSION_ID} (enabled)`,
 						`CLI installed: ${available.installed ? "yes" : "no"}${available.version ? ` (${available.version})` : ""}`,

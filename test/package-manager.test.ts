@@ -502,10 +502,10 @@ Content`,
 
 		it("should update git package dependencies with --omit=dev", async () => {
 			const source = "git:github.com/user/repo";
-			const targetDir = join(tempDir, ".pizza", "git", "github.com", "user", "repo");
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
 			mkdirSync(targetDir, { recursive: true });
 			writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
-			settingsManager.setProjectPackages([source]);
+			settingsManager.setPackages([source]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockImplementation(async (...callArgs: unknown[]) => {
 				const [_command, args] = callArgs as [string, string[]];
@@ -644,24 +644,9 @@ Content`,
 			const added = packageManager.addSourceToSettings("./packages/local-global-pkg");
 			expect(added).toBe(true);
 
-			const settings = settingsManager.getGlobalSettings();
 			const rel = relative(agentDir, pkgDir);
 			const expected = rel.startsWith(".") ? rel : `./${rel}`;
-			expect(settings.packages?.[0]).toBe(expected);
-		});
-
-		it("should store project local packages relative to .pizza settings base", () => {
-			const projectPkgDir = join(tempDir, "project-local-pkg");
-			mkdirSync(join(projectPkgDir, "extensions"), { recursive: true });
-			writeFileSync(join(projectPkgDir, "extensions", "index.ts"), "export default function() {}");
-
-			const added = packageManager.addSourceToSettings("./project-local-pkg", { local: true });
-			expect(added).toBe(true);
-
-			const settings = settingsManager.getProjectSettings();
-			const rel = relative(join(tempDir, ".pizza"), projectPkgDir);
-			const expected = rel.startsWith(".") ? rel : `./${rel}`;
-			expect(settings.packages?.[0]).toBe(expected);
+			expect(settingsManager.getPackages()[0]).toBe(expected);
 		});
 
 		it("should remove local package entries using equivalent path forms", () => {
@@ -672,7 +657,7 @@ Content`,
 			packageManager.addSourceToSettings("./remove-local-pkg");
 			const removed = packageManager.removeSourceFromSettings(`${pkgDir}/`);
 			expect(removed).toBe(true);
-			expect(settingsManager.getGlobalSettings().packages ?? []).toHaveLength(0);
+			expect(settingsManager.getPackages()).toHaveLength(0);
 		});
 	});
 
@@ -1238,45 +1223,7 @@ Content`,
 		});
 	});
 
-	describe("package deduplication", () => {
-		it("should dedupe same local package in global and project (project wins)", async () => {
-			const pkgDir = join(tempDir, "shared-pkg");
-			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
-			writeFileSync(join(pkgDir, "extensions", "shared.ts"), "export default function() {}");
-
-			// Same package in both global and project
-			settingsManager.setPackages([pkgDir]); // global
-			settingsManager.setProjectPackages([pkgDir]); // project
-
-			// Debug: verify settings are stored correctly
-			const globalSettings = settingsManager.getGlobalSettings();
-			const projectSettings = settingsManager.getProjectSettings();
-			expect(globalSettings.packages).toEqual([pkgDir]);
-			expect(projectSettings.packages).toEqual([pkgDir]);
-
-			const result = await packageManager.resolve();
-			// Should only appear once (deduped), with project scope
-			const sharedPaths = result.extensions.filter((r) => r.path.includes("shared-pkg"));
-			expect(sharedPaths.length).toBe(1);
-			expect(sharedPaths[0].metadata.scope).toBe("project");
-		});
-
-		it("should keep both if different packages", async () => {
-			const pkg1Dir = join(tempDir, "pkg1");
-			const pkg2Dir = join(tempDir, "pkg2");
-			mkdirSync(join(pkg1Dir, "extensions"), { recursive: true });
-			mkdirSync(join(pkg2Dir, "extensions"), { recursive: true });
-			writeFileSync(join(pkg1Dir, "extensions", "from-pkg1.ts"), "export default function() {}");
-			writeFileSync(join(pkg2Dir, "extensions", "from-pkg2.ts"), "export default function() {}");
-
-			settingsManager.setPackages([pkg1Dir]); // global
-			settingsManager.setProjectPackages([pkg2Dir]); // project
-
-			const result = await packageManager.resolve();
-			expect(result.extensions.some((r) => r.path.includes("pkg1"))).toBe(true);
-			expect(result.extensions.some((r) => r.path.includes("pkg2"))).toBe(true);
-		});
-
+	describe("package identity", () => {
 		it("should dedupe SSH and HTTPS URLs for same repo", async () => {
 			// Same repository, different URL formats
 			const httpsUrl = "https://github.com/user/repo";
@@ -1455,11 +1402,12 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 	});
 
 	describe("offline mode and network timeouts", () => {
-		it("should update project npm packages using @latest when newer version is available", async () => {
-			const installedPath = join(tempDir, ".pizza", "npm", "node_modules", "example");
+		it("should update npm packages using @latest when newer version is available", async () => {
+			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+			const installedPath = join(agentDir, "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setPackages(["npm:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
@@ -1473,16 +1421,17 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			);
 			expect(runCommandSpy).toHaveBeenCalledWith(
 				"npm",
-				["install", "example@latest", "--prefix", join(tempDir, ".pizza", "npm")],
+				["install", "-g", "example@latest"],
 				undefined,
 			);
 		});
 
-		it("should skip project npm update when installed version matches latest", async () => {
-			const installedPath = join(tempDir, ".pizza", "npm", "node_modules", "example");
+		it("should skip npm update when installed version matches latest", async () => {
+			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+			const installedPath = join(agentDir, "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.2.3" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setPackages(["npm:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
@@ -1497,16 +1446,13 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(runCommandSpy).not.toHaveBeenCalled();
 		});
 
-		it("should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages", async () => {
+		it("should batch npm updates and run git updates in parallel while skipping pinned and current packages", async () => {
 			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
 
 			const userOldPath = join(agentDir, "node_modules", "user-old");
 			const userCurrentPath = join(agentDir, "node_modules", "user-current");
 			const userUnknownPath = join(agentDir, "node_modules", "user-unknown");
-			const projectOldPath = join(tempDir, ".pizza", "npm", "node_modules", "project-old");
-			const projectCurrentPath = join(tempDir, ".pizza", "npm", "node_modules", "project-current");
-			const installPaths = [userOldPath, userCurrentPath, userUnknownPath, projectOldPath, projectCurrentPath];
-			for (const installPath of installPaths) {
+			for (const installPath of [userOldPath, userCurrentPath, userUnknownPath]) {
 				mkdirSync(installPath, { recursive: true });
 			}
 			writeFileSync(join(userOldPath, "package.json"), JSON.stringify({ name: "user-old", version: "1.0.0" }));
@@ -1518,26 +1464,16 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				join(userUnknownPath, "package.json"),
 				JSON.stringify({ name: "user-unknown", version: "1.0.0" }),
 			);
-			writeFileSync(join(projectOldPath, "package.json"), JSON.stringify({ name: "project-old", version: "1.0.0" }));
-			writeFileSync(
-				join(projectCurrentPath, "package.json"),
-				JSON.stringify({ name: "project-current", version: "1.0.0" }),
-			);
 
 			settingsManager.setPackages([
 				"npm:user-old",
 				"npm:user-current",
 				"npm:user-unknown",
+				"npm:user-missing",
 				"npm:user-pinned@1.0.0",
 				"git:github.com/example/user-repo-a",
 				"git:github.com/example/user-repo-b",
 				"git:github.com/example/user-repo-pinned@v1",
-			]);
-			settingsManager.setProjectPackages([
-				"npm:project-old",
-				"npm:project-current",
-				"npm:project-missing",
-				"git:github.com/example/project-repo-a",
 			]);
 
 			const runCommandCaptureSpy = vi
@@ -1549,10 +1485,8 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 					}
 					switch (args[1]) {
 						case "user-old":
-						case "project-old":
 							return '"2.0.0"';
 						case "user-current":
-						case "project-current":
 							return '"1.0.0"';
 						case "user-unknown":
 							throw new Error("registry unavailable");
@@ -1561,8 +1495,6 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 					}
 				});
 
-			let activeNpmUpdates = 0;
-			let maxConcurrentNpmUpdates = 0;
 			const runCommandSpy = vi
 				.spyOn(packageManager as any, "runCommand")
 				.mockImplementation(async (...callArgs: unknown[]) => {
@@ -1570,10 +1502,6 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 					if (command !== "npm") {
 						throw new Error(`Unexpected runCommand call: ${command} ${args.join(" ")}`);
 					}
-					activeNpmUpdates += 1;
-					maxConcurrentNpmUpdates = Math.max(maxConcurrentNpmUpdates, activeNpmUpdates);
-					await new Promise((resolve) => setTimeout(resolve, 20));
-					activeNpmUpdates -= 1;
 				});
 
 			let activeGitUpdates = 0;
@@ -1587,27 +1515,20 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 			await packageManager.update();
 
-			expect(runCommandCaptureSpy).toHaveBeenCalledTimes(5);
-			expect(runCommandSpy).toHaveBeenCalledTimes(2);
-			expect(runCommandSpy).toHaveBeenNthCalledWith(
-				1,
+			// Views run only for installed unpinned packages (missing/pinned skip it).
+			expect(runCommandCaptureSpy).toHaveBeenCalledTimes(3);
+			expect(runCommandSpy).toHaveBeenCalledTimes(1);
+			expect(runCommandSpy).toHaveBeenCalledWith(
 				"npm",
-				["install", "-g", "user-old@latest", "user-unknown@latest"],
+				["install", "-g", "user-old@latest", "user-unknown@latest", "user-missing@latest"],
 				undefined,
 			);
-			expect(runCommandSpy).toHaveBeenNthCalledWith(
-				2,
-				"npm",
-				["install", "project-old@latest", "project-missing@latest", "--prefix", join(tempDir, ".pizza", "npm")],
-				undefined,
-			);
-			expect(updateGitSpy).toHaveBeenCalledTimes(3);
-			expect(maxConcurrentNpmUpdates).toBeGreaterThan(1);
+			expect(updateGitSpy).toHaveBeenCalledTimes(2);
 			expect(maxConcurrentGitUpdates).toBeGreaterThan(1);
 		});
 
 		it("should suggest npm source prefixes for update lookups", async () => {
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setPackages(["npm:example"]);
 
 			await expect(packageManager.update("example")).rejects.toThrow(
 				"No matching package found for example. Did you mean npm:example?",
@@ -1615,7 +1536,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should suggest git source prefixes for update lookups", async () => {
-			settingsManager.setProjectPackages(["git:github.com/example/repo"]);
+			settingsManager.setPackages(["git:github.com/example/repo"]);
 
 			await expect(packageManager.update("github.com/example/repo")).rejects.toThrow(
 				"No matching package found for github.com/example/repo. Did you mean git:github.com/example/repo?",
@@ -1624,7 +1545,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 		it("should skip installing missing package sources when offline", async () => {
 			process.env.PIZZA_OFFLINE = "1";
-			settingsManager.setProjectPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
+			settingsManager.setPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
 
 			const installParsedSourceSpy = vi.spyOn(packageManager as any, "installParsedSource");
 
@@ -1651,11 +1572,12 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should not run npm view during resolve for installed unpinned packages", async () => {
-			const installedPath = join(tempDir, ".pizza", "npm", "node_modules", "example");
+			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+			const installedPath = join(agentDir, "node_modules", "example");
 			mkdirSync(join(installedPath, "extensions"), { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
 			writeFileSync(join(installedPath, "extensions", "index.ts"), "export default function() {};");
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setPackages(["npm:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
 
@@ -1665,10 +1587,11 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 
 		it("should reinstall pinned npm packages when installed version does not match", async () => {
-			const installedPath = join(tempDir, ".pizza", "npm", "node_modules", "example");
+			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+			const installedPath = join(agentDir, "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example@2.0.0"]);
+			settingsManager.setPackages(["npm:example@2.0.0"]);
 
 			const installParsedSourceSpy = vi
 				.spyOn(packageManager as any, "installParsedSource")

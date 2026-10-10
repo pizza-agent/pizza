@@ -18,8 +18,8 @@
  *   browser_page roots are removed in-tree). Web -> agent-browser, desktop
  *   apps -> computer-use.
  * - `/computer` manages the lifecycle: install (native helper app),
- *   status, uninstall, disable, enable. Disable persists via
- *   `settings.disabledBuiltinExtensions`.
+ *   status, uninstall, disable, enable. Disable and install state persist
+ *   via `extensions.json` (ExtensionRegistry).
  */
 
 import { existsSync } from "node:fs";
@@ -71,8 +71,6 @@ export const HELPER_DISPLAY_NAME = "Pizza Computer Use";
 export const HELPER_FOLDER_NAME = "pizza-computer-use.app";
 export const COMPUTER_USE_EXTENSION_ID = "computer-use";
 const UPSTREAM_PACKAGE = "@injaneity/pi-computer-use";
-
-/** Stable id used in `settings.disabledBuiltinExtensions`. */
 
 function formatPermissionState(status: PermissionStatus) {
   const permissions = [
@@ -135,11 +133,33 @@ function macosPermissionPaneUrl(kind: PermissionKind): string {
   }
 }
 
-export async function getComputerUsePermissionStatus(_cwd: string) {
+/**
+ * Installed state from extensions.json (seeding pre-registry installs once via
+ * the legacy probe inside getBuiltinInstallState). Dynamic import:
+ * builtin-extensions/index.js imports this module, so a static import back
+ * would be a cycle.
+ */
+async function isRecordedInstalled(cwd: string): Promise<boolean> {
+  const { getBuiltinInstallState } = await import("../index.js");
+  const registry = SettingsManager.create(cwd, getAgentDir()).extensions;
+  return (await getBuiltinInstallState(registry, COMPUTER_USE_EXTENSION_ID, cwd)).installed;
+}
+
+/** Persist this extension's install state to extensions.json. */
+async function recordInstallState(
+  cwd: string,
+  state: { installed: boolean; version?: string },
+): Promise<void> {
+  const { recordBuiltinInstallState } = await import("../index.js");
+  const registry = SettingsManager.create(cwd, getAgentDir()).extensions;
+  recordBuiltinInstallState(registry, COMPUTER_USE_EXTENSION_ID, state);
+}
+
+export async function getComputerUsePermissionStatus(cwd: string) {
   if (process.platform !== "darwin") {
     return unavailablePermissionState(`computer-use permissions are currently managed only on macOS (detected ${process.platform}).`, false);
   }
-  if (!helperInstalled()) {
+  if (!(await isRecordedInstalled(cwd))) {
     return unavailablePermissionState("Install computer-use before granting macOS permissions.", false);
   }
   try {
@@ -149,11 +169,11 @@ export async function getComputerUsePermissionStatus(_cwd: string) {
   }
 }
 
-export async function recheckComputerUsePermissionStatus(_cwd: string) {
+export async function recheckComputerUsePermissionStatus(cwd: string) {
   if (process.platform !== "darwin") {
     return unavailablePermissionState(`computer-use permissions are currently managed only on macOS (detected ${process.platform}).`, false);
   }
-  if (!helperInstalled()) {
+  if (!(await isRecordedInstalled(cwd))) {
     return unavailablePermissionState("Install computer-use before granting macOS permissions.", false);
   }
   try {
@@ -163,14 +183,14 @@ export async function recheckComputerUsePermissionStatus(_cwd: string) {
   }
 }
 
-export async function openComputerUsePermissionSettings(_cwd: string, kind: PermissionKind) {
+export async function openComputerUsePermissionSettings(cwd: string, kind: PermissionKind) {
   if (process.platform !== "darwin") {
     return {
       ok: false,
       message: `computer-use permissions are currently managed only on macOS (detected ${process.platform}).`,
     };
   }
-  if (!helperInstalled()) {
+  if (!(await isRecordedInstalled(cwd))) {
     return { ok: false, message: "Install computer-use before opening permission settings." };
   }
   try {
@@ -225,7 +245,7 @@ export async function checkComputerUseInstalled(
  * its setup script from there, so no binaries live in Pizza's repo.
  */
 export async function runComputerUseInstall(
-  _cwd: string,
+  cwd: string,
 ): Promise<InstallResult> {
   if (process.platform !== "darwin") {
     return {
@@ -296,7 +316,7 @@ export async function runComputerUseInstall(
     "Open the permission buttons in Plugins → Extensions if Accessibility or Screen Recording is still missing.";
   try {
     await registerMacosPermissionPrompts();
-    const permissions = await getComputerUsePermissionStatus(_cwd);
+    const permissions = await getComputerUsePermissionStatus(cwd);
     if (permissions.ready) {
       permissionMessage = "All macOS permissions are ready.";
     } else {
@@ -309,6 +329,7 @@ export async function runComputerUseInstall(
   } catch (error) {
     permissionMessage = `Helper installed, but permission setup needs attention: ${error instanceof Error ? error.message : String(error)}`;
   }
+  await recordInstallState(cwd, { installed: true, version: UPSTREAM_VERSION });
   return {
     ok: true,
     message: `Helper installed at ${macosHelperAppPath()}. ${permissionMessage}`,
@@ -353,7 +374,7 @@ async function rebrandHelperApp(): Promise<InstallResult> {
 }
 
 export async function runComputerUseUninstall(
-  _cwd: string,
+  cwd: string,
 ): Promise<InstallResult> {
   if (process.platform !== "darwin") {
     return {
@@ -380,16 +401,20 @@ export async function runComputerUseUninstall(
       };
     }
   }
-  if (!removedAny) return { ok: true, message: "Helper app not installed." };
+  if (!removedAny) {
+    await recordInstallState(cwd, { installed: false });
+    return { ok: true, message: "Helper app not installed." };
+  }
   const pkgDir = path.join(getAgentDir(), "computer-use", "pkg");
   await rm(pkgDir, { recursive: true, force: true }).catch(() => undefined);
+  await recordInstallState(cwd, { installed: false });
   return {
     ok: true,
     message: `Helper app removed (${helperApp}). Remember to revoke its Accessibility/Screen Recording entries if you want.`,
   };
 }
 
-/** Persist enable/disable for this built-in extension in settings.json. */
+/** Persist enable/disable for this built-in extension in extensions.json. */
 function persistDisabled(cwd: string, disabled: boolean): void {
   const agentDir = getAgentDir();
   const settings = SettingsManager.create(cwd, agentDir);
@@ -467,11 +492,12 @@ export const createComputerUseExtension: ExtensionFactory = (
           return;
         }
         case "status": {
+          const installed = await isRecordedInstalled(cwd);
           const lines = [
             `Built-in extension: ${COMPUTER_USE_EXTENSION_ID} (enabled)`,
-            `Helper installed: ${helperInstalled() ? "yes" : "no"}${helperInstalled() ? ` (${macosHelperAppPath()})` : ""}`,
+            `Helper installed: ${installed ? "yes" : "no"}${installed ? ` (${macosHelperAppPath()})` : ""}`,
           ];
-          if (!helperInstalled()) {
+          if (!installed) {
             lines.push("Run /computer install to install it.");
           }
           try {

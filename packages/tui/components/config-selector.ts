@@ -468,11 +468,8 @@ class ResourceList implements Component, Focusable {
 	}
 
 	private togglePackageResource(item: ResourceItem, enabled: boolean): void {
-		const scope = item.metadata.scope as "user" | "project";
-		const settings =
-			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-
-		const packages = [...(settings.packages ?? [])] as PackageSource[];
+		// Installed plugin packages are user-level only (extensions.json).
+		const packages = this.settingsManager.getPackages();
 		const pkgIndex = packages.findIndex((pkg) => {
 			const source = typeof pkg === "string" ? pkg : pkg.source;
 			return source === item.metadata.source;
@@ -519,11 +516,7 @@ class ResourceList implements Component, Focusable {
 			packages[pkgIndex] = (pkg as { source: string }).source;
 		}
 
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(packages);
-		} else {
-			this.settingsManager.setPackages(packages);
-		}
+		this.settingsManager.setPackages(packages);
 	}
 
 	private getTopLevelBaseDir(scope: "user" | "project"): string {

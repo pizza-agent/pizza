@@ -72,8 +72,10 @@ export interface ResourceLoader {
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	/** Installed plugin packages configured in settings (may contribute any resource type). */
 	listConfiguredPackages?(): ConfiguredPackage[];
-	/** Remove an installed package (files for npm/git) and drop it from settings. Returns false when not configured. */
+	/** Remove an installed package (files for npm/git) and drop its extensions.json record. Returns false when not installed. */
 	removeConfiguredPackage?(source: string): Promise<boolean>;
+	/** Enable/disable an installed package (takes effect on the next resource reload). Returns false when not installed. */
+	setConfiguredPackageEnabled?(source: string, enabled: boolean): boolean;
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
@@ -369,15 +371,24 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	async removeConfiguredPackage(source: string): Promise<boolean> {
+		const effectiveSource = this.effectivePackageSource(source);
+		return effectiveSource !== undefined && this.packageManager.removeAndPersist(effectiveSource);
+	}
+
+	setConfiguredPackageEnabled(source: string, enabled: boolean): boolean {
+		const effectiveSource = this.effectivePackageSource(source);
+		return effectiveSource !== undefined && this.packageManager.setPackageEnabled(effectiveSource, enabled);
+	}
+
+	/** The source to hand back to the package manager for an installed package id, or undefined when not installed. */
+	private effectivePackageSource(source: string): string | undefined {
 		const configured = this.packageManager.listConfiguredPackages().find((p) => p.source === source);
-		if (!configured) return false;
-		// Settings store local sources as paths relative to the agent/project
-		// dir — feeding them back verbatim would resolve against the process
-		// cwd and miss. installedPath is already resolved against the right
-		// base dir, so pass that instead.
+		if (!configured) return undefined;
+		// Local sources are stored relative to the agent dir — feeding them back
+		// verbatim would resolve against the process cwd and miss. installedPath
+		// is already resolved against the right base dir, so pass that instead.
 		const isLocalSource = isLocalPath(source) || source.startsWith("file:");
-		const effectiveSource = isLocalSource && configured.installedPath ? configured.installedPath : source;
-		return this.packageManager.removeAndPersist(effectiveSource, { local: configured.scope === "project" });
+		return isLocalSource && configured.installedPath ? configured.installedPath : source;
 	}
 
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {
@@ -558,7 +569,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		extensionsResult.errors.push(...inlineExtensions.errors);
 
 		// Load built-in extensions. They are always present unless disabled in
-		// settings (disabledBuiltinExtensions) or this loader opts out entirely
+		// extensions.json (ExtensionRegistry) or this loader opts out entirely
 		// (noBuiltinExtensions, e.g. for tests or an explicit --no-builtin-extensions).
 		if (!this.noBuiltinExtensions) {
 			const disabledBuiltins = this.settingsManager.getDisabledBuiltinExtensions();

@@ -241,7 +241,8 @@ export type RpcCommand =
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
 	| { id?: string; type: "cycle_model" }
-	| { id?: string; type: "get_available_models" }
+	/** authOnly: return only models with configured auth (the registry holds ~1.6k models, ~260KB). */
+	| { id?: string; type: "get_available_models"; authOnly?: boolean }
 
 	// Thinking
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
@@ -403,8 +404,14 @@ export interface RpcExtensionInfo {
 	kind: "builtin" | "user" | "project" | "cli" | "package";
 	/** Whether the extension is currently active (loaded). Disabled built-ins report false. */
 	enabled: boolean;
-	/** Whether toggling enable/disable is supported (currently only built-in extensions). */
+	/** Whether toggling enable/disable is supported (built-ins and installed plugin packages). */
 	canToggle: boolean;
+	/**
+	 * For extensions from an installed plugin package: the package source. Pass
+	 * it (not `id`) to set_extension_enabled / remove_package — packages toggle
+	 * and uninstall as a whole.
+	 */
+	packageSource?: string;
 	/** Whether this extension ships an external dependency (e.g. a CLI binary) that can be installed/uninstalled. */
 	installable: boolean;
 	/** Whether the external dependency is currently installed. Only meaningful when installable is true. */
@@ -543,7 +550,7 @@ export type RpcResponse =
 	// Model
 	| { id?: string; type: "response"; command: "set_model"; success: true; data: ModelInfo }
 	| { id?: string; type: "response"; command: "cycle_model"; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }
-	| { id?: string; type: "response"; command: "get_available_models"; success: true; data: { models: ModelInfo[] } }
+	| { id?: string; type: "response"; command: "get_available_models"; success: true; data: { models: ModelInfo[]; total: number } }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }

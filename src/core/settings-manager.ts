@@ -5,6 +5,17 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import {
+	BUILTIN_EXTENSION_SOURCE,
+	type ExtensionRecord,
+	ExtensionRegistry,
+	packageSourceToRecord,
+	recordToPackageSource,
+	withPackageFilters,
+} from "./extension-registry.js";
+
+/** File name of the plugin registry inside the agent dir. */
+export const EXTENSION_REGISTRY_FILE = "extensions.json";
 import type { NetworkSettings, SchedulerPolicy } from "@tomsun28/pizza-protocol";
 
 export interface CompactionSettings {
@@ -132,12 +143,14 @@ export interface Settings {
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
-	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
+	/** @deprecated Migrated into extensions.json (see ExtensionRegistry) on load; use getPackages/setPackages. */
+	packages?: PackageSource[];
 	extensions?: string[]; // Array of local extension file paths or directories
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
-	disabledBuiltinExtensions?: string[]; // Built-in extension ids to disable (e.g. ["agent-browser"]). Empty/absent = all built-ins enabled.
+	/** @deprecated Migrated into extensions.json (see ExtensionRegistry) on load; use setBuiltinExtensionDisabled. */
+	disabledBuiltinExtensions?: string[];
 	enabledBuiltinSkills?: string[]; // Built-in skill ids to enable (e.g. ["pizza-self-optimization"]). Empty/absent = all built-in skills DISABLED by default.
 	disabledSkills?: string[]; // Names of discovered (non-built-in) skills to disable. Empty/absent = every discovered skill is loaded.
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
@@ -311,6 +324,8 @@ export class SettingsManager {
 	private projectSettingsLoadError: Error | null = null; // Track if project settings file had parse errors
 	private writeQueue: Promise<void> = Promise.resolve();
 	private errors: SettingsError[];
+	/** Installed/enabled state of every plugin (built-ins and packages) — `extensions.json`. */
+	readonly extensions: ExtensionRegistry;
 
 	private constructor(
 		storage: SettingsStorage,
@@ -319,6 +334,7 @@ export class SettingsManager {
 		globalLoadError: Error | null = null,
 		projectLoadError: Error | null = null,
 		initialErrors: SettingsError[] = [],
+		extensions: ExtensionRegistry = ExtensionRegistry.inMemory(),
 	) {
 		this.storage = storage;
 		this.globalSettings = initialGlobal;
@@ -326,6 +342,8 @@ export class SettingsManager {
 		this.globalSettingsLoadError = globalLoadError;
 		this.projectSettingsLoadError = projectLoadError;
 		this.errors = [...initialErrors];
+		this.extensions = extensions;
+		this.absorbLegacyExtensionSettings();
 		this.recomputeMerged();
 		this.recordVersion("global");
 		this.recordVersion("project");
@@ -334,11 +352,11 @@ export class SettingsManager {
 	/** Create a SettingsManager that loads from files */
 	static create(cwd: string, agentDir: string = getAgentDir()): SettingsManager {
 		const storage = new FileSettingsStorage(cwd, agentDir);
-		return SettingsManager.fromStorage(storage);
+		return SettingsManager.fromStorage(storage, ExtensionRegistry.file(join(agentDir, EXTENSION_REGISTRY_FILE)));
 	}
 
 	/** Create a SettingsManager from an arbitrary storage backend */
-	static fromStorage(storage: SettingsStorage): SettingsManager {
+	static fromStorage(storage: SettingsStorage, extensions?: ExtensionRegistry): SettingsManager {
 		const globalLoad = SettingsManager.tryLoadFromStorage(storage, "global");
 		const projectLoad = SettingsManager.tryLoadFromStorage(storage, "project");
 		const initialErrors: SettingsError[] = [];
@@ -356,6 +374,7 @@ export class SettingsManager {
 			globalLoad.error,
 			projectLoad.error,
 			initialErrors,
+			extensions,
 		);
 	}
 
@@ -487,6 +506,7 @@ export class SettingsManager {
 		if (scope === "global") {
 			this.globalSettings = load.settings;
 			this.globalSettingsLoadError = null;
+			this.absorbLegacyExtensionSettings();
 		} else {
 			this.projectSettings = load.settings;
 			this.projectSettingsLoadError = null;
@@ -531,6 +551,38 @@ export class SettingsManager {
 		} finally {
 			this.reloading = false;
 		}
+	}
+
+	/**
+	 * Move the legacy `packages` / `disabledBuiltinExtensions` keys of the user
+	 * settings.json into extensions.json, then drop them from settings.json.
+	 * Runs on every (re)load so a hand-edited legacy key is still honored once.
+	 * Existing registry records win over legacy values.
+	 */
+	private absorbLegacyExtensionSettings(): void {
+		if (this.globalSettingsLoadError) return;
+		const { packages, disabledBuiltinExtensions } = this.globalSettings;
+		if (packages === undefined && disabledBuiltinExtensions === undefined) return;
+		try {
+			this.extensions.mutate((extensions) => {
+				for (const id of disabledBuiltinExtensions ?? []) {
+					extensions[id] ??= { source: BUILTIN_EXTENSION_SOURCE, enabled: false };
+				}
+				for (const pkg of packages ?? []) {
+					const record = packageSourceToRecord(pkg);
+					extensions[record.source] ??= record;
+				}
+			});
+		} catch (error) {
+			// Corrupt extensions.json: keep the legacy keys so nothing is lost.
+			this.recordError("global", error);
+			return;
+		}
+		this.globalSettings.packages = undefined;
+		this.globalSettings.disabledBuiltinExtensions = undefined;
+		this.markModified("packages");
+		this.markModified("disabledBuiltinExtensions");
+		this.save();
 	}
 
 	/** Mark a global field as modified during this session */
@@ -1001,21 +1053,29 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/** Installed plugin packages (enabled or not), in load order, from extensions.json. */
 	getPackages(): PackageSource[] {
-		return [...(this.settings.packages ?? [])];
+		return this.extensions.listPackages().map(([, record]) => recordToPackageSource(record));
 	}
 
+	/**
+	 * Replace the set of installed plugin packages. Packages that stay keep
+	 * their recorded state (enabled, version, path); their resource filters
+	 * are replaced. Built-in records are untouched.
+	 */
 	setPackages(packages: PackageSource[]): void {
-		this.globalSettings.packages = packages;
-		this.markModified("packages");
-		this.save();
-	}
-
-	setProjectPackages(packages: PackageSource[]): void {
-		const projectSettings = structuredClone(this.projectSettings);
-		projectSettings.packages = packages;
-		this.markProjectModified("packages");
-		this.saveProjectSettings(projectSettings);
+		this.extensions.mutate((extensions) => {
+			const next: Record<string, ExtensionRecord> = {};
+			for (const [id, record] of Object.entries(extensions)) {
+				if (record.source === BUILTIN_EXTENSION_SOURCE) next[id] = record;
+			}
+			for (const pkg of packages) {
+				const fresh = packageSourceToRecord(pkg);
+				const previous = extensions[fresh.source];
+				next[fresh.source] = previous ? withPackageFilters(previous, pkg) : fresh;
+			}
+			return next;
+		});
 	}
 
 	getExtensionPaths(): string[] {
@@ -1098,21 +1158,16 @@ export class SettingsManager {
 
 	/** Return the set of built-in extension ids the user has disabled. */
 	getDisabledBuiltinExtensions(): Set<string> {
-		return new Set(this.settings.disabledBuiltinExtensions ?? []);
+		const disabled = new Set<string>();
+		for (const [id, record] of Object.entries(this.extensions.list())) {
+			if (record.source === BUILTIN_EXTENSION_SOURCE && !record.enabled) disabled.add(id);
+		}
+		return disabled;
 	}
 
-	/** Disable (true) or enable (false) a built-in extension by id, persisted to user settings. */
+	/** Disable (true) or enable (false) a built-in extension by id, persisted to extensions.json. */
 	setBuiltinExtensionDisabled(id: string, disabled: boolean): void {
-		const current = new Set(this.settings.disabledBuiltinExtensions ?? []);
-		if (disabled) {
-			current.add(id);
-		} else {
-			current.delete(id);
-		}
-		const arr = Array.from(current);
-		this.globalSettings.disabledBuiltinExtensions = arr.length > 0 ? arr : undefined;
-		this.markModified("disabledBuiltinExtensions");
-		this.save();
+		this.extensions.patch(id, { enabled: !disabled }, { source: BUILTIN_EXTENSION_SOURCE, enabled: true });
 	}
 
 	/** Return the set of built-in skill ids the user has explicitly enabled. */

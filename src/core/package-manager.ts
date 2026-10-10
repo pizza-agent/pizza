@@ -20,6 +20,7 @@ import { CONFIG_DIR_NAME } from "../config.js";
 import { type GitSource, parseGitUrl } from "../utils/git.js";
 import { isLocalPath } from "../utils/paths.js";
 import { isStdoutTakenOver } from "./output-guard.js";
+import { BUILTIN_EXTENSION_SOURCE, recordToPackageSource } from "./extension-registry.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
 const NETWORK_TIMEOUT_MS = 10000;
@@ -72,25 +73,33 @@ export interface PackageUpdate {
 
 export interface ConfiguredPackage {
 	source: string;
-	scope: "user" | "project";
+	/** Always "user": installed plugins are user-level (extensions.json). */
+	scope: "user";
 	filtered: boolean;
+	/** Whether the plugin is enabled (disabled plugins stay installed but are not loaded). */
+	enabled: boolean;
+	version?: string;
 	installedPath?: string;
 }
 
 export interface PackageManager {
 	resolve(onMissing?: (source: string) => Promise<MissingSourceAction>): Promise<ResolvedPaths>;
-	install(source: string, options?: { local?: boolean }): Promise<void>;
-	installAndPersist(source: string, options?: { local?: boolean }): Promise<void>;
-	remove(source: string, options?: { local?: boolean }): Promise<void>;
-	removeAndPersist(source: string, options?: { local?: boolean }): Promise<boolean>;
+	install(source: string): Promise<void>;
+	/** Install a plugin package and record it in extensions.json (user-level). */
+	installAndPersist(source: string): Promise<void>;
+	remove(source: string): Promise<void>;
+	/** Uninstall a plugin package and drop its extensions.json record. Returns false when not installed. */
+	removeAndPersist(source: string): Promise<boolean>;
 	update(source?: string): Promise<void>;
 	listConfiguredPackages(): ConfiguredPackage[];
 	resolveExtensionSources(
 		sources: string[],
-		options?: { local?: boolean; temporary?: boolean },
+		options?: { temporary?: boolean },
 	): Promise<ResolvedPaths>;
-	addSourceToSettings(source: string, options?: { local?: boolean }): boolean;
-	removeSourceFromSettings(source: string, options?: { local?: boolean }): boolean;
+	addSourceToSettings(source: string): boolean;
+	removeSourceFromSettings(source: string): boolean;
+	/** Enable/disable an installed plugin package. Returns false when no installed package matches. */
+	setPackageEnabled(source: string, enabled: boolean): boolean;
 	setProgressCallback(callback: ProgressCallback | undefined): void;
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
 }
@@ -760,41 +769,70 @@ export class DefaultPackageManager implements PackageManager {
 		this.progressCallback = callback;
 	}
 
-	addSourceToSettings(source: string, options?: { local?: boolean }): boolean {
-		const scope: SourceScope = options?.local ? "project" : "user";
-		const currentSettings =
-			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-		const currentPackages = currentSettings.packages ?? [];
-		const normalizedSource = this.normalizePackageSourceForSettings(source, scope);
-		const exists = currentPackages.some((existing) => this.packageSourcesMatch(existing, source, scope));
-		if (exists) {
+	private get registry() {
+		return this.settingsManager.extensions;
+	}
+
+	/** Registry id of the installed package matching `source` (exact, then identity ignoring version/ref). */
+	private findPackageId(source: string): string | undefined {
+		return this.registry
+			.listPackages()
+			.find(([, record]) => record.source === source || this.packageSourcesMatch(record.source, source, "user"))?.[0];
+	}
+
+	addSourceToSettings(source: string): boolean {
+		if (this.findPackageId(source) !== undefined) {
 			return false;
 		}
-		const nextPackages = [...currentPackages, normalizedSource];
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(nextPackages);
-		} else {
-			this.settingsManager.setPackages(nextPackages);
-		}
+		const normalizedSource = this.normalizePackageSourceForSettings(source, "user");
+		this.registry.set(normalizedSource, { source: normalizedSource, enabled: true, installed: true });
 		return true;
 	}
 
-	removeSourceFromSettings(source: string, options?: { local?: boolean }): boolean {
-		const scope: SourceScope = options?.local ? "project" : "user";
-		const currentSettings =
-			scope === "project" ? this.settingsManager.getProjectSettings() : this.settingsManager.getGlobalSettings();
-		const currentPackages = currentSettings.packages ?? [];
-		const nextPackages = currentPackages.filter((existing) => !this.packageSourcesMatch(existing, source, scope));
-		const changed = nextPackages.length !== currentPackages.length;
-		if (!changed) {
-			return false;
-		}
-		if (scope === "project") {
-			this.settingsManager.setProjectPackages(nextPackages);
-		} else {
-			this.settingsManager.setPackages(nextPackages);
-		}
+	removeSourceFromSettings(source: string): boolean {
+		let changed = false;
+		this.registry.mutate((extensions) => {
+			for (const [id, record] of Object.entries(extensions)) {
+				if (record.source === BUILTIN_EXTENSION_SOURCE) continue;
+				if (record.source !== source && !this.packageSourcesMatch(record.source, source, "user")) continue;
+				delete extensions[id];
+				changed = true;
+			}
+		});
+		return changed;
+	}
+
+	setPackageEnabled(source: string, enabled: boolean): boolean {
+		const id = this.findPackageId(source);
+		if (id === undefined) return false;
+		this.registry.patch(id, { enabled }, { source: id, enabled });
 		return true;
+	}
+
+	/** Record where an installed package lives and its version (after install / update). */
+	private recordInstall(source: string): void {
+		const id = this.findPackageId(source);
+		if (id === undefined) return;
+		const installedPath = this.getInstalledPath(id, "user");
+		this.registry.patch(
+			id,
+			{
+				installed: true,
+				installedPath,
+				version: installedPath ? this.getInstalledNpmVersion(installedPath) : undefined,
+				installedAt: new Date().toISOString(),
+			},
+			{ source: id, enabled: true },
+		);
+	}
+
+	/** Remember a resolved install path so later lookups skip recomputing it (npm needs `npm root -g`). */
+	private rememberInstalledPath(source: string, installedPath: string | undefined): string | undefined {
+		const record = installedPath ? this.registry.get(source) : undefined;
+		if (record && record.installedPath !== installedPath) {
+			this.registry.patch(source, { installedPath }, record);
+		}
+		return installedPath;
 	}
 
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
@@ -841,17 +879,15 @@ export class DefaultPackageManager implements PackageManager {
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
 
-		// Collect all packages with scope (project first so cwd resources win collisions)
-		const allPackages: Array<{ pkg: PackageSource; scope: SourceScope }> = [];
-		for (const pkg of projectSettings.packages ?? []) {
-			allPackages.push({ pkg, scope: "project" });
-		}
-		for (const pkg of globalSettings.packages ?? []) {
-			allPackages.push({ pkg, scope: "user" });
-		}
-
-		// Dedupe: project scope wins over global for same package identity
-		const packageSources = this.dedupePackages(allPackages);
+		// Installed plugin packages (user-level, extensions.json), enabled ones only.
+		const packageSources = this.registry
+			.listPackages()
+			.filter(([, record]) => record.enabled)
+			.map(([, record]) => ({
+				pkg: recordToPackageSource(record) as PackageSource,
+				scope: "user" as SourceScope,
+				installedPath: record.installedPath,
+			}));
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
 		const globalBaseDir = this.agentDir;
@@ -892,46 +928,37 @@ export class DefaultPackageManager implements PackageManager {
 
 	async resolveExtensionSources(
 		sources: string[],
-		options?: { local?: boolean; temporary?: boolean },
+		options?: { temporary?: boolean },
 	): Promise<ResolvedPaths> {
 		const accumulator = this.createAccumulator();
-		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "user";
+		const scope: SourceScope = options?.temporary ? "temporary" : "user";
 		const packageSources = sources.map((source) => ({ pkg: source as PackageSource, scope }));
 		await this.resolvePackageSources(packageSources, accumulator);
 		return this.toResolvedPaths(accumulator);
 	}
 
 	listConfiguredPackages(): ConfiguredPackage[] {
-		const globalSettings = this.settingsManager.getGlobalSettings();
-		const projectSettings = this.settingsManager.getProjectSettings();
-		const configuredPackages: ConfiguredPackage[] = [];
-
-		for (const pkg of globalSettings.packages ?? []) {
-			const source = typeof pkg === "string" ? pkg : pkg.source;
-			configuredPackages.push({
-				source,
-				scope: "user",
-				filtered: typeof pkg === "object",
-				installedPath: this.getInstalledPath(source, "user"),
-			});
-		}
-
-		for (const pkg of projectSettings.packages ?? []) {
-			const source = typeof pkg === "string" ? pkg : pkg.source;
-			configuredPackages.push({
-				source,
-				scope: "project",
-				filtered: typeof pkg === "object",
-				installedPath: this.getInstalledPath(source, "project"),
-			});
-		}
-
-		return configuredPackages;
+		return this.registry.listPackages().map(([id, record]) => ({
+			source: record.source,
+			scope: "user",
+			filtered: typeof recordToPackageSource(record) === "object",
+			enabled: record.enabled,
+			version: record.version,
+			// Recorded at install time. For legacy records missing the path, only
+			// do the lookup when it's cheap — npm's would run `npm root -g` on every
+			// call; resolve() records the path when it loads the package anyway.
+			installedPath: record.installedPath ?? this.rememberInstalledPath(id, this.getInstalledPathIfLocal(id)),
+		}));
 	}
 
-	async install(source: string, options?: { local?: boolean }): Promise<void> {
+	/** Filesystem-only install-path lookup — undefined for npm packages (needs `npm root -g`). */
+	private getInstalledPathIfLocal(source: string): string | undefined {
+		return this.parseSource(source).type === "npm" ? undefined : this.getInstalledPath(source, "user");
+	}
+
+	async install(source: string): Promise<void> {
 		const parsed = this.parseSource(source);
-		const scope: SourceScope = options?.local ? "project" : "user";
+		const scope: SourceScope = "user";
 		await this.withProgress("install", source, `Installing ${source}...`, async () => {
 			if (parsed.type === "npm") {
 				await this.installNpm(parsed, scope, false);
@@ -952,14 +979,23 @@ export class DefaultPackageManager implements PackageManager {
 		});
 	}
 
-	async installAndPersist(source: string, options?: { local?: boolean }): Promise<void> {
-		await this.install(source, options);
-		this.addSourceToSettings(source, options);
+	async installAndPersist(source: string): Promise<void> {
+		this.assertNotBuiltinId(source);
+		await this.install(source);
+		this.addSourceToSettings(source);
+		this.recordInstall(source);
 	}
 
-	async remove(source: string, options?: { local?: boolean }): Promise<void> {
+	/** Package ids share the registry with built-in ids — a bare built-in id can't be a package source. */
+	private assertNotBuiltinId(source: string): void {
+		if (this.registry.get(source)?.source === BUILTIN_EXTENSION_SOURCE) {
+			throw new Error(`"${source}" is a built-in extension id, not a package source.`);
+		}
+	}
+
+	async remove(source: string): Promise<void> {
 		const parsed = this.parseSource(source);
-		const scope: SourceScope = options?.local ? "project" : "user";
+		const scope: SourceScope = "user";
 		await this.withProgress("remove", source, `Removing ${source}...`, async () => {
 			if (parsed.type === "npm") {
 				await this.uninstallNpm(parsed, scope);
@@ -976,41 +1012,32 @@ export class DefaultPackageManager implements PackageManager {
 		});
 	}
 
-	async removeAndPersist(source: string, options?: { local?: boolean }): Promise<boolean> {
-		await this.remove(source, options);
-		return this.removeSourceFromSettings(source, options);
+	async removeAndPersist(source: string): Promise<boolean> {
+		await this.remove(source);
+		return this.removeSourceFromSettings(source);
 	}
 
 	async update(source?: string): Promise<void> {
-		const globalSettings = this.settingsManager.getGlobalSettings();
-		const projectSettings = this.settingsManager.getProjectSettings();
+		const packages = this.settingsManager.getPackages();
 		const identity = source ? this.getPackageIdentity(source) : undefined;
 		let matched = false;
 		const updateSources: ConfiguredUpdateSource[] = [];
 
-		for (const pkg of globalSettings.packages ?? []) {
+		for (const pkg of packages) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
 			if (identity && this.getPackageIdentity(sourceStr, "user") !== identity) continue;
 			matched = true;
 			updateSources.push({ source: sourceStr, scope: "user" });
 		}
-		for (const pkg of projectSettings.packages ?? []) {
-			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
-			if (identity && this.getPackageIdentity(sourceStr, "project") !== identity) continue;
-			matched = true;
-			updateSources.push({ source: sourceStr, scope: "project" });
-		}
 
 		if (source && !matched) {
-			throw new Error(
-				this.buildNoMatchingPackageMessage(source, [
-					...(globalSettings.packages ?? []),
-					...(projectSettings.packages ?? []),
-				]),
-			);
+			throw new Error(this.buildNoMatchingPackageMessage(source, packages));
 		}
 
 		await this.updateConfiguredSources(updateSources);
+		if (!isOfflineModeEnabled()) {
+			for (const entry of updateSources) this.recordInstall(entry.source);
+		}
 	}
 
 	private async updateConfiguredSources(sources: ConfiguredUpdateSource[]): Promise<void> {
@@ -1117,11 +1144,11 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async resolvePackageSources(
-		sources: Array<{ pkg: PackageSource; scope: SourceScope }>,
+		sources: Array<{ pkg: PackageSource; scope: SourceScope; installedPath?: string }>,
 		accumulator: ResourceAccumulator,
 		onMissing?: (source: string) => Promise<MissingSourceAction>,
 	): Promise<void> {
-		for (const { pkg, scope } of sources) {
+		for (const { pkg, scope, installedPath: recordedPath } of sources) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
 			const filter = typeof pkg === "object" ? pkg : undefined;
 			const parsed = this.parseSource(sourceStr);
@@ -1149,7 +1176,11 @@ export class DefaultPackageManager implements PackageManager {
 			};
 
 			if (parsed.type === "npm") {
-				const installedPath = this.getNpmInstallPath(parsed, scope);
+				// The recorded path skips `npm root -g` (a sync external command) on every startup.
+				const installedPath =
+					scope === "user" && recordedPath && existsSync(recordedPath)
+						? recordedPath
+						: this.getNpmInstallPath(parsed, scope);
 				const needsInstall =
 					!existsSync(installedPath) ||
 					(parsed.pinned && !(await this.installedNpmMatchesPinnedVersion(parsed, installedPath)));
@@ -1157,6 +1188,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
+				if (scope === "user") this.rememberInstalledPath(sourceStr, installedPath);
 				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 				continue;
@@ -1230,7 +1262,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (parsed.type === "git") {
 			return `git:${parsed.host}/${parsed.path}`;
 		}
-		return `local:${this.resolvePath(parsed.path)}`;
+		return `local:${this.canonicalPath(this.resolvePath(parsed.path))}`;
 	}
 
 	private getSourceMatchKeyForSettings(source: string, scope: SourceScope): string {
@@ -1242,7 +1274,19 @@ export class DefaultPackageManager implements PackageManager {
 			return `git:${parsed.host}/${parsed.path}`;
 		}
 		const baseDir = this.getBaseDirForScope(scope);
-		return `local:${this.resolvePathFromBase(parsed.path, baseDir)}`;
+		return `local:${this.canonicalPath(this.resolvePathFromBase(parsed.path, baseDir))}`;
+	}
+
+	/**
+	 * Realpath when the entry exists so a path reached through a symlink
+	 * (e.g. /tmp -> /private/tmp on macOS) matches the same dir reached directly.
+	 */
+	private canonicalPath(path: string): string {
+		try {
+			return realpathSync.native(path);
+		} catch {
+			return path;
+		}
 	}
 
 	private buildNoMatchingPackageMessage(source: string, configuredPackages: PackageSource[]): string {
@@ -1545,33 +1589,6 @@ export class DefaultPackageManager implements PackageManager {
 			return `local:${this.resolvePathFromBase(parsed.path, baseDir)}`;
 		}
 		return `local:${this.resolvePath(parsed.path)}`;
-	}
-
-	/**
-	 * Dedupe packages: if same package identity appears in both global and project,
-	 * keep only the project one (project wins).
-	 */
-	private dedupePackages(
-		packages: Array<{ pkg: PackageSource; scope: SourceScope }>,
-	): Array<{ pkg: PackageSource; scope: SourceScope }> {
-		const seen = new Map<string, { pkg: PackageSource; scope: SourceScope }>();
-
-		for (const entry of packages) {
-			const sourceStr = typeof entry.pkg === "string" ? entry.pkg : entry.pkg.source;
-			const identity = this.getPackageIdentity(sourceStr, entry.scope);
-
-			const existing = seen.get(identity);
-			if (!existing) {
-				seen.set(identity, entry);
-			} else if (entry.scope === "project" && existing.scope === "user") {
-				// Project wins over user
-				seen.set(identity, entry);
-			}
-			// If existing is project and new is global, keep existing (project)
-			// If both are same scope, keep first one
-		}
-
-		return Array.from(seen.values());
 	}
 
 	private parseNpmSpec(spec: string): { name: string; version?: string } {

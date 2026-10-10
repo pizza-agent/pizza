@@ -34,10 +34,11 @@ describe("SettingsManager - External Edit Preservation", () => {
 		}
 	});
 
-	it("should preserve file changes to packages array when changing unrelated setting", async () => {
+	it("should preserve file changes to extensions.json when changing unrelated setting", async () => {
 		const settingsPath = join(agentDir, "settings.json");
+		const registryPath = join(agentDir, "extensions.json");
 
-		// Initial state: packages has one item
+		// Initial state: legacy packages key migrates into extensions.json on load
 		writeFileSync(
 			settingsPath,
 			JSON.stringify({
@@ -48,27 +49,22 @@ describe("SettingsManager - External Edit Preservation", () => {
 
 		// Pizza starts up, loads settings into memory
 		const manager = SettingsManager.create(projectDir, agentDir);
-
-		// At this point, globalSettings.packages = ["npm:pizza-mcp-adapter"]
 		expect(manager.getPackages()).toEqual(["npm:pizza-mcp-adapter"]);
+		await manager.flush();
 
-		// User externally edits settings.json to remove the package
-		const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-		currentSettings.packages = []; // User wants to remove this!
-		writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
-
-		// Verify file was changed
-		expect(JSON.parse(readFileSync(settingsPath, "utf-8")).packages).toEqual([]);
+		// User externally edits extensions.json to remove the package
+		writeFileSync(registryPath, JSON.stringify({ version: 1, extensions: {} }));
+		expect(manager.getPackages()).toEqual([]);
 
 		// User changes an UNRELATED setting via UI (this triggers save)
 		manager.setTheme("light");
 		await manager.flush();
 
-		// With the fix, packages should be preserved as [] (not reverted to startup value)
+		// The settings save must not resurrect the package or touch extensions.json
 		const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
-
-		expect(savedSettings.packages).toEqual([]);
+		expect(savedSettings.packages).toBeUndefined();
 		expect(savedSettings.theme).toBe("light");
+		expect(JSON.parse(readFileSync(registryPath, "utf-8")).extensions).toEqual({});
 	});
 
 	it("should preserve file changes to extensions array when changing unrelated setting", async () => {

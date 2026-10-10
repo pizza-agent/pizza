@@ -26,6 +26,7 @@ import { RpcClient } from "../rpc/rpc-client.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
 import { ChannelSupervisor } from "./channel-supervisor.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
+import { prefetchLoginShellPath } from "../../src/utils/login-shell-path.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
@@ -381,6 +382,10 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		const interactive = opts?.interactive === true;
 		const isMainAgent = mainDir !== undefined && cwd === mainDir;
 		const extraArgs = isMainAgent ? ["--main"] : undefined;
+		// Capture the login-shell PATH once (exported via env) so the agent
+		// inherits it instead of blocking its event loop for ~1s+ re-running
+		// the user's shell rc files on its first exec.
+		if (!options.createAgent) await prefetchLoginShellPath();
 		const client = options.createAgent
 			? options.createAgent(cwd, { interactive })
 			: new RpcClient({ cwd, cliPath, binary, env: makeEnv(interactive), args: extraArgs });
@@ -1142,6 +1147,9 @@ function nextMessageId(): string {
 
 	async function start(): Promise<void> {
 		if (server) return;
+		// Warm the login-shell PATH in the background so the first agent
+		// spawn (spawnAgent awaits it) rarely has to wait.
+		if (!options.createAgent) void prefetchLoginShellPath();
 		// Windows: a named pipe exists only while its owner process is alive,
 		// so there is no stale-socket case — an answering pipe IS a live
 		// gateway. Probe BEFORE listening: listening on an occupied pipe

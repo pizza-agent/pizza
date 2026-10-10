@@ -465,6 +465,8 @@ export interface ExtensionInfo {
 	kind: ExtensionKind;
 	enabled: boolean;
 	canToggle: boolean;
+	/** For package extensions: the package source — pass this (not `id`) to toggle/remove. */
+	packageSource?: string;
 	installable: boolean;
 	installed: boolean;
 	path: string;
@@ -537,7 +539,7 @@ export async function listThemes(): Promise<WebThemeInfo[]> {
 	}
 }
 
-/** Enable or disable a built-in extension. Returns whether a reload is required. */
+/** Enable or disable an extension or installed plugin package. Returns whether a reload is required. */
 export async function setExtensionEnabled(id: string, enabled: boolean): Promise<boolean> {
 	const r = await sendCommandAwait<{ requiresReload: boolean }>(
 		{ type: "set_extension_enabled", extensionId: id, enabled },

@@ -1,17 +1,21 @@
 import chalk from "chalk";
 import { selectConfig } from "../packages/cli/config-selector.js";
-import { APP_NAME, CONFIG_DIR_NAME, getAgentDir } from "./config.js";
+import { BUILTIN_EXTENSIONS } from "./builtin-extensions/index.js";
+import { APP_NAME, getAgentDir } from "./config.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 
-export type PackageCommand = "install" | "remove" | "update" | "list";
+export type PackageCommand = "install" | "remove" | "update" | "list" | "enable" | "disable";
+
+const PACKAGE_COMMANDS: readonly PackageCommand[] = ["install", "remove", "update", "list", "enable", "disable"];
 
 interface PackageCommandOptions {
 	command: PackageCommand;
 	source?: string;
-	local: boolean;
 	help: boolean;
 	invalidOption?: string;
+	/** `-l/--local` was passed: project-level plugins are no longer supported. */
+	local: boolean;
 }
 
 function reportSettingsErrors(settingsManager: SettingsManager, context: string): void {
@@ -27,13 +31,17 @@ function reportSettingsErrors(settingsManager: SettingsManager, context: string)
 function getPackageCommandUsage(command: PackageCommand): string {
 	switch (command) {
 		case "install":
-			return `${APP_NAME} plugin install <source> [-l]`;
+			return `${APP_NAME} plugin install <source>`;
 		case "remove":
-			return `${APP_NAME} plugin remove <source> [-l]`;
+			return `${APP_NAME} plugin remove <source>`;
 		case "update":
 			return `${APP_NAME} plugin update [source]`;
 		case "list":
 			return `${APP_NAME} plugin list`;
+		case "enable":
+			return `${APP_NAME} plugin enable <source|builtin-id>`;
+		case "disable":
+			return `${APP_NAME} plugin disable <source|builtin-id>`;
 	}
 }
 
@@ -43,10 +51,7 @@ function printPackageCommandHelp(command: PackageCommand): void {
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("install")}
 
-Install a package and add it to settings.
-
-Options:
-  -l, --local    Install project-locally (${CONFIG_DIR_NAME}/settings.json)
+Install a plugin package and record it in ~/.pizza/agent/extensions.json.
 
 Examples:
   ${APP_NAME} plugin install npm:@foo/bar
@@ -62,11 +67,8 @@ Examples:
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("remove")}
 
-Remove a package and its source from settings.
-Alias: ${APP_NAME} plugin uninstall <source> [-l]
-
-Options:
-  -l, --local    Remove from project settings (${CONFIG_DIR_NAME}/settings.json)
+Uninstall a plugin package and drop it from extensions.json.
+Alias: ${APP_NAME} plugin uninstall <source>
 
 Examples:
   ${APP_NAME} plugin remove npm:@foo/bar
@@ -78,7 +80,7 @@ Examples:
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("update")}
 
-Update installed packages.
+Update installed plugin packages.
 If <source> is provided, only that package is updated.
 `);
 			return;
@@ -87,7 +89,21 @@ If <source> is provided, only that package is updated.
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("list")}
 
-List installed packages from user and project settings.
+List built-in plugins and installed plugin packages with their state.
+`);
+			return;
+
+		case "enable":
+		case "disable":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage(command)}
+
+${command === "enable" ? "Enable" : "Disable"} a built-in plugin (by id) or an installed plugin package (by source).
+Takes effect when a session next loads its resources.
+
+Examples:
+  ${APP_NAME} plugin ${command} agent-browser
+  ${APP_NAME} plugin ${command} npm:@foo/bar
 `);
 			return;
 	}
@@ -98,15 +114,19 @@ function printPluginGroupHelp(): void {
   ${APP_NAME} plugin <command> [options]
 
 ${chalk.bold("Plugin commands:")}
-  install <source> [-l]   Install extension source and add to settings
-  remove <source> [-l]    Remove extension source from settings
-  uninstall <source> [-l] Alias for remove
-  update [source]         Update installed extensions (skips pinned sources)
-  list                    List installed extensions from settings
+  install <source>        Install a plugin package
+  remove <source>         Uninstall a plugin package
+  uninstall <source>      Alias for remove
+  update [source]         Update installed plugin packages (skips pinned sources)
+  list                    List plugins and their state
+  enable <source|id>      Enable a plugin (built-in id or package source)
+  disable <source|id>     Disable a plugin (built-in id or package source)
+
+Plugin state is stored in ~/.pizza/agent/extensions.json.
 
 ${chalk.bold("Examples:")}
   ${APP_NAME} plugin install npm:@foo/bar
-  ${APP_NAME} plugin remove npm:@foo/bar
+  ${APP_NAME} plugin disable npm:@foo/bar
   ${APP_NAME} plugin update
   ${APP_NAME} plugin list
 
@@ -120,12 +140,8 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 		return undefined;
 	}
 	const [rawCommand, ...rest] = args.slice(1);
-	let command: PackageCommand | undefined;
-	if (rawCommand === "uninstall") {
-		command = "remove";
-	} else if (rawCommand === "install" || rawCommand === "remove" || rawCommand === "update" || rawCommand === "list") {
-		command = rawCommand;
-	}
+	const command: PackageCommand | undefined =
+		rawCommand === "uninstall" ? "remove" : PACKAGE_COMMANDS.find((c) => c === rawCommand);
 	if (!command) {
 		return undefined;
 	}
@@ -140,27 +156,20 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 			help = true;
 			continue;
 		}
-
 		if (arg === "-l" || arg === "--local") {
-			if (command === "install" || command === "remove") {
-				local = true;
-			} else {
-				invalidOption = invalidOption ?? arg;
-			}
+			local = true;
 			continue;
 		}
-
 		if (arg.startsWith("-")) {
 			invalidOption = invalidOption ?? arg;
 			continue;
 		}
-
 		if (!source) {
 			source = arg;
 		}
 	}
 
-	return { command, source, local, help, invalidOption };
+	return { command, source, help, invalidOption, local };
 }
 
 export async function handleConfigCommand(args: string[]): Promise<boolean> {
@@ -201,7 +210,7 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 	}
 
 	// Unknown plugin subcommand → friendly error.
-	const known = ["install", "remove", "uninstall", "update", "list"];
+	const known = [...PACKAGE_COMMANDS, "uninstall"];
 	if (!known.includes(subCommand)) {
 		console.error(chalk.red(`Unknown plugin command "${subCommand}".`));
 		console.error(chalk.dim(`Available commands: ${known.join(", ")}`));
@@ -220,6 +229,13 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 		return true;
 	}
 
+	if (options.local) {
+		console.error(chalk.red("Project-level plugins (-l/--local) are no longer supported."));
+		console.error(chalk.dim("Plugins are installed per user and recorded in ~/.pizza/agent/extensions.json."));
+		process.exitCode = 1;
+		return true;
+	}
+
 	if (options.invalidOption) {
 		console.error(chalk.red(`Unknown option ${options.invalidOption} for "${options.command}".`));
 		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getPackageCommandUsage(options.command)}".`));
@@ -228,7 +244,7 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 	}
 
 	const source = options.source;
-	if ((options.command === "install" || options.command === "remove") && !source) {
+	if (options.command !== "update" && options.command !== "list" && !source) {
 		console.error(chalk.red(`Missing ${options.command} source.`));
 		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
 		process.exitCode = 1;
@@ -250,12 +266,12 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 	try {
 		switch (options.command) {
 			case "install":
-				await packageManager.installAndPersist(source!, { local: options.local });
+				await packageManager.installAndPersist(source!);
 				console.log(chalk.green(`Installed ${source}`));
 				return true;
 
 			case "remove": {
-				const removed = await packageManager.removeAndPersist(source!, { local: options.local });
+				const removed = await packageManager.removeAndPersist(source!);
 				if (!removed) {
 					console.error(chalk.red(`No matching package found for ${source}`));
 					process.exitCode = 1;
@@ -265,39 +281,50 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 				return true;
 			}
 
-			case "list": {
-				const configuredPackages = packageManager.listConfiguredPackages();
-				const userPackages = configuredPackages.filter((pkg) => pkg.scope === "user");
-				const projectPackages = configuredPackages.filter((pkg) => pkg.scope === "project");
-
-				if (configuredPackages.length === 0) {
-					console.log(chalk.dim("No packages installed."));
+			case "enable":
+			case "disable": {
+				const enabled = options.command === "enable";
+				const verb = enabled ? "Enabled" : "Disabled";
+				if (BUILTIN_EXTENSIONS.some((ext) => ext.id === source)) {
+					settingsManager.setBuiltinExtensionDisabled(source!, !enabled);
+					console.log(chalk.green(`${verb} built-in plugin: ${source}`));
 					return true;
 				}
+				if (!packageManager.setPackageEnabled(source!, enabled)) {
+					console.error(chalk.red(`No installed plugin matches ${source}. Run "${APP_NAME} plugin list".`));
+					process.exitCode = 1;
+					return true;
+				}
+				console.log(chalk.green(`${verb} ${source}`));
+				return true;
+			}
 
-				const formatPackage = (pkg: (typeof configuredPackages)[number]) => {
-					const display = pkg.filtered ? `${pkg.source} (filtered)` : pkg.source;
-					console.log(`  ${display}`);
+			case "list": {
+				const disabledBuiltins = settingsManager.getDisabledBuiltinExtensions();
+				const state = (enabled: boolean) => (enabled ? chalk.green("enabled") : chalk.red("disabled"));
+
+				console.log(chalk.bold("Built-in plugins:"));
+				for (const ext of BUILTIN_EXTENSIONS) {
+					const installed = settingsManager.extensions.get(ext.id)?.installed;
+					const installState = ext.installable && installed === false ? chalk.dim("  (not installed)") : "";
+					console.log(`  ${ext.id.padEnd(20)} ${state(!disabledBuiltins.has(ext.id))}${installState}`);
+				}
+
+				const packages = packageManager.listConfiguredPackages();
+				console.log();
+				if (packages.length === 0) {
+					console.log(chalk.dim("No plugin packages installed."));
+					return true;
+				}
+				console.log(chalk.bold("Plugin packages:"));
+				for (const pkg of packages) {
+					const version = pkg.version ? chalk.dim(` ${pkg.version}`) : "";
+					const filtered = pkg.filtered ? chalk.dim(" (filtered)") : "";
+					console.log(`  ${pkg.source}${version}${filtered}  ${state(pkg.enabled)}`);
 					if (pkg.installedPath) {
 						console.log(chalk.dim(`    ${pkg.installedPath}`));
 					}
-				};
-
-				if (userPackages.length > 0) {
-					console.log(chalk.bold("User packages:"));
-					for (const pkg of userPackages) {
-						formatPackage(pkg);
-					}
 				}
-
-				if (projectPackages.length > 0) {
-					if (userPackages.length > 0) console.log();
-					console.log(chalk.bold("Project packages:"));
-					for (const pkg of projectPackages) {
-						formatPackage(pkg);
-					}
-				}
-
 				return true;
 			}
 
