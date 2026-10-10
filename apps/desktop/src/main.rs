@@ -3,6 +3,7 @@
 
 mod bridge;
 mod gateway_channel;
+mod updater;
 
 use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
 
@@ -11,6 +12,7 @@ fn main() {
 	tauri::Builder::default()
 		.plugin(tauri_plugin_shell::init())
 		.plugin(tauri_plugin_dialog::init())
+		.plugin(tauri_plugin_updater::Builder::new().build())
 		.manage(bridge::BridgeState::default())
 		.invoke_handler(tauri::generate_handler![
 			bridge::init_sidecar,
@@ -51,6 +53,7 @@ fn main() {
 			bridge::oauth_login_cancel,
 			bridge::list_auth_options,
 			bridge::check_app_update,
+			updater::install_app_update,
 		])
 		.setup(|app| {
 			bridge::start_scheduler_sidecar_guard(app.handle().clone());

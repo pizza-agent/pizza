@@ -1,12 +1,12 @@
 ---
 name: pizza-self-optimization
-description: "Self-improvement loop for Pizza itself. Use when the user hits a bug, crash, regression, or limitation in Pizza, or asks to improve or optimize Pizza: mine the local event logs for evidence, fork and clone the Pizza GitHub repo, reproduce and fix or optimize the code with tests, and open a pull request to tomsun28/pizza."
+description: "Self-improvement loop for Pizza itself. Use when the user hits a bug, crash, regression, or limitation in Pizza, or asks to improve or optimize Pizza: mine the local event logs for evidence, fork and clone the Pizza GitHub repo, reproduce and fix or optimize the code with tests, and open a pull request to pizza-agent/pizza."
 ---
 
 # Pizza Self-Optimization
 
 Turn a problem the user just experienced in Pizza into a merged-quality pull
-request against `tomsun28/pizza`, using Pizza's own event logs as the evidence
+request against `pizza-agent/pizza`, using Pizza's own event logs as the evidence
 base. Work autonomously, but keep every action auditable and reversible.
 
 ## 0. Preconditions (check once, fail fast)
@@ -15,7 +15,7 @@ base. Work autonomously, but keep every action auditable and reversible.
   the user to run `gh auth login` and stop — never handle tokens yourself.
 - Git identity must exist (`git config user.name` / `user.email`); set a local
   identity in the clone if missing.
-- Upstream repo: `https://github.com/tomsun28/pizza` (do NOT push to it — PRs
+- Upstream repo: `https://github.com/pizza-agent/pizza` (do NOT push to it — PRs
   come from the user's fork only).
 
 ## 1. Frame the problem
@@ -52,7 +52,7 @@ excerpt (event type + payload fields) that will go into the PR description.
 
 - Persistent working dir (keep between runs so forks stay warm):
   `~/.pizza-self-optimization/pizza`
-- First run: `gh repo fork tomsun28/pizza --clone` (into that dir).
+- First run: `gh repo fork pizza-agent/pizza --clone` (into that dir).
 - Later runs: `git fetch upstream main && git checkout main &&
   git reset --hard upstream/main` to rebase onto fresh code.
 - Branch naming: `fix/<short-slug>` or `opt/<short-slug>` — one issue per branch.
@@ -90,7 +90,7 @@ excerpt (event type + payload fields) that will go into the PR description.
   `fix(rpc): ...`, `feat(skills): ...`, `fix(ui): ...`). One logical commit is
   usually enough; never mix unrelated changes.
 - `git push -u origin HEAD` (origin = the fork), then:
-  `gh pr create --repo tomsun28/pizza --base main`
+  `gh pr create --repo pizza-agent/pizza --base main`
 - PR body sections: **Problem** (user-visible symptom + event-log excerpt),
   **Root cause**, **Fix**, **Verification** (test names/output), **Notes**.
 - Report the PR URL to the user at the end.
@@ -100,7 +100,7 @@ excerpt (event type + payload fields) that will go into the PR description.
 - One issue per PR; if the log reveals several unrelated problems, open
   separate branches/PRs (or GitHub issues with evidence) and say so.
 - If the root cause is uncertain or the fix would be architectural, STOP after
-  step 2/4: file `gh issue create --repo tomsun28/pizza` with the evidence and
+  step 2/4: file `gh issue create --repo pizza-agent/pizza` with the evidence and
   your analysis, and summarize options for the user instead of guessing.
 - Never commit secrets, tokens, or absolute paths from the user's machine.
 - Never force-push or commit to `main`; never push anywhere except the fork.

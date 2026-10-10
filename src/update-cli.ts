@@ -33,7 +33,7 @@ export async function handleUpdateCommand(args: string[]): Promise<boolean> {
 			const result = await checkForUpdate({ force: true });
 			if (!result) {
 				console.log(chalk.dim("Could not check for updates (offline or registry unreachable)."));
-				console.log(chalk.dim(`Releases: https://github.com/tomsun28/pizza/releases`));
+				console.log(chalk.dim(`Releases: https://github.com/pizza-agent/pizza/releases`));
 				return true;
 			}
 			if (!result.updateAvailable) {

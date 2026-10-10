@@ -67,7 +67,7 @@ export interface UpdateCheckOptions {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const NPM_PACKAGE = "@tomsun28/pizza";
-const GITHUB_REPO = "tomsun28/pizza";
+const GITHUB_REPO = "pizza-agent/pizza";
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${NPM_PACKAGE.replace("/", "%2F")}/latest`;
 const GITHUB_RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const GITHUB_RELEASES_PAGE = `https://github.com/${GITHUB_REPO}/releases/latest`;

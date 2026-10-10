@@ -22,7 +22,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/tomsun28/pizza.git",
+		"url": "https://github.com/pizza-agent/pizza.git",
 		"directory": "packages/protocol"
 	},
 	"publishConfig": {

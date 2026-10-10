@@ -33,7 +33,7 @@ Pizza’s shell comes from Pi -> Pizza. Thanks to Pi for open sourcing.
 
 ### Desktop
 
-Download the installer for your platform (macOS / Linux / Windows) from [GitHub Releases](https://github.com/tomsun28/pizza/releases), install and launch.
+Download the installer for your platform (macOS / Linux / Windows) from [GitHub Releases](https://github.com/pizza-agent/pizza/releases), install and launch.
 
 **For macOS users**: Since the app is unsigned, you may see "Pizza.app is damaged and can't be opened. Run the following command in Terminal to fix this:
 

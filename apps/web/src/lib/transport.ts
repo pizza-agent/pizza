@@ -1323,3 +1323,36 @@ export async function checkAppUpdate(): Promise<AppUpdateInfo | null> {
 		return null;
 	}
 }
+
+/** Progress of an in-app update, emitted as `app_update_progress`. */
+export type AppUpdateProgress =
+	| { phase: "downloading"; downloaded: number; total: number | null }
+	| { phase: "waitingForAgents"; busy: number }
+	| { phase: "installing" };
+
+/**
+ * Download, verify and install the latest release, then relaunch. Resolves
+ * only on failure (rejects with the bridge error); success restarts the app.
+ */
+export async function installAppUpdate(): Promise<void> {
+	const core = await import("@tauri-apps/api/core");
+	await core.invoke("install_app_update");
+}
+
+/** Subscribe to in-app update progress events from the Rust bridge. */
+export function onAppUpdateProgress(handler: (progress: AppUpdateProgress) => void): () => void {
+	let disposed = false;
+	let unlisten: (() => void) | undefined;
+	import("@tauri-apps/api/event").then(({ listen }) =>
+		listen<AppUpdateProgress>("app_update_progress", (e) => {
+			if (!disposed) handler(e.payload);
+		}),
+	).then((fn) => {
+		if (disposed) fn();
+		else unlisten = fn;
+	});
+	return () => {
+		disposed = true;
+		unlisten?.();
+	};
+}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, X } from "lucide-react";
+import { Download, Loader2, X } from "lucide-react";
 import { checkAppUpdate, openExternal, type AppUpdateInfo } from "@/lib/transport";
+import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { cn } from "@/lib/utils";
 
 const LAST_CHECK_KEY = "pizza-update-last-check";
@@ -19,6 +20,8 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export function UpdateBanner() {
 	const { t } = useTranslation();
 	const [info, setInfo] = useState<AppUpdateInfo | null>(null);
+	const update = useAppUpdate();
+	const running = update.status === "running";
 
 	useEffect(() => {
 		let cancelled = false;
@@ -67,26 +70,40 @@ export function UpdateBanner() {
 			)}
 			data-testid="update-banner"
 		>
-			<span className="truncate">
-				{t("update.banner", { version: info.latestVersion })}
+			<span className="truncate" title={update.status === "error" ? update.error : undefined}>
+				{update.status === "error"
+					? t("update.failed", { error: update.error })
+					: t("update.banner", { version: info.latestVersion })}
 			</span>
 			<span className="flex shrink-0 items-center gap-2">
+				{update.status === "error" && (
+					<button
+						type="button"
+						className="rounded-md px-2 py-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+						onClick={() => void openExternal(info.downloadUrl ?? info.releaseUrl)}
+					>
+						{t("update.manualDownload")}
+					</button>
+				)}
 				<button
 					type="button"
-					className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 font-medium text-accent-fg transition-colors hover:opacity-90"
-					onClick={() => void openExternal(info.downloadUrl ?? info.releaseUrl)}
+					disabled={running}
+					className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 font-medium text-accent-fg transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-80"
+					onClick={() => void startAppUpdate()}
 				>
-					<Download className="h-3 w-3" />
-					{t("update.download")}
+					{running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+					{appUpdateProgressLabel(t, update) ?? t(update.status === "error" ? "update.retry" : "update.install")}
 				</button>
-				<button
-					type="button"
-					className="rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
-					onClick={dismiss}
-					title={t("common.dismiss")}
-				>
-					<X className="h-3 w-3" />
-				</button>
+				{!running && (
+					<button
+						type="button"
+						className="rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+						onClick={dismiss}
+						title={t("common.dismiss")}
+					>
+						<X className="h-3 w-3" />
+					</button>
+				)}
 			</span>
 		</div>
 	);

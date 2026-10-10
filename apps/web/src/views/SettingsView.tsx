@@ -35,8 +35,9 @@ import {
 	type ProviderInfo,
 } from "@/lib/transport";
 import type { RpcSessionState } from "@/lib/types";
+import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { PluginsContent } from "@/views/PluginsView";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, RefreshCw, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
 import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
@@ -83,10 +84,10 @@ type CustomProviderTestState =
 	| { status: "error"; result?: CustomProviderTestResult; error?: string };
 
 /** Codex-style settings group: small heading + bordered card of rows. */
-function SettingsSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function SettingsSection({ title, description, children }: { title?: string; description?: string; children: ReactNode }) {
 	return (
 		<section className="mb-8">
-			<h2 className="mb-3 text-[15px] font-semibold tracking-tight text-fg">{title}</h2>
+			{title && <h2 className="mb-3 text-[15px] font-semibold tracking-tight text-fg">{title}</h2>}
 			{/* No overflow-hidden: PixelSelect popups render inline and must
 			    not be clipped at the rounded corners. */}
 			<div className="divide-y divide-border/60 rounded-xl border border-border bg-surface">
@@ -346,75 +347,75 @@ function SchedulerPage() {
 	);
 }
 
-function UpdatesPage() {
+const PIZZA_REPO_URL = "https://github.com/pizza-agent/pizza";
+
+function AboutPage() {
 	const { t } = useTranslation();
 	// Desktop app update check (GitHub releases). Auto-runs once on mount;
-	// "Check now" re-queries on demand.
+	// when a newer release exists a single update button appears — there is
+	// no manual "check now" control. Stays null outside Tauri.
 	const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
-	const [updateChecking, setUpdateChecking] = useState(false);
-	const runUpdateCheck = useCallback(async () => {
-		setUpdateChecking(true);
-		try {
-			setUpdateInfo(await checkAppUpdate());
-		} finally {
-			setUpdateChecking(false);
-		}
-	}, []);
+	const update = useAppUpdate();
 	useEffect(() => {
-		void runUpdateCheck();
-	}, [runUpdateCheck]);
+		let alive = true;
+		void checkAppUpdate().then((info) => {
+			if (alive) setUpdateInfo(info);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
 
 	return (
-		<SettingsSection title={t("settings.update.title")}>
-			<SettingsRow title={t("settings.update.currentVersion")}>
-				<span className="text-[13px] text-muted">{updateInfo ? updateInfo.currentVersion : t("settings.update.checking")}</span>
-			</SettingsRow>
-			<SettingsRow title={t("settings.update.latestVersion")}>
-				<span className="text-[13px] text-muted">
-					{updateInfo === null
-						? t("settings.update.checking")
-						: updateInfo.error
-							? t("settings.update.checkFailed")
-							: (updateInfo.latestVersion ?? "—")}
+		<SettingsSection>
+			<SettingsRow title="Pizza" description={t("settings.about.tagline")}>
+				<span className="shrink-0 font-mono text-[13px] text-muted">
+					v{updateInfo?.currentVersion ?? "—"}
 				</span>
 			</SettingsRow>
-			<SettingsRow title={t("settings.update.status")}>
-				<span className="text-[13px]">
-					{updateInfo === null ? (
-						<span className="text-muted">{t("settings.update.checking")}</span>
-					) : updateInfo.error ? (
-						<span className="text-warning">{t("settings.update.checkFailed")}</span>
-					) : updateInfo.updateAvailable ? (
-						<span className="text-success">
-							{t("settings.update.available", { version: updateInfo.latestVersion })}
-						</span>
-					) : (
-						<span className="text-success">{t("settings.update.upToDate")}</span>
-					)}
-				</span>
-			</SettingsRow>
-			<div className="flex items-center gap-2 px-4 py-3">
-				<Button
-					variant="soft"
-					size="sm"
-					iconLeft={<RefreshCw className={cn("h-3.5 w-3.5", updateChecking && "animate-spin")} />}
-					disabled={updateChecking}
-					onClick={() => void runUpdateCheck()}
+			<SettingsRow title={t("settings.about.repository")}>
+				<button
+					type="button"
+					onClick={() => void openExternal(PIZZA_REPO_URL)}
+					className="flex items-center gap-1.5 text-[13px] text-link hover:underline"
 				>
-					{t("settings.update.checkNow")}
-				</Button>
-				{updateInfo?.updateAvailable && (
-					<Button
-						size="sm"
-						iconLeft={<Download className="h-3.5 w-3.5" />}
-						onClick={() => {
-							if (updateInfo.releaseUrl) void openExternal(updateInfo.releaseUrl);
-						}}
-					>
-						{t("settings.update.download", { version: updateInfo.latestVersion })}
-					</Button>
-				)}
-			</div>
+					<Github className="h-3.5 w-3.5" />
+					pizza-agent/pizza
+				</button>
+			</SettingsRow>
+			<SettingsRow title={t("settings.about.license")}>
+				<span className="text-[13px] text-muted">MIT</span>
+			</SettingsRow>
+			{updateInfo?.updateAvailable && (
+				<SettingsRow
+					title={t("settings.about.updateAvailable", { version: updateInfo.latestVersion })}
+					description={update.status === "error" ? t("update.failed", { error: update.error }) : undefined}
+				>
+					<div className="flex shrink-0 items-center gap-2">
+						{update.status === "error" && (
+							<Button
+								size="sm"
+								variant="ghost"
+								onClick={() => void openExternal(updateInfo.downloadUrl ?? updateInfo.releaseUrl)}
+							>
+								{t("update.manualDownload")}
+							</Button>
+						)}
+						<Button
+							size="sm"
+							loading={update.status === "running"}
+							disabled={update.status === "running"}
+							iconLeft={<Download className="h-3.5 w-3.5" />}
+							onClick={() => void startAppUpdate()}
+						>
+							{appUpdateProgressLabel(t, update) ??
+								(update.status === "error"
+									? t("update.retry")
+									: t("settings.about.updateTo", { version: updateInfo.latestVersion }))}
+						</Button>
+					</div>
+				</SettingsRow>
+			)}
 		</SettingsSection>
 	);
 }
@@ -1174,8 +1175,8 @@ function SetupBanner({ state }: { state: RpcSessionState | null }) {
 	);
 }
 
-type SettingsPageId = "general" | "scheduler" | "updates" | "provider" | "plugins";
-const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "scheduler", "updates", "provider", "plugins"];
+type SettingsPageId = "general" | "scheduler" | "about" | "provider" | "plugins";
+const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "scheduler", "about", "provider", "plugins"];
 
 export default function SettingsView({
 	state,
@@ -1196,8 +1197,11 @@ export default function SettingsView({
 	// The selected page lives in the URL (?page=) so refreshes, deep links and
 	// the top bar's back/forward buttons all agree on what is shown.
 	const pageParam = new URLSearchParams(location.search).get("page");
-	const page: SettingsPageId = SETTINGS_PAGE_IDS.includes(pageParam as SettingsPageId)
-		? (pageParam as SettingsPageId)
+	// "updates" is the pre-rename id for the About page; keep accepting it so
+	// old deep links still land somewhere sensible.
+	const normalizedPageParam = pageParam === "updates" ? "about" : pageParam;
+	const page: SettingsPageId = SETTINGS_PAGE_IDS.includes(normalizedPageParam as SettingsPageId)
+		? (normalizedPageParam as SettingsPageId)
 		: isSetupMode ? "provider" : "general";
 	const [navSearch, setNavSearch] = useState("");
 	const [restarting, setRestarting] = useState(false);
@@ -1240,7 +1244,7 @@ export default function SettingsView({
 			items: [
 				{ id: "general", icon: SlidersHorizontal, label: t("settings.nav.general") },
 				{ id: "scheduler", icon: Clock, label: t("settings.nav.scheduler") },
-				{ id: "updates", icon: RefreshCw, label: t("settings.update.title") },
+				{ id: "about", icon: Info, label: t("settings.about.title") },
 			],
 		},
 		{
@@ -1260,7 +1264,7 @@ export default function SettingsView({
 	const pageTitle =
 		page === "general" ? t("settings.nav.general")
 		: page === "scheduler" ? t("settings.nav.scheduler")
-		: page === "updates" ? t("settings.update.title")
+		: page === "about" ? t("settings.about.title")
 		: page === "plugins" ? t("layout.plugins")
 		: t("settings.tabs.provider");
 
@@ -1378,7 +1382,7 @@ export default function SettingsView({
 
 						{page === "general" && <GeneralPage />}
 						{page === "scheduler" && <SchedulerPage />}
-						{page === "updates" && <UpdatesPage />}
+						{page === "about" && <AboutPage />}
 						{page === "provider" && <ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />}
 						{page === "plugins" && <PluginsContent />}
 					</div>

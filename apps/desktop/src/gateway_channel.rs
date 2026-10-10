@@ -499,6 +499,11 @@ pub fn ensure_gateway(
 	expected_version: Option<&str>,
 ) -> Result<(), String> {
 	use std::process::{Command, Stdio};
+	// The updater stops the gateway right before replacing the app bundle;
+	// respawning it from the old binary would lock files on Windows.
+	if crate::updater::is_installing() {
+		return Err("Pizza is installing an update; the gateway will restart afterwards".into());
+	}
 	// Fast path: ping an existing gateway.
 	if gateway_ready(socket_path) {
 		// Version check: if the caller knows its version and the running
@@ -716,6 +721,28 @@ fn shutdown_gateway(socket_path: &PathBuf) -> bool {
 		}
 	}
 	false
+}
+
+/// Number of gateway agents currently mid-turn. None when no gateway answers
+/// (nothing to wait for).
+pub fn busy_agent_count(socket_path: &PathBuf) -> Option<usize> {
+	if !gateway_ready(socket_path) {
+		return None;
+	}
+	query_gateway_status(socket_path).map(|s| s.agents.iter().filter(|&&busy| busy).count())
+}
+
+/// Gracefully stop the gateway daemon (and its pooled agents) if one is
+/// running. Returns false when a live gateway refused to stop.
+pub fn stop_gateway(socket_path: &PathBuf) -> bool {
+	if !gateway_ready(socket_path) {
+		return true;
+	}
+	let stopped = shutdown_gateway(socket_path);
+	if stopped {
+		clean_stale_socket(socket_path);
+	}
+	stopped
 }
 
 /// Remove a stale socket file (Unix only — Windows named pipes have no file).

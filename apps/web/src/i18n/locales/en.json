@@ -674,17 +674,14 @@
       "bannerBody": "Pick a provider below and enter your API key to start. No providers are configured yet, so the agent is currently unavailable.",
       "restarting": "Restarting the sidecar to pick up the new key..."
     },
-    "update": {
-      "title": "About & Updates",
-      "currentVersion": "Current version",
-      "latestVersion": "Latest release",
-      "status": "Status",
-      "checking": "Checking…",
-      "checkFailed": "Check failed (offline?)",
-      "available": "Update available: {{version}}",
-      "upToDate": "Up to date",
-      "checkNow": "Check for updates",
-      "download": "Download {{version}}"
+    "about": {
+      "title": "About",
+      "tagline": "An open-source, event-driven agent — every conversation, tool call, and file edit is an event in an immutable log.",
+      "version": "Version",
+      "repository": "GitHub repository",
+      "license": "License",
+      "updateAvailable": "New version {{version}} available",
+      "updateTo": "Update to {{version}}"
     },
     "scheduler": {
       "title": "Scheduled task defaults",
@@ -696,7 +693,15 @@
   },
   "update": {
     "banner": "A new version of Pizza ({{version}}) is available.",
-    "download": "Download"
+    "download": "Download",
+    "install": "Update now",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading {{percent}}%",
+    "waitingForAgents": "Waiting for {{count}} running task(s)…",
+    "installing": "Installing…",
+    "retry": "Retry",
+    "manualDownload": "Download manually",
+    "failed": "Update failed: {{error}}"
   },
   "language": {
     "en": "English",

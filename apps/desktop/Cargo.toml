@@ -3,7 +3,7 @@ name = "pizza-gui"
 version = "0.3.6"
 description = "Pizza desktop GUI"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
@@ -20,6 +20,7 @@ log = "0.4"
 env_logger = "0.11"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart"] }
 base64 = "0.22"
+tauri-plugin-updater = "=2.13.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [

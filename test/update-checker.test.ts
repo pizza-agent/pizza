@@ -23,7 +23,7 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 function githubReleaseBody(tag: string, assets: string[] = []) {
 	return {
 		tag_name: tag,
-		html_url: `https://github.com/tomsun28/pizza/releases/tag/${tag}`,
+		html_url: `https://github.com/pizza-agent/pizza/releases/tag/${tag}`,
 		assets: assets.map((browser_download_url) => ({ browser_download_url })),
 	};
 }
@@ -78,10 +78,10 @@ describe("compareSemver", () => {
 
 describe("pickDesktopAsset", () => {
 	const assets = [
-		"https://github.com/tomsun28/pizza/releases/download/v0.4.0/Pizza_0.4.0_macos_arm64.dmg",
-		"https://github.com/tomsun28/pizza/releases/download/v0.4.0/Pizza_0.4.0_macos_x64.dmg",
-		"https://github.com/tomsun28/pizza/releases/download/v0.4.0/Pizza_0.4.0_windows_x64-setup.exe",
-		"https://github.com/tomsun28/pizza/releases/download/v0.4.0/Pizza_0.4.0_linux_x64.deb",
+		"https://github.com/pizza-agent/pizza/releases/download/v0.4.0/Pizza_0.4.0_macos_arm64.dmg",
+		"https://github.com/pizza-agent/pizza/releases/download/v0.4.0/Pizza_0.4.0_macos_x64.dmg",
+		"https://github.com/pizza-agent/pizza/releases/download/v0.4.0/Pizza_0.4.0_windows_x64-setup.exe",
+		"https://github.com/pizza-agent/pizza/releases/download/v0.4.0/Pizza_0.4.0_linux_x64.deb",
 	];
 
 	it("picks the darwin arm64 dmg", () => {
@@ -151,7 +151,7 @@ describe("checkForUpdate", () => {
 			Promise.resolve(
 				jsonResponse(
 					githubReleaseBody(`v${NEXT}`, [
-						"https://github.com/tomsun28/pizza/releases/download/v0.4.0/Pizza_0.4.0_linux_x64.deb",
+						"https://github.com/pizza-agent/pizza/releases/download/v0.4.0/Pizza_0.4.0_linux_x64.deb",
 					]),
 				),
 			)) as unknown as typeof fetch;

@@ -33,7 +33,7 @@ Pizza 的表壳来源于 Pi -> Pizza, 感谢 Pi 的开源。
 
 ### 桌面应用
 
-从 [GitHub Releases](https://github.com/tomsun28/pizza/releases) 下载对应平台的安装包（macOS / Linux / Windows），安装后打开即可使用。
+从 [GitHub Releases](https://github.com/pizza-agent/pizza/releases) 下载对应平台的安装包（macOS / Linux / Windows），安装后打开即可使用。
 
 **对 macOS 用户**：由于应用未经签名，打开时可能会提示"Pizza.app 已损坏，无法打开。"请在终端执行以下命令即可解决：
 

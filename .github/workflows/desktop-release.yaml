@@ -87,16 +87,35 @@ jobs:
         working-directory: apps/web
         shell: bash
 
+      - name: Check updater signing setup
+        run: |
+          if grep -q 'REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY' apps/desktop/tauri.conf.json; then
+            echo "::error::Set plugins.updater.pubkey in apps/desktop/tauri.conf.json"
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY secret"
+            exit 1
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: bash
+
+      # tauri.updater.conf.json enables signed updater artifacts (.app.tar.gz,
+      # AppImage, setup.exe + .sig). Kept out of tauri.conf.json so local
+      # builds work without the signing key.
       - name: Build and bundle
         run: |
           if [ "$LABEL" = "linux-x64" ]; then
-            npm run build:desktop -- --bundles deb,rpm
+            npm run build:desktop -- --config tauri.updater.conf.json --bundles deb,rpm,appimage
           else
-            npm run build:desktop
+            npm run build:desktop -- --config tauri.updater.conf.json
           fi
         env:
           PIZZA_VENDOR_TOOL_TARGETS: current
           LABEL: ${{ matrix.label }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
 
       - name: Rename artifacts with platform name
@@ -107,27 +126,29 @@ jobs:
           BUNDLE_DIR="apps/desktop/target/release/bundle"
           VERSION=$(grep -o '"version": "[^"]*"' apps/desktop/tauri.conf.json | head -1 | cut -d'"' -f4)
 
-          find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" \) | while read -r file; do
+          find "$BUNDLE_DIR" -type f \( -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.exe" -o -name "*.msi" -o -name "*.AppImage" -o -name "*.app.tar.gz" \) | while read -r file; do
             dir=$(dirname "$file")
             base=$(basename "$file")
-            ext="${base##*.}"
-            case "$ext" in
-              dmg|deb|rpm)
-                new_name="Pizza_${VERSION}_${PLATFORM}_${ARCH}.${ext}"
+            prefix="Pizza_${VERSION}_${PLATFORM}_${ARCH}"
+            case "$base" in
+              *.app.tar.gz)
+                new_name="${prefix}.app.tar.gz"
                 ;;
-              exe)
-                if [[ "$base" == *"-setup.exe" ]]; then
-                  new_name="Pizza_${VERSION}_${PLATFORM}_${ARCH}-setup.exe"
-                else
-                  new_name="Pizza_${VERSION}_${PLATFORM}_${ARCH}.exe"
-                fi
+              *.dmg|*.deb|*.rpm|*.AppImage)
+                new_name="${prefix}.${base##*.}"
                 ;;
-              msi)
+              *-setup.exe)
+                new_name="${prefix}-setup.exe"
+                ;;
+              *.exe)
+                new_name="${prefix}.exe"
+                ;;
+              *.msi)
                 lang=$(echo "$base" | sed -n "s/.*_\(.*\)\.msi/\1/p")
                 if [ -n "$lang" ]; then
-                  new_name="Pizza_${VERSION}_${PLATFORM}_${ARCH}_${lang}.msi"
+                  new_name="${prefix}_${lang}.msi"
                 else
-                  new_name="Pizza_${VERSION}_${PLATFORM}_${ARCH}.msi"
+                  new_name="${prefix}.msi"
                 fi
                 ;;
             esac
@@ -136,6 +157,10 @@ jobs:
               echo "Renamed: $base -> $new_name"
             else
               echo "Already named: $base"
+            fi
+            # Keep the updater signature next to its (renamed) bundle.
+            if [ -f "$file.sig" ] && [ "$base" != "$new_name" ]; then
+              mv "$file.sig" "$dir/$new_name.sig"
             fi
           done
         shell: bash
@@ -150,6 +175,9 @@ jobs:
             apps/desktop/target/release/bundle/**/*.rpm
             apps/desktop/target/release/bundle/**/*.msi
             apps/desktop/target/release/bundle/**/*.exe
+            apps/desktop/target/release/bundle/**/*.AppImage
+            apps/desktop/target/release/bundle/**/*.app.tar.gz
+            apps/desktop/target/release/bundle/**/*.sig
           if-no-files-found: error
 
   release:
@@ -164,6 +192,17 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Checkout scripts
+        uses: actions/checkout@v5
+        with:
+          path: src
+          sparse-checkout: scripts
+
+      - name: Generate updater manifest
+        run: node src/scripts/generate-updater-manifest.mjs artifacts "$TAG" artifacts/latest.json
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -194,5 +233,9 @@ jobs:
             artifacts/**/*.rpm
             artifacts/**/*.msi
             artifacts/**/*.exe
+            artifacts/**/*.AppImage
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.sig
+            artifacts/latest.json
           generate_release_notes: true
           draft: ${{ github.event_name == 'workflow_dispatch' }}

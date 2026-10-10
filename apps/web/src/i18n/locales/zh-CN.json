@@ -674,17 +674,14 @@
       "bannerBody": "在下方选择一个服务商并填入 API key,即可开始使用。当前没有配置任何服务商,所以助理暂时不可用。",
       "restarting": "正在重启 sidecar 以应用新 key..."
     },
-    "update": {
-      "title": "关于与更新",
-      "currentVersion": "当前版本",
-      "latestVersion": "最新版本",
-      "status": "状态",
-      "checking": "检查中…",
-      "checkFailed": "检查失败（离线？）",
-      "available": "有可用更新：{{version}}",
-      "upToDate": "已是最新版本",
-      "checkNow": "检查更新",
-      "download": "下载 {{version}}"
+    "about": {
+      "title": "关于",
+      "tagline": "开源的事件驱动 Agent —— 每一次对话、工具调用和文件编辑都是不可变事件日志中的一条记录。",
+      "version": "版本",
+      "repository": "GitHub 仓库",
+      "license": "开源许可",
+      "updateAvailable": "发现新版本 {{version}}",
+      "updateTo": "更新到 {{version}}"
     },
     "scheduler": {
       "title": "定时任务默认设置",
@@ -696,7 +693,15 @@
   },
   "update": {
     "banner": "Pizza 新版本（{{version}}）已发布。",
-    "download": "下载"
+    "download": "下载",
+    "install": "立即更新",
+    "downloading": "正在下载…",
+    "downloadingPercent": "正在下载 {{percent}}%",
+    "waitingForAgents": "等待 {{count}} 个运行中的任务完成…",
+    "installing": "正在安装…",
+    "retry": "重试",
+    "manualDownload": "手动下载",
+    "failed": "更新失败：{{error}}"
   },
   "language": {
     "en": "English",

@@ -63,5 +63,14 @@
 			"../../dist/providers.json": "providers.json",
 			"../../dist/photon_rs_bg.wasm": "photon_rs_bg.wasm"
 		}
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREODlEQjhDNkUxNDFDRDcKUldUWEhCUnVqTnVKM2RNSUlVZEYrazBmdFZTem00YTlDMFJUSTZRMnp0MnpBK2NudHdtYlkwY08K",
+			"endpoints": ["https://github.com/pizza-agent/pizza/releases/latest/download/latest.json"],
+			"windows": {
+				"installMode": "passive"
+			}
+		}
 	}
 }
