@@ -7,8 +7,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createWebhookServer } from "../packages/channels/webhook/src/index.js";
-import type { MessageSource } from "../packages/channels/core/src/index.js";
+import { createWebhookServer, listenAddress } from "../packages/channels/webhook.js";
+import type { MessageSource } from "../packages/channels/runtime.js";
 
 const servers: Server[] = [];
 
@@ -113,5 +113,16 @@ describe("webhook channel adapter", () => {
 		const res = await post(port, { body: JSON.stringify({ message: "x" }) });
 		expect(res.status).toBe(502);
 		expect(await res.json()).toEqual({ error: "gateway down" });
+	});
+});
+
+describe("webhook listenAddress", () => {
+	it("derives host/port from webhookUrl", () => {
+		expect(listenAddress({ webhookUrl: "http://0.0.0.0:9999/hook" })).toEqual({ host: "0.0.0.0", port: 9999 });
+	});
+
+	it("falls back to 127.0.0.1:3002 for a missing port or unparsable URL", () => {
+		expect(listenAddress({ webhookUrl: "http://localhost/hook" })).toEqual({ host: "localhost", port: 3002 });
+		expect(listenAddress({ webhookUrl: "not a url" })).toEqual({ host: "127.0.0.1", port: 3002 });
 	});
 });

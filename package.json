@@ -30,8 +30,7 @@
 		"dist"
 	],
 	"workspaces": [
-		"packages/protocol",
-		"packages/channels/*"
+		"packages/protocol"
 	],
 	"bundleDependencies": [
 		"@tomsun28/pizza-protocol"
@@ -42,7 +41,7 @@
 		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"start": "node dist/src/cli.js",
 		"build:protocol": "npm run build -w @tomsun28/pizza-protocol",
-		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets && npm run build --workspaces --if-present",
+		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
 		"build:release": "npm run build && npm run vendor-tools",
 		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --outfile dist/pizza && npm run copy-binary-assets",
 		"build:desktop": "npm run build:binary && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
@@ -62,18 +61,23 @@
 	"dependencies": {
 		"@earendil-works/pi-ai": "0.85.0",
 		"@earendil-works/pi-tui": "0.85.0",
+		"@larksuiteoapi/node-sdk": "^1.74.0",
 		"@mariozechner/jiti": "^2.6.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"@sinclair/typebox": "^0.34.41",
+		"@slack/bolt": "^3.22.0",
 		"@tomsun28/pizza-protocol": "^0.2.1",
 		"ajv": "^8.17.1",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
+		"discord.js": "^14.27.0",
 		"extract-zip": "^2.0.1",
 		"file-type": "^21.1.1",
 		"glob": "^13.0.1",
+		"grammy": "^1.46.0",
 		"hosted-git-info": "^9.0.2",
+		"https-proxy-agent": "^7.0.6",
 		"ignore": "^7.0.5",
 		"marked": "^15.0.12",
 		"minimatch": "^10.2.3",

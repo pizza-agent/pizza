@@ -1,11 +1,11 @@
 /**
- * Channel core — the shared engine every pizza channel relay uses.
+ * Channel runtime — the shared engine every pizza channel adapter uses.
  *
  * A "channel" is an external message integration (Discord / Lark / Slack /
  * Telegram / webhook) that delivers inbound messages into a workspace agent and
- * relays the agent's replies back out. This package holds the parts that are
- * identical for every platform so each `packages/channels/<platform>` stays a thin
- * adapter: gateway lifecycle, provenance, config, and the deliver/reply loop.
+ * relays the agent's replies back out. This module holds the parts that are
+ * identical for every platform so each `packages/channels/<platform>.ts` stays a
+ * thin adapter: gateway connection, provenance, proxy, and the deliver/reply loop.
  *
  *   external platform ──message──▶ runtime.deliver(workspace, text, source)
  *                                          │  synchronous gateway `tell` (carries `from`)
@@ -19,9 +19,8 @@
  * envelope agent tells, cron ticks, watchers and webhooks all use.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import https from "node:https";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import {
 	GatewayClient,
 	GatewayTransport,
@@ -29,32 +28,10 @@ import {
 	gatewaySocketPath,
 	type ChannelEvent,
 	type MessageSource,
-} from "@tomsun28/pizza/gateway";
+} from "../gateway/index.js";
+import type { ChannelType } from "./types.js";
 
-export type { MessageSource } from "@tomsun28/pizza/gateway";
-
-/** The integration kinds a channel can be. Open set — a new channel package
- *  adds a value here (and a field branch in the UI ChannelDialog). */
-export type ChannelType = "discord" | "lark" | "slack" | "telegram" | "webhook";
-
-/** A persisted channel configuration (mirrors apps/web/src/lib/channels.ts). */
-export interface ChannelConfig {
-	id: string;
-	type: ChannelType;
-	/** User-facing label. */
-	name: string;
-	enabled: boolean;
-	/** Platform credential (bot token, signing secret, …). */
-	token?: string;
-	/** Discord guild / Lark tenant. */
-	server?: string;
-	/** Discord channel / Lark chat / Slack channel name. */
-	channel?: string;
-	/** webhook type only. */
-	webhookUrl?: string;
-	/** Target pizza workspace (cwd or name) that inbound messages route to. */
-	workspace: string;
-}
+export type { MessageSource } from "../gateway/index.js";
 
 /** Build the provenance the agent attributes a message to.
  *  provenance("discord", "#dev-alerts", "tom") → { kind:"discord", id:"#dev-alerts", name:"tom" }.
@@ -65,8 +42,8 @@ export function provenance(type: ChannelType, id: string, name?: string): Messag
 }
 
 export interface ChannelRuntimeOptions {
-	/** Pizza agent dir (default ~/.pizza/agent). */
-	agentDir?: string;
+	/** Pizza agent dir (where the gateway keeps its state). */
+	agentDir: string;
 	/** Gateway socket path (default gatewaySocketPath()). */
 	socketPath?: string;
 	/** Connect timeout ms (default 5000). */
@@ -79,19 +56,6 @@ export interface ChannelRuntimeOptions {
 function isIdleEvent(event: ChannelEvent): boolean {
 	const type = event.type;
 	return type === "AGENT_TURN_COMPLETED" || type === "AGENT_TURN_END" || type === "agent_end";
-}
-
-/** The pizza CLI entry (dist/src/cli.js) sits next to the package's main entry
- *  (dist/src/index.js). Needed because a channel adapter's own argv[1] is NOT
- *  the pizza CLI, so ensureGateway cannot resolve it from process.argv. */
-function resolvePizzaCliPath(): string | undefined {
-	try {
-		const entry = import.meta.resolve("@tomsun28/pizza");
-		if (!entry.startsWith("file:")) return undefined;
-		return fileURLToPath(new URL("./cli.js", entry));
-	} catch {
-		return undefined;
-	}
 }
 
 /**
@@ -117,6 +81,7 @@ export class ChannelRuntime {
 	private readonly client: GatewayClient;
 	private readonly transport: GatewayTransport;
 	private readonly agentDir: string;
+	private readonly socketPath: string;
 	private readonly tellTimeoutMs: number;
 	private connected = false;
 	/** workspace input → in-flight attach (resolves to the canonical cwd). */
@@ -126,19 +91,19 @@ export class ChannelRuntime {
 	private readonly replyWaiters = new Set<(event: ChannelEvent, cwd: string) => void>();
 	private rpcSeq = 0;
 
-	constructor(options: ChannelRuntimeOptions = {}) {
-		this.agentDir = options.agentDir ?? join(homedir(), ".pizza", "agent");
+	constructor(options: ChannelRuntimeOptions) {
+		this.agentDir = options.agentDir;
 		this.tellTimeoutMs = options.tellTimeoutMs ?? 120_000;
-		const socketPath = options.socketPath ?? gatewaySocketPath();
+		this.socketPath = options.socketPath ?? gatewaySocketPath();
 		const connectTimeout = options.connectTimeout ?? 5_000;
-		this.client = new GatewayClient({ socketPath, connectTimeout });
-		this.transport = new GatewayTransport({ socketPath, connectTimeout });
+		this.client = new GatewayClient({ socketPath: this.socketPath, connectTimeout });
+		this.transport = new GatewayTransport({ socketPath: this.socketPath, connectTimeout });
 	}
 
 	/** Ensure the gateway daemon is up, then connect both sockets. Call once at startup. */
 	async start(): Promise<void> {
 		if (this.connected) return;
-		await ensureGateway(this.agentDir, gatewaySocketPath(), undefined, resolvePizzaCliPath());
+		await ensureGateway(this.agentDir, this.socketPath);
 		await this.client.connect();
 		await this.transport.connect();
 		this.transport.onEvent((event, workspace) => {
@@ -265,41 +230,60 @@ export class ChannelRuntime {
 	}
 }
 
-/**
- * Channel main loop harness. `factory` starts the platform client (using the
- * shared runtime to deliver messages) and returns a `stop()` to tear it down.
- * SIGINT/SIGTERM trigger a graceful shutdown of both the adapter and runtime.
- */
-export async function runChannel(
-	factory: (runtime: ChannelRuntime) => Promise<() => Promise<void>>,
-): Promise<void> {
-	const runtime = new ChannelRuntime();
-	await runtime.start();
-	const stopAdapter = await factory(runtime);
+// ── shared adapter helpers ────────────────────────────────────────────────
 
-	const shutdown = async (signal: string): Promise<void> => {
-		console.log(`[channel] ${signal} received, shutting down…`);
-		await stopAdapter().catch(() => {});
-		await runtime.stop().catch(() => {});
-		process.exit(0);
-	};
-	process.on("SIGINT", () => void shutdown("SIGINT"));
-	process.on("SIGTERM", () => void shutdown("SIGTERM"));
+/** `PIZZA_ANSWER_ALL=1` → reply to every group/channel message, not only @bot mentions. */
+export const ANSWER_ALL = process.env.PIZZA_ANSWER_ALL === "1";
+
+/** Proxy URL to reach platform APIs through. The supervisor injects the
+ *  user's / OS proxy as HTTPS_PROXY (some networks can't reach Discord,
+ *  Telegram or Slack directly). */
+export function proxyFromEnv(): string | undefined {
+	const env = process.env;
+	return env.HTTPS_PROXY ?? env.https_proxy ?? env.ALL_PROXY ?? env.all_proxy;
+}
+
+/** Hide credentials embedded in a proxy URL before logging it. */
+export function redactProxy(url: string): string {
+	return url.replace(/\/\/[^/@]*@/, "//***@");
 }
 
 /**
- * Parse a "keyA=valA,keyB=valB" env string into a map. Channels use it for
- * PIZZA_ROUTES ("#dev-alerts=myrepo,#general=myrepo") — the channel → workspace
- * routing that mirrors ChannelConfig.channel → ChannelConfig.workspace.
+ * Route every `https.request` through `proxy`. Needed for SDKs whose WebSocket
+ * (`ws` package) handshakes via https.request with a pinned
+ * `createConnection: tlsConnect` — that ignores agent/globalAgent, so the
+ * upgrade is re-issued through the proxy agent instead. Process-local: an
+ * adapter process only exists to reach its platform.
  */
-export function parseRoutes(raw: string): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const pair of raw
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean)) {
-		const [key, value] = pair.split("=").map((s) => s.trim());
-		if (key && value) out[key] = value;
-	}
-	return out;
+export function routeHttpsThroughProxy(proxy: string): HttpsProxyAgent<string> {
+	const agent = new HttpsProxyAgent(proxy);
+	const origRequest = https.request.bind(https);
+	const patched: typeof https.request = ((opts: unknown, ...rest: unknown[]) => {
+		if (opts && typeof opts === "object" && !Array.isArray(opts) && !(opts instanceof URL)) {
+			const options = { ...(opts as https.RequestOptions), agent } as https.RequestOptions & {
+				createConnection?: unknown;
+			};
+			delete options.createConnection;
+			return origRequest(options, ...(rest as [never]));
+		}
+		return (origRequest as (...a: unknown[]) => ReturnType<typeof origRequest>)(opts, ...rest);
+	}) as typeof https.request;
+	https.request = patched;
+	return agent;
+}
+
+/** Split a long agent reply to fit a platform's per-message cap. */
+export function chunk(text: string, size: number): string[] {
+	const chunks: string[] = [];
+	for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
+	return chunks;
+}
+
+export function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+/** Text posted back to the platform when a delivery fails. */
+export function failureReply(err: unknown): string {
+	return `⚠️ Could not reach the agent (${errorMessage(err)}).`;
 }

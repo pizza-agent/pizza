@@ -1,11 +1,12 @@
 /**
- * Webhook channel relay — a generic HTTP endpoint that delivers inbound POSTs
+ * Webhook channel adapter — a generic HTTP endpoint that delivers inbound POSTs
  * into a workspace agent and returns the agent's reply as JSON. No external SDK,
  * so it's the simplest channel and a good reference for the others.
  *
- * Run:
- *   npm run build -w @tomsun28/pizza-channel-webhook
- *   PIZZA_WORKSPACE=myrepo WEBHOOK_TOKEN=secret npm start -w @tomsun28/pizza-channel-webhook
+ * Config: `webhookUrl` is the address to listen on (default 127.0.0.1:3002 —
+ * localhost only; use 0.0.0.0 to accept webhooks from other machines).
+ * Optional `token` is a shared secret; requests must then send
+ * `authorization: Bearer <token>` (or ?token=<token>).
  *
  * Test:
  *   curl -s localhost:3002/ \
@@ -14,14 +15,6 @@
  *     -d '{"message":"summarize the last commit","source":"ci-bot"}'
  *   → { "reply": "..." }
  *
- * Env:
- *   PORT            listen port (default 3002)
- *   WEBHOOK_HOST    bind address (default 127.0.0.1 — localhost only; set
- *                   0.0.0.0 to accept webhooks from other machines)
- *   PIZZA_WORKSPACE default target workspace when the body omits `workspace`
- *   WEBHOOK_TOKEN   optional shared secret; if set, requests must send
- *                   `authorization: Bearer <token>` (or ?token=<token>)
- *
  * Request body:
  *   { "message": "...", "workspace"?: "...", "source"?: "...", "sender"?: "..." }
  * `source` becomes the provenance id (<message from="webhook:ci-bot">) and the
@@ -29,14 +22,9 @@
  */
 
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ChannelRuntime, provenance, runChannel, type MessageSource } from "@tomsun28/pizza-channel-core";
+import { errorMessage, provenance, type MessageSource } from "./runtime.js";
+import type { ChannelAdapter, ChannelConfig } from "./types.js";
 
-const PORT = Number(process.env.PORT ?? 3002);
-const HOST = process.env.WEBHOOK_HOST ?? "127.0.0.1";
-const DEFAULT_WORKSPACE = process.env.PIZZA_WORKSPACE;
-const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN;
 /** Inbound bodies bigger than this are rejected — this is an open HTTP endpoint. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -47,6 +35,16 @@ export interface WebhookServerOptions {
 	defaultWorkspace: string;
 	/** Route a message into the agent and resolve with its reply. */
 	deliver: (workspace: string, message: string, source: MessageSource) => Promise<string>;
+}
+
+/** Where the webhook listens, derived from `webhookUrl`. */
+export function listenAddress(config: Pick<ChannelConfig, "webhookUrl">): { host: string; port: number } {
+	try {
+		const url = new URL(config.webhookUrl ?? "");
+		return { host: url.hostname || "127.0.0.1", port: url.port ? Number(url.port) : 3002 };
+	} catch {
+		return { host: "127.0.0.1", port: 3002 };
+	}
 }
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -88,7 +86,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
 			try {
 				body = await readJson(req);
 			} catch (err) {
-				const reason = err instanceof Error ? err.message : String(err);
+				const reason = errorMessage(err);
 				res.writeHead(reason === "body too large" ? 413 : 400);
 				return res.end(JSON.stringify({ error: reason }));
 			}
@@ -105,7 +103,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
 			res.writeHead(200);
 			res.end(JSON.stringify({ reply }));
 		} catch (err) {
-			const reason = err instanceof Error ? err.message : String(err);
+			const reason = errorMessage(err);
 			console.error("[webhook] request failed:", reason);
 			res.writeHead(502);
 			res.end(JSON.stringify({ error: reason }));
@@ -113,23 +111,41 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
 	});
 }
 
-const isMain = process.argv[1] ? resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false;
+export default {
+	validate: (input) => (input.webhookUrl?.trim() ? null : "Webhook URL is required"),
 
-if (isMain) {
-	if (!DEFAULT_WORKSPACE) {
-		console.error("Missing PIZZA_WORKSPACE (the default workspace inbound webhooks route to).");
-		process.exit(1);
-	}
+	// No remote credentials to check — "can we listen" is the test.
+	async probe(config) {
+		try {
+			new URL(config.webhookUrl ?? "");
+		} catch {
+			return { ok: false, message: "Webhook URL is not a valid URL" };
+		}
+		const { host, port } = listenAddress(config);
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const probe = createServer();
+				probe.once("error", reject);
+				probe.listen(port, host, () => probe.close(() => resolve()));
+			});
+			return { ok: true, message: `Webhook will listen on ${host}:${port}` };
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+				return { ok: true, message: `${host}:${port} is already listening` };
+			}
+			return { ok: false, message: `Cannot listen on ${host}:${port}: ${errorMessage(err)}` };
+		}
+	},
 
-	void runChannel(async (runtime: ChannelRuntime) => {
+	async start(config, runtime) {
+		const { host, port } = listenAddress(config);
 		const server = createWebhookServer({
-			token: WEBHOOK_TOKEN || undefined,
-			defaultWorkspace: DEFAULT_WORKSPACE,
+			token: config.token || undefined,
+			defaultWorkspace: config.workspace,
 			deliver: (workspace, message, source) => runtime.deliver(workspace, message, source),
 		});
-
-		await new Promise<void>((resolve) => server.listen(PORT, HOST, resolve));
-		console.log(`[webhook] listening on http://${HOST}:${PORT} → workspace "${DEFAULT_WORKSPACE}"`);
+		await new Promise<void>((resolve) => server.listen(port, host, resolve));
+		console.log(`[webhook] listening on http://${host}:${port} → workspace "${config.workspace}"`);
 		return async () => await new Promise<void>((resolve) => server.close(() => resolve()));
-	});
-}
+	},
+} satisfies ChannelAdapter;

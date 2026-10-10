@@ -45,6 +45,7 @@ import { handleBuiltinCommand } from "./builtin-cli.js";
 import { handleUpdateCommand } from "./update-cli.js";
 import { checkForUpdate, formatUpdateNotice } from "./core/update-checker.js";
 import { handleGatewayCommand } from "./gateway-cli.js";
+import { handleChannelCommand } from "./channel-cli.js";
 import { handleAuthCommand } from "./auth-cli.js";
 import { isLocalPath } from "./utils/paths.js";
 
@@ -453,6 +454,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleGatewayCommand(args)) {
+		return;
+	}
+
+	if (await handleChannelCommand(args)) {
 		return;
 	}
 
