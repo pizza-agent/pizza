@@ -9,6 +9,7 @@ import {
 	getSkills,
 	setSkillEnabled,
 	deleteSkill,
+	installSkill,
 	getExtensions,
 	setExtensionEnabled,
 	installExtension,
@@ -24,7 +25,7 @@ import {
 	type ExtensionPermissionKind,
 	type ExtensionPermissionState,
 } from "@/lib/transport";
-import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck } from "lucide-react";
+import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck, Loader2 } from "lucide-react";
 import { ChannelDialog } from "@/components/ChannelDialog";
 import {
 	listChannels,
@@ -131,10 +132,19 @@ function InstalledSkillCard({
 	);
 }
 
-function DirectorySkillCard({ skill, installed }: { skill: SkillsShSkill; installed: boolean }) {
+function DirectorySkillCard({
+	skill,
+	installed,
+	installing,
+	onInstall,
+}: {
+	skill: SkillsShSkill;
+	installed: boolean;
+	installing: boolean;
+	onInstall: () => void;
+}) {
 	const { t } = useTranslation();
 	const view = () => openExternal(skill.url);
-	const install = () => openExternal(skill.installUrl ?? skill.url);
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
@@ -147,6 +157,8 @@ function DirectorySkillCard({ skill, installed }: { skill: SkillsShSkill; instal
 					<div className="mt-3 flex flex-wrap items-center gap-2">
 						{installed ? (
 							<Badge tone="success">{t("plugins.skills.installed")}</Badge>
+						) : installing ? (
+							<Badge tone="accent">{t("plugins.skills.installing")}</Badge>
 						) : (
 							<Badge tone="accent">{t("plugins.skills.type")}</Badge>
 						)}
@@ -157,7 +169,16 @@ function DirectorySkillCard({ skill, installed }: { skill: SkillsShSkill; instal
 						title={t("plugins.skills.actions")}
 						items={[
 							{ icon: ExternalLink, label: t("plugins.skills.view"), onClick: view },
-							...(installed ? [] : [{ icon: Download, label: t("plugins.skills.install"), onClick: install }]),
+							...(installed
+								? []
+								: [
+										{
+											icon: installing ? Loader2 : Download,
+											label: installing ? t("plugins.skills.installing") : t("plugins.skills.install"),
+											onClick: onInstall,
+											disabled: installing,
+										},
+									]),
 						]}
 					/>
 				</div>
@@ -231,6 +252,27 @@ function SkillsTab() {
 		}
 	}, [t]);
 
+	const [installingId, setInstallingId] = useState<string | null>(null);
+	const [installedIds, setInstalledIds] = useState<Set<string>>(() => new Set());
+	const [actionError, setActionError] = useState("");
+
+	const handleInstall = useCallback(async (skill: SkillsShSkill) => {
+		setInstallingId(skill.id);
+		setActionError("");
+		try {
+			await installSkill(skill.source, skill.slug);
+			// The skills.sh slug may differ from the skill's frontmatter name —
+			// track the directory id too so the card settles on "installed"
+			// even when the refreshed installed list names it differently.
+			setInstalledIds((prev) => new Set(prev).add(skill.id));
+			setInstalledSkills(await getSkills());
+		} catch (e) {
+			setActionError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setInstallingId(null);
+		}
+	}, []);
+
 	const installedNames = new Set(installedSkills.map((s) => s.name));
 	const filteredDir = search.trim()
 		? dirSkills.filter(
@@ -288,6 +330,12 @@ function SkillsTab() {
 				</Card>
 			)}
 
+			{actionError && (
+				<Card>
+					<p className="text-xs text-danger">{t("plugins.skills.installError", { error: actionError })}</p>
+				</Card>
+			)}
+
 			{filteredLocal.length > 0 && (
 				<>
 					<h2 className="mb-3 text-sm font-semibold text-fg">
@@ -325,7 +373,9 @@ function SkillsTab() {
 						<DirectorySkillCard
 							key={skill.id}
 							skill={skill}
-							installed={installedNames.has(skill.slug)}
+							installed={installedNames.has(skill.slug) || installedIds.has(skill.id)}
+							installing={installingId === skill.id}
+							onInstall={() => void handleInstall(skill)}
 						/>
 					))}
 				</div>

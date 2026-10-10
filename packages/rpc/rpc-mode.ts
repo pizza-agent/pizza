@@ -34,6 +34,7 @@ import {
 	getBuiltinExtensionLifecycle,
 } from "../../src/builtin-extensions/index.js";
 import { exportFromFile } from "../../src/core/export-html/index.js";
+import { installSkillFromGitHub } from "../../src/core/skill-install.js";
 import { buildHistoryTreeNodes } from "../../src/core/projection/history-tree.js";
 import { killTrackedDetachedChildren } from "../../src/utils/shell.js";
 import { startPtyServer, type PtyServer } from "../pty/pty-server.js";
@@ -1348,6 +1349,27 @@ export async function runRpcModeWithFacade(
 				// offers the deleted skill.
 			facade.extensionRunner?.refreshTools();
 			return success(id, "delete_skill", { name: command.skillName });
+		}
+
+		case "install_skill": {
+			// Marketplace install: fetch the skill's directory from its GitHub
+			// repo into ~/.agents/skills (the shared user skills dir), then
+			// re-scan so this session and the skills panel see it without a restart.
+			const skillsDir = facade.resourceLoader?.getUserSkillsDir?.();
+			if (!skillsDir) {
+				return error(id, "install_skill", "This session cannot install skills.");
+			}
+			try {
+				const installed = await installSkillFromGitHub({
+					source: command.source,
+					slug: command.slug,
+					skillsDir,
+				});
+				await refreshSkillsFromDisk(facade);
+				return success(id, "install_skill", installed);
+			} catch (e) {
+				return error(id, "install_skill", e instanceof Error ? e.message : String(e));
+			}
 		}
 
 		case "get_extensions": {

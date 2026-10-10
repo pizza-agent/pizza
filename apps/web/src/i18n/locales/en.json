@@ -426,6 +426,8 @@
       "emptyHint": "Skills will appear here when available.",
       "view": "View",
       "install": "Install",
+      "installing": "Installing…",
+      "installError": "Failed to install skill: {{error}}",
       "installed": "Installed",
       "installedSection": "Installed Skills",
       "directorySection": "Skill Directory",

@@ -135,6 +135,7 @@ export type RpcResponse =
 			data: { name: string; enabled: boolean; requiresReload: boolean };
 	  }
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
+	| { id?: string; type: "response"; command: "install_skill"; success: true; data: { name: string; path: string } }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 
 	// Scheduled tasks

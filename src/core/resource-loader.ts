@@ -66,6 +66,8 @@ export interface ResourceLoader {
 	 * (returns false), as are unknown names.
 	 */
 	deleteSkill?(name: string): boolean;
+	/** The user-scope skills directory (`~/.agents/skills`) — where marketplace installs go. */
+	getUserSkillsDir?(): string;
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	/** Installed plugin packages configured in settings (may contribute any resource type). */
@@ -285,6 +287,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private extensionThemeSourceInfos: Map<string, SourceInfo>;
 	private lastPromptPaths: string[];
 	private lastThemePaths: string[];
+	private reloadQueue: Promise<void> = Promise.resolve();
 
 	constructor(options: DefaultResourceLoaderOptions) {
 		this.cwd = options.cwd;
@@ -456,7 +459,23 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 	}
 
+	/**
+	 * Serialize full reloads. Overlapping callers each need a snapshot taken
+	 * after their triggering change — joining a scan that started earlier could
+	 * hand back a stale catalog, so reloads queue instead of sharing results.
+	 */
 	async reload(): Promise<void> {
+		const run = this.reloadQueue.then(() => this.performReload());
+		this.reloadQueue = run.catch(() => {});
+		return run;
+	}
+
+	private async performReload(): Promise<void> {
+		// Snapshot skill-source dir mtimes up front: the catalog built below is
+		// what the fingerprint will describe. A folder change landing mid-scan
+		// keeps this snapshot stale, so a later refreshSkillsIfChanged still
+		// detects it instead of recording a fresh fingerprint over a stale catalog.
+		const dirFingerprintBefore = this.skillSourceDirFingerprint();
 		await this.settingsManager.reload();
 		const resolvedPaths = await this.packageManager.resolve();
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
@@ -626,7 +645,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			: baseAppend;
 
 		this.loadMainAgentResources();
-		this.lastSkillSourceFingerprint = this.computeSkillSourceFingerprint();
+		// Dir part from the pre-scan snapshot; file part describes the paths
+		// this catalog was just built from.
+		this.lastSkillSourceFingerprint = `${dirFingerprintBefore}|${this.skillFileFingerprint()}`;
 	}
 
 	private normalizeExtensionPaths(
@@ -741,6 +762,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 	 * runtime, and skills living outside the default user/project skill
 	 * directories (those are managed via settings paths, not files).
 	 */
+	/**
+	 * The user-scope skills directory where new skills are installed: the shared
+	 * `~/.agents/skills` convention dir, which the loader already auto-discovers.
+	 */
+	getUserSkillsDir(): string {
+		return join(homedir(), ".agents", "skills");
+	}
+
 	deleteSkill(name: string): boolean {
 		const entry = this.skillCatalog.find((candidate) => candidate.skill.name === name);
 		if (!entry || entry.builtinId !== undefined) {
@@ -755,6 +784,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const allowedRoots = [
 			resolve(join(this.agentDir, "skills")),
 			resolve(join(this.cwd, CONFIG_DIR_NAME, "skills")),
+			resolve(this.getUserSkillsDir()),
 		];
 		if (!allowedRoots.some((root) => this.isUnderPath(filePath, root))) {
 			return false;
@@ -815,6 +845,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 	 * file (so in-place edits are detected too).
 	 */
 	private computeSkillSourceFingerprint(): string {
+		return `${this.skillSourceDirFingerprint()}|${this.skillFileFingerprint()}`;
+	}
+
+	/**
+	 * Directory part: entry names plus mtime. Child names are needed because
+	 * mtime alone is unreliable — e.g. `fs.cp` on APFS creates the destination
+	 * via clonefile without bumping the parent dir mtime, so a freshly
+	 * installed skill folder can slip past an mtime-only check.
+	 */
+	private skillSourceDirFingerprint(): string {
 		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
 		const dirs = [
 			join(this.agentDir, "skills"),
@@ -827,11 +867,18 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const parts: string[] = [];
 		for (const dir of dirs) {
 			try {
-				parts.push(`${dir}:${statSync(dir).mtimeMs}`);
+				const children = readdirSync(dir).sort().join(",");
+				parts.push(`${dir}:${statSync(dir).mtimeMs}:${children}`);
 			} catch {
 				parts.push(`${dir}:-`);
 			}
 		}
+		return parts.join("|");
+	}
+
+	/** Skill-file mtime part: catches in-place edits of known skill files. */
+	private skillFileFingerprint(): string {
+		const parts: string[] = [];
 		for (const p of this.lastSkillPaths) {
 			try {
 				parts.push(`${p}:${statSync(p).mtimeMs}`);
@@ -846,11 +893,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noSkills) {
 			return false;
 		}
-		if (this.computeSkillSourceFingerprint() === this.lastSkillSourceFingerprint) {
-			return false;
+		let changed = false;
+		// Re-check after each reload: a change can land while a scan is queued
+		// or in flight, leaving the fingerprint stale again. Bounded so a
+		// perpetually-mutating directory can't spin forever.
+		for (let i = 0; i < 3 && this.computeSkillSourceFingerprint() !== this.lastSkillSourceFingerprint; i++) {
+			await this.reload();
+			changed = true;
 		}
-		await this.reload();
-		return true;
+		return changed;
 	}
 
 	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {

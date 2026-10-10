@@ -442,6 +442,20 @@ export async function deleteSkill(name: string): Promise<void> {
 	await sendCommandAwait({ type: "delete_skill", skillName: name }, 10000);
 }
 
+/**
+ * Install a marketplace skill in place: the agent downloads the skill's
+ * directory from its GitHub repo into the user skills dir. `source` is
+ * `owner/repo`, `slug` the skill name from the skills.sh directory.
+ */
+export async function installSkill(source: string, slug: string): Promise<{ name: string; path: string }> {
+	const r = await sendCommandAwait<{ name: string; path: string }>(
+		{ type: "install_skill", source, slug },
+		120000,
+	);
+	if (!r.data) throw new Error("Install failed");
+	return r.data;
+}
+
 export type ExtensionKind = "builtin" | "user" | "project" | "cli" | "package";
 
 export interface ExtensionInfo {

@@ -299,6 +299,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_skills" }
 	| { id?: string; type: "set_skill_enabled"; skillName: string; enabled: boolean }
 	| { id?: string; type: "delete_skill"; skillName: string }
+	| { id?: string; type: "install_skill"; source: string; slug: string }
 	| { id?: string; type: "get_extensions" }
 	| { id?: string; type: "get_themes" }
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
@@ -600,6 +601,7 @@ export type RpcResponse =
 			data: { name: string; enabled: boolean; requiresReload: boolean };
 	  }
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
+	| { id?: string; type: "response"; command: "install_skill"; success: true; data: { name: string; path: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }

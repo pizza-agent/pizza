@@ -426,6 +426,8 @@
       "emptyHint": "可用技能将显示在这里。",
       "view": "查看",
       "install": "安装",
+      "installing": "正在安装…",
+      "installError": "安装技能失败：{{error}}",
       "installed": "已安装",
       "installedSection": "已安装技能",
       "directorySection": "技能目录",
