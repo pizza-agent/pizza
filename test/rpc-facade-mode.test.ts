@@ -814,6 +814,57 @@ describe("runRpcModeWithFacade", () => {
 		facade.dispose();
 	});
 
+	it("get_commands returns prompt templates and skill commands alongside extensions", async () => {
+		const resourceLoader = {
+			getPrompts: () => ({
+				prompts: [
+					{
+						name: "review",
+						description: "Review code",
+						argumentHint: "<file>",
+						content: "review it",
+						filePath: "/tmp/prompts/review.md",
+						sourceInfo: {},
+					},
+				],
+				diagnostics: [],
+			}),
+			getSkills: () => ({
+				skills: [
+					{
+						name: "lark",
+						description: "Feishu helpers",
+						filePath: "/tmp/skills/lark/SKILL.md",
+						baseDir: "/tmp/skills/lark",
+						sourceInfo: {},
+						disableModelInvocation: false,
+					},
+				],
+				diagnostics: [],
+			}),
+		} as unknown as ResourceLoader;
+		const facade = createFacade(undefined, undefined, resourceLoader);
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		rpcIo.lineHandler!(JSON.stringify({ id: "cmds-1", type: "get_commands" }));
+		await vi.waitFor(() => {
+			const response = parseOutputLines().find((r) => r.id === "cmds-1");
+			expect(response).toEqual(expect.objectContaining({ command: "get_commands", success: true }));
+			const commands = (response?.data as {
+				commands: Array<{ name: string; source: string; argumentHint?: string }>;
+			}).commands;
+			expect(commands).toContainEqual(
+				expect.objectContaining({ name: "review", source: "prompt", argumentHint: "<file>" }),
+			);
+			expect(commands).toContainEqual(
+				expect.objectContaining({ name: "skill:lark", source: "skill" }),
+			);
+		});
+
+		facade.dispose();
+	});
+
 	it("get_extensions returns extensions (empty when no resource loader)", async () => {
 		const facade = createFacade();
 		void runRpcModeWithFacade(facade);

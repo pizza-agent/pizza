@@ -371,6 +371,8 @@ export interface RpcSlashCommand {
 	description?: string;
 	/** What kind of command this is */
 	source: "extension" | "prompt" | "skill";
+	/** Hint for expected arguments (prompt templates only) */
+	argumentHint?: string;
 	/** Source metadata for the owning resource */
 	sourceInfo: unknown;
 }

@@ -132,6 +132,27 @@
     "scheduleDisabled": "Disabled",
     "hint": "Type @ to mention files, branches, workspaces, skills and tasks"
   },
+  "slash": {
+    "builtins": "Commands",
+    "skills": "Skills",
+    "prompts": "Prompts",
+    "extensions": "Extensions",
+    "noResults": "No matching commands",
+    "builtin": {
+      "settings": "Open settings",
+      "model": "Select model",
+      "compact": "Compact the conversation context",
+      "export": "Export this session to HTML",
+      "new": "Start a new session"
+    },
+    "bashRunning": "Running…",
+    "bashCancelled": "Cancelled",
+    "bashExitCode": "exit {{code}}",
+    "bashTruncated": "Output truncated",
+    "exportDone": "Session exported",
+    "exportFailed": "Export failed",
+    "compactFailed": "Compaction failed"
+  },
   "schedule": {
     "title": "Scheduled tasks",
     "subtitle": "Manage automated tasks in {{scope}}",

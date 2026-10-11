@@ -132,6 +132,27 @@
     "scheduleDisabled": "已禁用",
     "hint": "输入 @ 可提及文件、分支、工作区、技能和任务"
   },
+  "slash": {
+    "builtins": "命令",
+    "skills": "技能",
+    "prompts": "提示词",
+    "extensions": "扩展",
+    "noResults": "无匹配命令",
+    "builtin": {
+      "settings": "打开设置",
+      "model": "选择模型",
+      "compact": "压缩会话上下文",
+      "export": "导出当前会话为 HTML",
+      "new": "开始新会话"
+    },
+    "bashRunning": "执行中…",
+    "bashCancelled": "已取消",
+    "bashExitCode": "退出码 {{code}}",
+    "bashTruncated": "输出已截断",
+    "exportDone": "会话已导出",
+    "exportFailed": "导出失败",
+    "compactFailed": "压缩失败"
+  },
   "schedule": {
     "title": "定时任务",
     "subtitle": "管理 {{scope}} 的自动化任务",

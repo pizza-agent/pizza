@@ -418,6 +418,26 @@ export async function newSession(): Promise<string | null> {
 	}
 }
 
+/** A slash command invocable from the composer (extension / prompt template / skill). */
+export interface SlashCommandInfo {
+	/** Command name without the leading slash (skills use "skill:<name>"). */
+	name: string;
+	description?: string;
+	source: "extension" | "prompt" | "skill";
+	/** Hint for expected arguments (prompt templates). */
+	argumentHint?: string;
+}
+
+/** List slash commands the agent will interpret when sent via prompt (extension, prompt, skill). */
+export async function getCommands(): Promise<SlashCommandInfo[]> {
+	try {
+		const r = await sendCommandAwait<{ commands: SlashCommandInfo[] }>({ type: "get_commands" }, 10000);
+		return r.data?.commands ?? [];
+	} catch {
+		return [];
+	}
+}
+
 /** List known skills, enabled or not (enabled ones are invocable as slash commands). */
 export async function getSkills(): Promise<SkillInfo[]> {
 	try {

@@ -846,6 +846,14 @@ export async function runRpcModeWithFacade(
 					clearTimeout(timer);
 					unsub();
 					resolve(event.payload as { summary: string; first_kept_event_id: string; tokens_before: number });
+				} else if (event.type === "COMPACTION_ABORTED") {
+					// A failed/aborted compaction emits ABORTED, not END — surface
+					// the real reason ("Nothing to compact", user cancelled, ...)
+					// instead of hanging until the timeout.
+					clearTimeout(timer);
+					unsub();
+					const payload = event.payload as { message?: string; reason?: string };
+					reject(new Error(payload.message ?? payload.reason ?? "Compaction aborted"));
 				}
 			});
 			facade.compact({ reason: "manual" });
@@ -1114,6 +1122,8 @@ export async function runRpcModeWithFacade(
 				return success(id, "set_auto_compaction");
 
 			case "get_commands": {
+				// Same pool the TUI's `/` autocomplete draws from: extension
+				// commands, prompt templates and (when enabled) skill commands.
 				const commands: RpcSlashCommand[] =
 					facade.extensionRunner?.getRegisteredCommands().map((command) => ({
 						name: command.invocationName,
@@ -1121,6 +1131,25 @@ export async function runRpcModeWithFacade(
 						source: "extension" as const,
 						sourceInfo: command.sourceInfo,
 					})) ?? [];
+				for (const prompt of facade.resourceLoader?.getPrompts().prompts ?? []) {
+					commands.push({
+						name: prompt.name,
+						description: prompt.description,
+						source: "prompt",
+						...(prompt.argumentHint && { argumentHint: prompt.argumentHint }),
+						sourceInfo: prompt.sourceInfo,
+					});
+				}
+				if (facade.settingsManager.getEnableSkillCommands()) {
+					for (const skill of facade.resourceLoader?.getSkills().skills ?? []) {
+						commands.push({
+							name: `skill:${skill.name}`,
+							description: skill.description,
+							source: "skill",
+							sourceInfo: skill.sourceInfo,
+						});
+					}
+				}
 				return success(id, "get_commands", { commands });
 			}
 

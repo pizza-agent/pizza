@@ -60,6 +60,7 @@ export interface RpcSlashCommand {
 	name: string;
 	description?: string;
 	source: "extension" | "prompt" | "skill";
+	argumentHint?: string;
 	sourceInfo: SourceInfo;
 }
 
