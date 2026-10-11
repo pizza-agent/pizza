@@ -12,7 +12,7 @@ import { ENV_AGENT_DIR } from "../src/config.js";
 import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import { deriveWorkspaceId, getEventDatabasePath } from "../src/core/event-store/workspace.js";
 import type { ExtensionAPI } from "../src/core/extensions/types.js";
-import { makeSessionRef } from "../src/core/session-ref.js";
+import { makeSessionRef } from "../src/core/session/session-ref.js";
 
 import { main } from "../src/main.js";
 

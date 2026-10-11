@@ -15,7 +15,7 @@ import type { ResourceLoader } from "../src/core/resource-loader.js";
 import type { LLMResponse } from "../src/core/runtime/llm-types.js";
 import type { AgentMessage } from "../src/core/agent/types.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
-import { SessionFacade } from "../src/core/session-facade.js";
+import { SessionFacade } from "../src/core/session/session-facade.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import type { Skill } from "../src/core/skills.js";
 

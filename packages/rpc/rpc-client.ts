@@ -7,7 +7,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
-import type { SessionStats } from "../../src/core/session-stats.js";
+import type { SessionStats } from "../../src/core/session/session-stats.js";
 import type { BashResult } from "../../src/core/bash-executor.js";
 import type { CompactionResult } from "../../src/core/compaction/index.js";
 import type { EventBase } from "../../src/core/event-store/types.js";

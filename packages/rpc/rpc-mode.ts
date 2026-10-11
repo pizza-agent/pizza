@@ -15,7 +15,7 @@ import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentMessage } from "../../src/core/agent/types.js";
-import { computeMessageStats, type SessionStats } from "../../src/core/session-stats.js";
+import { computeMessageStats, type SessionStats } from "../../src/core/session/session-stats.js";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -24,8 +24,8 @@ import type {
 } from "../../src/core/extensions/index.js";
 import type { EventBase, EventType, ImageContent as EventImageContent, FileAttachment } from "../../src/core/event-store/types.js";
 import { takeOverStdout, writeRawStdout } from "../../src/core/output-guard.js";
-import type { SessionFacade } from "../../src/core/session-facade.js";
-import { makeSessionRef, parseSessionRef } from "../../src/core/session-ref.js";
+import type { SessionFacade } from "../../src/core/session/session-facade.js";
+import { makeSessionRef, parseSessionRef } from "../../src/core/session/session-ref.js";
 import { executeBashWithOperations } from "../../src/core/bash-executor.js";
 import { createLocalBashOperations } from "../../src/core/tools/bash.js";
 import {

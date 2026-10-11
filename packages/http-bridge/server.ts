@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { URL } from "node:url";
 import type { AgentMessage } from "../../src/core/agent/types.js";
-import type { SessionFacade } from "../../src/core/session-facade.js";
+import type { SessionFacade } from "../../src/core/session/session-facade.js";
 import { mapTypedEventToModeEvents } from "../../src/modes/event-mapper.js";
 
 export interface GuiModeOptions {

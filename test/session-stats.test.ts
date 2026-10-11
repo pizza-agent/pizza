@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "../src/core/agent/types.js";
-import { computeMessageStats } from "../src/core/session-stats.js";
+import { computeMessageStats } from "../src/core/session/session-stats.js";
 
 // Test fixtures: minimal message shapes matching what computeMessageStats reads.
 // Cast to AgentMessage (named type) because the full AssistantMessage requires

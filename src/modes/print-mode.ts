@@ -10,7 +10,7 @@ import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai/compa
 import type { AgentMessage } from "../core/agent/types.js";
 import type { ImageContent as EventImageContent } from "../core/event-store/types.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
-import type { SessionFacade } from "../core/session-facade.js";
+import type { SessionFacade } from "../core/session/session-facade.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
 
 /**

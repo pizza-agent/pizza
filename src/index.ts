@@ -2,12 +2,12 @@
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
-export { SessionFacade, type SessionFacadeConfig, type SessionFacadeEventListener } from "./core/session-facade.js";
+export { SessionFacade, type SessionFacadeConfig, type SessionFacadeEventListener } from "./core/session/session-facade.js";
 export {
 	createSessionFacade,
 	type CreateSessionFacadeOptions,
 	type CreateSessionFacadeResult,
-} from "./core/session-facade-factory.js";
+} from "./core/session/session-facade-factory.js";
 // Auth and model registry
 export {
 	type ApiKeyCredential,

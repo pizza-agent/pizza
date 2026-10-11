@@ -6,17 +6,17 @@
  * allow its removal.
  */
 
-import type { AgentMessage } from "./agent/types.js";
+import type { AgentMessage } from "../agent/types.js";
 import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
-} from "./messages.js";
+} from "../messages.js";
 import type {
 	CompactionEntry,
 	SessionContext,
 	SessionEntry,
-} from "./types/session-types.js";
+} from "../types/session-types.js";
 
 export function buildSessionContext(
 	entries: SessionEntry[],

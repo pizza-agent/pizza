@@ -185,7 +185,7 @@ export function bindExtensionCore(deps: ExtensionBindingDeps): void {
 			setModel: async (nextModel) => {
 				if (!modelRegistry.hasConfiguredAuth(nextModel)) return false;
 				deps.setFallbackModel(nextModel);
-				getRuntime()?.setModel(nextModel.provider, nextModel.id);
+				getRuntime()?.setModel(nextModel.provider, nextModel.id, nextModel.contextWindow);
 				// Persist as global default so the next sidecar launch picks it
 				// up. Best-effort: a settings-write failure must not break the
 				// in-progress turn (in-memory state is already updated above).

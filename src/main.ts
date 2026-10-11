@@ -23,7 +23,7 @@ import {
 	type SessionServices,
 	type SessionDiagnostic,
 	createSessionServices,
-} from "./core/session-services.js";
+} from "./core/session/session-services.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { ExtensionFactory } from "./core/extensions/types.js";
@@ -31,10 +31,10 @@ import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel } from "./core/model-resolver.js";
 import { installCrashHandlers } from "./core/crash-handlers.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
-import type { CreateSessionFacadeOptions } from "./core/session-facade-factory.js";
-import { createSessionFacade, type CreateSessionFacadeResult } from "./core/session-facade-factory.js";
-import { getAgentDirFromSessionDir, parseSessionRef } from "./core/session-ref.js";
-import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./core/session-listing.js";
+import type { CreateSessionFacadeOptions } from "./core/session/session-facade-factory.js";
+import { createSessionFacade, type CreateSessionFacadeResult } from "./core/session/session-facade-factory.js";
+import { getAgentDirFromSessionDir, parseSessionRef } from "./core/session/session-ref.js";
+import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./core/session/session-listing.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 

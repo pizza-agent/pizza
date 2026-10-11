@@ -14,7 +14,7 @@ import {
 } from "../src/core/compaction/index.js";
 import {
 	buildSessionContext,
-} from "../src/core/session-context-builder.js";
+} from "../src/core/session/session-context-builder.js";
 import type {
 	CompactionEntry,
 	ModelChangeEntry,

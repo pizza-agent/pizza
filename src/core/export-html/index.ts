@@ -7,7 +7,7 @@ import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "../../../packages/tui/theme/theme.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import type { SessionEntry, SessionHeader } from "../types/session-types.js";
-import { readSessionForExport } from "../session-reader.js";
+import { readSessionForExport } from "../session/session-reader.js";
 
 /**
  * Interface for rendering custom tools to HTML.

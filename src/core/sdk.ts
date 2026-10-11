@@ -9,7 +9,7 @@ export {
 	createSessionFacade,
 	type CreateSessionFacadeOptions,
 	type CreateSessionFacadeResult,
-} from "./session-facade-factory.js";
+} from "./session/session-facade-factory.js";
 export type {
 	ExtensionAPI,
 	ExtensionCommandContext,

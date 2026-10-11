@@ -8,11 +8,11 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentMessage, Message } from "./agent/types.js";
-import { getAgentDir } from "../config.js";
-import { SqliteEventStore } from "./event-store/sqlite-store.js";
-import type { SessionDescriptor, SessionIndex } from "./projection/types.js";
-import { deriveWorkspaceId, getEventDatabasePath, getWorkspaceMetaPath } from "./event-store/workspace.js";
+import type { AgentMessage, Message } from "../agent/types.js";
+import { getAgentDir } from "../../config.js";
+import { SqliteEventStore } from "../event-store/sqlite-store.js";
+import type { SessionDescriptor, SessionIndex } from "../projection/types.js";
+import { deriveWorkspaceId, getEventDatabasePath, getWorkspaceMetaPath } from "../event-store/workspace.js";
 
 // ============================================================================
 // Types

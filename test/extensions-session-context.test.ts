@@ -12,7 +12,7 @@ import type { ToolExecutor, ToolRegistry } from "../src/core/intent/types.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import type { LLMResponse } from "../src/core/runtime/llm-types.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
-import { SessionFacade } from "../src/core/session-facade.js";
+import { SessionFacade } from "../src/core/session/session-facade.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 
 describe("EventStoreExtensionSessionManager", () => {

@@ -7,8 +7,8 @@ import { AuthStorage } from "../src/core/auth-storage.js";
 import { createExtensionRuntime, type Extension, type ToolDefinition } from "../src/core/extensions/index.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import type { ResourceLoader } from "../src/core/resource-loader.js";
-import { SessionFacade } from "../src/core/session-facade.js";
-import { createSessionFacade } from "../src/core/session-facade-factory.js";
+import { SessionFacade } from "../src/core/session/session-facade.js";
+import { createSessionFacade } from "../src/core/session/session-facade-factory.js";
 import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 

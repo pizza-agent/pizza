@@ -1,5 +1,5 @@
-import type { ContextUsage } from "./extensions/index.js";
-import type { AgentMessage } from "./agent/types.js";
+import type { ContextUsage } from "../extensions/index.js";
+import type { AgentMessage } from "../agent/types.js";
 
 /** Token + cost + message-count statistics derived from a message list (no identity). */
 export interface MessageStats {

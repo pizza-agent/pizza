@@ -42,7 +42,7 @@ import type {
 
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
 import type { Model } from "@earendil-works/pi-ai/compat";
-import type { SessionStats } from "../../src/core/session-stats.js";
+import type { SessionStats } from "../../src/core/session/session-stats.js";
 import type { BashResult } from "../../src/core/bash-executor.js";
 import type { CompactionResult } from "../../src/core/compaction/index.js";
 import type { SourceInfo } from "../../src/core/source-info.js";

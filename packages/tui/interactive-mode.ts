@@ -65,8 +65,8 @@ import {
   type BashOperations,
 } from "../../src/core/tools/bash.js";
 
-import type { SessionFacade } from "../../src/core/session-facade.js";
-import type { CreateSessionFacadeResult } from "../../src/core/session-facade-factory.js";
+import type { SessionFacade } from "../../src/core/session/session-facade.js";
+import type { CreateSessionFacadeResult } from "../../src/core/session/session-facade-factory.js";
 import type {
   ApprovalHandler,
   IntentClassification,
@@ -90,7 +90,7 @@ import {
   type AppKeybinding,
   KeybindingsManager,
 } from "../../src/core/keybindings.js";
-import { computeMessageStats } from "../../src/core/session-stats.js";
+import { computeMessageStats } from "../../src/core/session/session-stats.js";
 import { createCompactionSummaryMessage } from "../../src/core/messages.js";
 import {
   defaultModelPerProvider,
@@ -109,7 +109,7 @@ import type {
 import {
   formatMissingSessionCwdPrompt,
   MissingSessionCwdError,
-} from "../../src/core/session-cwd.js";
+} from "../../src/core/session/session-cwd.js";
 import {
   type SessionEntry,
   type SessionTreeNode,
@@ -117,7 +117,7 @@ import {
 import {
   listWorkspaceSessions,
   listAllSessions,
-} from "../../src/core/session-listing.js";
+} from "../../src/core/session/session-listing.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../src/core/slash-commands.js";
 import type { SourceInfo } from "../../src/core/source-info.js";
 import type { TruncationResult } from "../../src/core/tools/truncate.js";

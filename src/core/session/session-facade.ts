@@ -8,19 +8,19 @@
 
 import { readFileSync } from "node:fs";
 import type { Model } from "@earendil-works/pi-ai/compat";
-import type { EventBase, ImageContent, FileAttachment } from "./event-store/types.js";
-import type { SubscribeOptions } from "./event-store/store.js";
-import type { ExtensionRunner, ResolvedCommand } from "./extensions/index.js";
-import { expandPromptTemplate } from "./prompt-templates.js";
-import { stripFrontmatter } from "../utils/frontmatter.js";
-import type { ModelRegistry } from "./model-registry.js";
-import type { ResourceLoader } from "./resource-loader.js";
-import type { SessionProjection } from "./projection/session-projection.js";
-import type { SettingsManager } from "./settings-manager.js";
-import { isPersistableThinkingLevel } from "./settings-manager.js";
-import type { ModelConfig, ToolDefinition } from "./runtime/llm-types.js";
-import type { RuntimeCompactOptions } from "./runtime/runtime.js";
-import { EventSourcedRuntime } from "./runtime/runtime.js";
+import type { EventBase, ImageContent, FileAttachment } from "../event-store/types.js";
+import type { SubscribeOptions } from "../event-store/store.js";
+import type { ExtensionRunner, ResolvedCommand } from "../extensions/index.js";
+import { expandPromptTemplate } from "../prompt-templates.js";
+import { stripFrontmatter } from "../../utils/frontmatter.js";
+import type { ModelRegistry } from "../model-registry.js";
+import type { ResourceLoader } from "../resource-loader.js";
+import type { SessionProjection } from "../projection/session-projection.js";
+import type { SettingsManager } from "../settings-manager.js";
+import { isPersistableThinkingLevel } from "../settings-manager.js";
+import type { ModelConfig, ToolDefinition } from "../runtime/llm-types.js";
+import type { RuntimeCompactOptions } from "../runtime/runtime.js";
+import { EventSourcedRuntime } from "../runtime/runtime.js";
 
 export interface SessionFacadeConfig {
 	runtime: EventSourcedRuntime;
@@ -264,7 +264,13 @@ export class SessionFacade {
 
 	setModel(model: ModelConfig | Model<any>, thinkingLevel?: string): void {
 		const modelId = "model_id" in model ? model.model_id : model.id;
-		this.runtime.setModel(model.provider, modelId);
+		// Pass the new window so the runtime can re-pin its context budget —
+		// registry lookup covers callers that hand us a bare ModelConfig.
+		const contextWindow =
+			"contextWindow" in model && typeof model.contextWindow === "number" && model.contextWindow > 0
+				? model.contextWindow
+				: this.modelRegistry?.find(model.provider, modelId)?.contextWindow;
+		this.runtime.setModel(model.provider, modelId, contextWindow);
 		this.persistModel(model.provider, modelId);
 
 		const nextThinkingLevel = thinkingLevel ?? ("thinking_level" in model ? model.thinking_level : undefined);

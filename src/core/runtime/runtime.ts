@@ -526,11 +526,21 @@ export class EventSourcedRuntime {
 		});
 	}
 
-	setModel(provider: string, modelId: string): void {
+	setModel(provider: string, modelId: string, contextWindow?: number): void {
 		const previous_provider = this.config.model.provider;
 		const previous_model_id = this.config.model.model_id;
 		this.config.model.provider = provider;
 		this.config.model.model_id = modelId;
+		// Keep the context budget in sync with the newly selected model. The
+		// budget is resolved once at facade creation (contextWindow of the
+		// model resolved at that moment) and every consumer — reactor
+		// buildContext truncation and the compaction-engine threshold check —
+		// reads this same field. Without this, switching to a model with a
+		// smaller window leaves the budget pinned to the old (larger) window
+		// and threshold compaction can never fire.
+		if (typeof contextWindow === "number" && contextWindow > 0) {
+			this.config.contextBudget = contextWindow;
+		}
 		this.store.append({
 			actor_id: "user",
 			type: "MODEL_CHANGED",

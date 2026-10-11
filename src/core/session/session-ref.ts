@@ -1,5 +1,5 @@
 import { basename, dirname } from "node:path";
-import { getAgentDir as getDefaultAgentDir } from "../config.js";
+import { getAgentDir as getDefaultAgentDir } from "../../config.js";
 
 export const SESSION_REF_PREFIX = "event-session:";
 

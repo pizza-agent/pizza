@@ -7,11 +7,11 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { getAgentDir } from "../config.js";
-import { SqliteEventStore } from "./event-store/sqlite-store.js";
-import type { EventBase } from "./event-store/types.js";
-import { deriveWorkspaceId, getEventDatabasePath, getWorkspaceMetaPath } from "./event-store/workspace.js";
-import type { SessionEntry, SessionHeader } from "./types/session-types.js";
+import { getAgentDir } from "../../config.js";
+import { SqliteEventStore } from "../event-store/sqlite-store.js";
+import type { EventBase } from "../event-store/types.js";
+import { deriveWorkspaceId, getEventDatabasePath, getWorkspaceMetaPath } from "../event-store/workspace.js";
+import type { SessionEntry, SessionHeader } from "../types/session-types.js";
 
 const SESSION_REF_PREFIX = "event-session:";
 

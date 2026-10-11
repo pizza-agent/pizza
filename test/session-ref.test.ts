@@ -6,7 +6,7 @@ import {
 	makeSessionRef,
 	parseSessionRef,
 	SESSION_REF_PREFIX,
-} from "../src/core/session-ref.js";
+} from "../src/core/session/session-ref.js";
 
 describe("SESSION_REF_PREFIX", () => {
 	test("is the documented event-session prefix", () => {
