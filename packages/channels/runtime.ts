@@ -48,14 +48,14 @@ export interface ChannelRuntimeOptions {
 	socketPath?: string;
 	/** Connect timeout ms (default 5000). */
 	connectTimeout?: number;
-	/** Per-deliver tell timeout ms (default 120000). Lets a full agent turn run. */
+	/** Per-deliver tell timeout ms. 0 (default) disables the timeout so long turns still get a reply. */
 	tellTimeoutMs?: number;
 }
 
-/** Events that mark the end of an agent turn (the stream emits both spellings). */
+/** Events that mark the true end of an agent turn. AGENT_TURN_COMPLETED is terminal; AGENT_TURN_END fires after every tool-call round and must NOT count. */
 function isIdleEvent(event: ChannelEvent): boolean {
 	const type = event.type;
-	return type === "AGENT_TURN_COMPLETED" || type === "AGENT_TURN_END" || type === "agent_end";
+	return type === "AGENT_TURN_COMPLETED" || type === "agent_end";
 }
 
 /**
@@ -93,7 +93,7 @@ export class ChannelRuntime {
 
 	constructor(options: ChannelRuntimeOptions) {
 		this.agentDir = options.agentDir;
-		this.tellTimeoutMs = options.tellTimeoutMs ?? 120_000;
+		this.tellTimeoutMs = options.tellTimeoutMs ?? 0;
 		this.socketPath = options.socketPath ?? gatewaySocketPath();
 		const connectTimeout = options.connectTimeout ?? 5_000;
 		this.client = new GatewayClient({ socketPath: this.socketPath, connectTimeout });
@@ -191,10 +191,13 @@ export class ChannelRuntime {
 			}
 			if (isIdleEvent(event)) finish();
 		};
-		const timer = setTimeout(
-			() => finish(new Error(`timed out after ${this.tellTimeoutMs}ms waiting for the agent reply`)),
-			this.tellTimeoutMs,
-		);
+		const timer =
+			this.tellTimeoutMs > 0
+				? setTimeout(
+						() => finish(new Error(`timed out after ${this.tellTimeoutMs}ms waiting for the agent reply`)),
+						this.tellTimeoutMs,
+					)
+				: undefined;
 		this.replyWaiters.add(listener);
 		return {
 			done,
