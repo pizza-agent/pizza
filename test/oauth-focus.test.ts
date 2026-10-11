@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import { isFocusable } from "@earendil-works/pi-tui";
 import { initTheme } from "../packages/tui/theme/theme.js";
 import { OAuthSelectorComponent } from "../packages/tui/components/oauth-selector.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
 
 describe("OAuthSelectorComponent focus", () => {
 	test("API-key category windows long provider lists (selection stays visible)", () => {

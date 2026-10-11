@@ -17,8 +17,8 @@
 import type { AuthInteraction } from "@earendil-works/pi-ai/compat";
 import chalk from "chalk";
 import { getAgentDir } from "./config.js";
-import { AuthStorage } from "./core/auth-storage.js";
-import { getApiKeyOptions, getOAuthFlows } from "./core/oauth.js";
+import { AuthStorage } from "./core/auth/auth-storage.js";
+import { getApiKeyOptions, getOAuthFlows } from "./core/auth/oauth.js";
 
 function printHelp(): void {
 	console.log(`pizza auth - manage provider authentication

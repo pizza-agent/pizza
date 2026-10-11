@@ -1,6 +1,6 @@
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.js";
+import { KeybindingsManager } from "../src/core/commands/keybindings.js";
 import type {
 	ModelChangeEntry,
 	SessionEntry,

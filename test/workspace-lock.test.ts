@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acquirePidLock, acquireWorkspaceLock } from "../src/core/main-agent.js";
+import { acquirePidLock, acquireWorkspaceLock } from "../src/core/agent/main-agent.js";
 
 function tmpDir(): string {
 	return mkdtempSync(join(tmpdir(), "pizza-wslock-"));

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { executeBashWithOperations } from "../src/core/bash-executor.js";
+import { executeBashWithOperations } from "../src/core/exec/bash-executor.js";
 import { executeBuiltinCommand, parseTellInput } from "../src/core/tools/builtin-commands.js";
 import { createBashTool, createLocalBashOperations } from "../src/core/tools/bash.js";
 import { formatLineAnchor } from "../src/core/tools/line-anchors.js";

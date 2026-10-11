@@ -11,9 +11,9 @@ import { getApiKeyOptions, getOAuthFlow, getOAuthFlows } from "./oauth.js";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
-import { getAgentDir } from "../config.js";
-import { collectConfigCommands, registerTrustedConfigCommands, resolveConfigValue } from "./resolve-config-value.js";
-import { ConfigFileVersionTracker } from "./config-file-version.js";
+import { getAgentDir } from "../../config.js";
+import { collectConfigCommands, registerTrustedConfigCommands, resolveConfigValue } from "../config/resolve-config-value.js";
+import { ConfigFileVersionTracker } from "../config/config-file-version.js";
 
 export type ApiKeyCredential = {
 	type: "api_key";

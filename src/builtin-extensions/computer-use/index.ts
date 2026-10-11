@@ -27,8 +27,8 @@ import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { getAgentDir } from "../../config.js";
-import { SettingsManager } from "../../core/settings-manager.js";
-import { execCommand } from "../../core/exec.js";
+import { SettingsManager } from "../../core/config/settings-manager.js";
+import { execCommand } from "../../core/exec/exec.js";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,

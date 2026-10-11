@@ -1,6 +1,6 @@
 import { setKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.js";
+import { KeybindingsManager } from "../src/core/commands/keybindings.js";
 import { BrandHeaderComponent } from "../packages/tui/components/brand-header.js";
 import { initTheme } from "../packages/tui/theme/theme.js";
 

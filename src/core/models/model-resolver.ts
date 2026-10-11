@@ -2,12 +2,12 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "./agent/types.js";
+import type { ThinkingLevel } from "../agent/types.js";
 import { type Api, type Model, modelsAreEqual } from "@earendil-works/pi-ai/compat";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
-import { isValidThinkingLevel } from "../../packages/cli/args.js";
-import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
+import { isValidThinkingLevel } from "../../../packages/cli/args.js";
+import { DEFAULT_THINKING_LEVEL } from "../config/defaults.js";
 import type { ModelRegistry } from "./model-registry.js";
 
 /** Default model IDs for each known provider */

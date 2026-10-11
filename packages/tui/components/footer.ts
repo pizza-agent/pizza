@@ -1,6 +1,6 @@
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ContextUsage } from "../../../src/core/extensions/index.js";
-import type { ReadonlyFooterDataProvider } from "../../../src/core/footer-data-provider.js";
+import type { ReadonlyFooterDataProvider } from "../../../src/core/context/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
 import type { ThemeColor } from "../theme/theme.js";
 

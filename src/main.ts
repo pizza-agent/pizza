@@ -18,32 +18,32 @@ import {
 	acquireMainLock,
 	initializeMainAgent,
 	type MainAgentLock,
-} from "./core/main-agent.js";
+} from "./core/agent/main-agent.js";
 import {
 	type SessionServices,
 	type SessionDiagnostic,
 	createSessionServices,
 } from "./core/session/session-services.js";
-import { AuthStorage } from "./core/auth-storage.js";
+import { AuthStorage } from "./core/auth/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { ExtensionFactory } from "./core/extensions/types.js";
-import type { ModelRegistry } from "./core/model-registry.js";
-import { resolveCliModel } from "./core/model-resolver.js";
-import { installCrashHandlers } from "./core/crash-handlers.js";
-import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import type { ModelRegistry } from "./core/models/model-registry.js";
+import { resolveCliModel } from "./core/models/model-resolver.js";
+import { installCrashHandlers } from "./core/ops/crash-handlers.js";
+import { restoreStdout, takeOverStdout } from "./core/exec/output-guard.js";
 import type { CreateSessionFacadeOptions } from "./core/session/session-facade-factory.js";
 import { createSessionFacade, type CreateSessionFacadeResult } from "./core/session/session-facade-factory.js";
 import { getAgentDirFromSessionDir, parseSessionRef } from "./core/session/session-ref.js";
 import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./core/session/session-listing.js";
-import { SettingsManager } from "./core/settings-manager.js";
-import { printTimings, resetTimings, time } from "./core/timings.js";
+import { SettingsManager } from "./core/config/settings-manager.js";
+import { printTimings, resetTimings, time } from "./core/ops/timings.js";
 
 import { InteractiveMode, runGuiModeWithFacade, runPrintModeWithFacade, runRpcModeWithFacade } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "../packages/tui/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { handleBuiltinCommand } from "./builtin-cli.js";
 import { handleUpdateCommand } from "./update-cli.js";
-import { checkForUpdate, formatUpdateNotice } from "./core/update-checker.js";
+import { checkForUpdate, formatUpdateNotice } from "./core/ops/update-checker.js";
 import { handleGatewayCommand } from "./gateway-cli.js";
 import { handleChannelCommand } from "./channel-cli.js";
 import { handleAuthCommand } from "./auth-cli.js";

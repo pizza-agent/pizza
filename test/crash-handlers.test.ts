@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 describe("installCrashHandlers", () => {
 	const testDir = join(tmpdir(), `pizza-crash-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-	const modulePath = pathToFileURL(join(process.cwd(), "src/core/crash-handlers.ts")).href;
+	const modulePath = pathToFileURL(join(process.cwd(), "src/core/ops/crash-handlers.ts")).href;
 
 	afterEach(() => {
 		if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });

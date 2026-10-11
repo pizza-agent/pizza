@@ -5,7 +5,7 @@
  */
 
 import type { IntentClassification, IntentCategory, IntentRisk } from "./types.js";
-import { splitShellWords } from "../shell-words.js";
+import { splitShellWords } from "../exec/shell-words.js";
 
 // ============================================================================
 // Classifier Configuration

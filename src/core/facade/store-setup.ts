@@ -5,7 +5,7 @@
  * initial session activation (resume / fork).
  */
 
-import { acquireWorkspaceLock } from "../main-agent.js";
+import { acquireWorkspaceLock } from "../agent/main-agent.js";
 import { SqliteEventStore } from "../event-store/sqlite-store.js";
 import {
 	deriveWorkspaceId,

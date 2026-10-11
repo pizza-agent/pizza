@@ -1,6 +1,6 @@
-import { type ApiKeyOption, type OAuthFlow, getApiKeyOptions, getOAuthFlows } from "../../../src/core/oauth.js";
+import { type ApiKeyOption, type OAuthFlow, getApiKeyOptions, getOAuthFlows } from "../../../src/core/auth/oauth.js";
 import { type Focusable, Container, getKeybindings, Spacer, TruncatedText } from "@earendil-works/pi-tui";
-import type { AuthStorage } from "../../../src/core/auth-storage.js";
+import type { AuthStorage } from "../../../src/core/auth/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

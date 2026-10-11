@@ -1,4 +1,4 @@
-import { getApiKeyOptions, getOAuthFlows } from "../../../src/core/oauth.js";
+import { getApiKeyOptions, getOAuthFlows } from "../../../src/core/auth/oauth.js";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import { exec } from "child_process";
 import { theme } from "../theme/theme.js";

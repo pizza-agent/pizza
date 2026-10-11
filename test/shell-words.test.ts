@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { splitShellWords, splitShellWordsWithMeta, hasShellControlSyntax, splitShellSegments } from "../src/core/shell-words.js";
+import { splitShellWords, splitShellWordsWithMeta, hasShellControlSyntax, splitShellSegments } from "../src/core/exec/shell-words.js";
 
 describe("splitShellWords — unquoted splitting", () => {
 	it("splits on runs of whitespace", () => {

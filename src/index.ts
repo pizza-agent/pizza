@@ -17,7 +17,7 @@ export {
 	FileAuthStorageBackend,
 	InMemoryAuthStorageBackend,
 	type OAuthCredential,
-} from "./core/auth-storage.js";
+} from "./core/auth/auth-storage.js";
 // Compaction
 export {
 	type BranchPreparation,
@@ -136,9 +136,9 @@ export {
 	type ExtensionSessionManager,
 } from "./core/extensions/index.js";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
-export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
-export { convertToLlm } from "./core/messages.js";
-export { ModelRegistry } from "./core/model-registry.js";
+export type { ReadonlyFooterDataProvider } from "./core/context/footer-data-provider.js";
+export { convertToLlm } from "./core/context/messages.js";
+export { ModelRegistry } from "./core/models/model-registry.js";
 export type {
 	PackageManager,
 	PathMetadata,
@@ -146,10 +146,10 @@ export type {
 	ProgressEvent,
 	ResolvedPaths,
 	ResolvedResource,
-} from "./core/package-manager.js";
-export { DefaultPackageManager } from "./core/package-manager.js";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
-export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
+} from "./core/skills/package-manager.js";
+export { DefaultPackageManager } from "./core/skills/package-manager.js";
+export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/config/resource-loader.js";
+export { DefaultResourceLoader, loadProjectContextFiles } from "./core/config/resource-loader.js";
 // SDK for programmatic usage
 export {
 	createBashTool,
@@ -170,7 +170,7 @@ export {
 	type PackageSource,
 	type RetrySettings,
 	SettingsManager,
-} from "./core/settings-manager.js";
+} from "./core/config/settings-manager.js";
 // Skills
 export {
 	formatSkillsForPrompt,
@@ -180,8 +180,8 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-} from "./core/skills.js";
-export { createSyntheticSourceInfo } from "./core/source-info.js";
+} from "./core/skills/skills.js";
+export { createSyntheticSourceInfo } from "./core/skills/source-info.js";
 // Tools
 export {
 	type BashOperations,

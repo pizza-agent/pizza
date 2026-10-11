@@ -22,9 +22,9 @@ import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.js";
 // avoiding a circular dependency. Extensions can import from "pizza".
 import * as _bundledPizza from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
-import type { ExecOptions } from "../exec.js";
-import { execCommand } from "../exec.js";
-import { createSyntheticSourceInfo } from "../source-info.js";
+import type { ExecOptions } from "../exec/exec.js";
+import { execCommand } from "../exec/exec.js";
+import { createSyntheticSourceInfo } from "../skills/source-info.js";
 import type {
 	BuiltinCommandDefinition,
 	Extension,

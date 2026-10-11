@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
 import { createExtensionRuntime } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
 import { EventStoreExtensionSessionManager } from "../src/core/extensions/session-context.js";
 import type { Extension } from "../src/core/extensions/types.js";
 import type { ContentBlock } from "../src/core/event-store/types.js";
 import type { ToolExecutor, ToolRegistry } from "../src/core/intent/types.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
+import { ModelRegistry } from "../src/core/models/model-registry.js";
 import type { LLMResponse } from "../src/core/runtime/llm-types.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
 import { SessionFacade } from "../src/core/session/session-facade.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 
 describe("EventStoreExtensionSessionManager", () => {
 	const tempDirs: string[] = [];

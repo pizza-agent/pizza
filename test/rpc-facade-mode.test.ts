@@ -5,16 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import type { ContentBlock, EventBase } from "../src/core/event-store/types.js";
 import type { ToolRegistry } from "../src/core/intent/types.js";
-import type { ModelRegistry } from "../src/core/model-registry.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry as RealModelRegistry } from "../src/core/model-registry.js";
+import type { ModelRegistry } from "../src/core/models/model-registry.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
+import { ModelRegistry as RealModelRegistry } from "../src/core/models/model-registry.js";
 import { SessionManager } from "../src/core/projection/session-manager.js";
 import type { LLMClient, LLMResponse } from "../src/core/runtime/llm-types.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
-import { DefaultPackageManager } from "../src/core/package-manager.js";
-import type { ResourceLoader } from "../src/core/resource-loader.js";
+import { DefaultPackageManager } from "../src/core/skills/package-manager.js";
+import type { ResourceLoader } from "../src/core/config/resource-loader.js";
 import { SessionFacade } from "../src/core/session/session-facade.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { runRpcModeWithFacade } from "../packages/rpc/rpc-mode.js";
 
 const rpcIo = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ const rpcIo = vi.hoisted(() => ({
 	lineHandler: undefined as ((line: string) => void) | undefined,
 }));
 
-vi.mock("../src/core/output-guard.js", () => ({
+vi.mock("../src/core/exec/output-guard.js", () => ({
 	takeOverStdout: vi.fn(),
 	writeRawStdout: (line: string) => {
 		rpcIo.outputLines.push(line);
@@ -60,7 +60,7 @@ const execMock = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock("../src/core/exec.js", () => ({
+vi.mock("../src/core/exec/exec.js", () => ({
 	execCommand: vi.fn(async (command: string, args: string[]) => {
 		const key = `${command}:${args[0]}`;
 		// installing the CLI succeeds and puts it on PATH
@@ -897,7 +897,7 @@ describe("runRpcModeWithFacade", () => {
 	it.skipIf(process.platform === "win32")(
 		"get_extensions detects agent-browser on PATH and reads its version from package.json without spawning it",
 		async () => {
-			const { execCommand } = await import("../src/core/exec.js");
+			const { execCommand } = await import("../src/core/exec/exec.js");
 			// Mirror an npm global install: <prefix>/bin/agent-browser -> lib/node_modules/agent-browser/bin/<native>
 			const prefix = makeTempDir();
 			const pkgDir = join(prefix, "lib", "node_modules", "agent-browser");

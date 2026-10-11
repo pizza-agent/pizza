@@ -11,7 +11,7 @@ import type {
 	BranchSummaryMessage,
 	CompactionSummaryMessage,
 	CustomMessage,
-} from "./agent/types.js";
+} from "../agent/types.js";
 import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai/compat";
 
 export type { BashExecutionMessage, BranchSummaryMessage, CompactionSummaryMessage, CustomMessage };

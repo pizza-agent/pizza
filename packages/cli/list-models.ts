@@ -5,7 +5,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { fuzzyFilter } from "@earendil-works/pi-tui";
 import chalk from "chalk";
-import type { ModelRegistry } from "../../src/core/model-registry.js";
+import type { ModelRegistry } from "../../src/core/models/model-registry.js";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")

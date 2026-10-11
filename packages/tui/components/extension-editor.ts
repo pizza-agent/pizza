@@ -17,7 +17,7 @@ import {
 	Text,
 	type TUI,
 } from "@earendil-works/pi-tui";
-import type { KeybindingsManager } from "../../../src/core/keybindings.js";
+import type { KeybindingsManager } from "../../../src/core/commands/keybindings.js";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";

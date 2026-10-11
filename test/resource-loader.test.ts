@@ -2,16 +2,16 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
+import { ModelRegistry } from "../src/core/models/model-registry.js";
 import { EventStoreExtensionSessionManager } from "../src/core/extensions/session-context.js";
 import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import { SessionProjection } from "../src/core/projection/session-projection.js";
-import { DefaultResourceLoader } from "../src/core/resource-loader.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
-import type { Skill } from "../src/core/skills.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
+import { DefaultResourceLoader } from "../src/core/config/resource-loader.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
+import type { Skill } from "../src/core/skills/skills.js";
+import { createSyntheticSourceInfo } from "../src/core/skills/source-info.js";
 
 describe("DefaultResourceLoader", () => {
 	let tempDir: string;

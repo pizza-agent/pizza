@@ -7,14 +7,14 @@ import type { ImageContent, Model, TextContent, ToolResultMessage } from "@earen
 import type { KeyId } from "@earendil-works/pi-tui";
 import type { Theme } from "../../../packages/tui/theme/theme.js";
 import { toolRenderBridge } from "../tools/render-bridge.js";
-import type { ResourceDiagnostic } from "../diagnostics.js";
+import type { ResourceDiagnostic } from "../ops/diagnostics.js";
 import type { EventBase } from "../event-store/types.js";
 import type { EventStore } from "../event-store/store.js";
-import type { KeybindingsConfig } from "../keybindings.js";
-import type { ModelRegistry } from "../model-registry.js";
+import type { KeybindingsConfig } from "../commands/keybindings.js";
+import type { ModelRegistry } from "../models/model-registry.js";
 import { eventToMessage } from "../projection/event-to-message.js";
 import type { ExtensionSessionManager } from "./session-context.js";
-import type { BuildSystemPromptOptions } from "../system-prompt.js";
+import type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,

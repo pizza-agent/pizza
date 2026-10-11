@@ -23,10 +23,10 @@ import type {
 	WorkingIndicatorOptions,
 } from "../../src/core/extensions/index.js";
 import type { EventBase, EventType, ImageContent as EventImageContent, FileAttachment } from "../../src/core/event-store/types.js";
-import { takeOverStdout, writeRawStdout } from "../../src/core/output-guard.js";
+import { takeOverStdout, writeRawStdout } from "../../src/core/exec/output-guard.js";
 import type { SessionFacade } from "../../src/core/session/session-facade.js";
 import { makeSessionRef, parseSessionRef } from "../../src/core/session/session-ref.js";
-import { executeBashWithOperations } from "../../src/core/bash-executor.js";
+import { executeBashWithOperations } from "../../src/core/exec/bash-executor.js";
 import { createLocalBashOperations } from "../../src/core/tools/bash.js";
 import {
 	getBuiltinExtensionInfo,
@@ -35,14 +35,14 @@ import {
 	getBuiltinInstallState,
 } from "../../src/builtin-extensions/index.js";
 import { exportFromFile } from "../../src/core/export-html/index.js";
-import { installSkillFromGitHub } from "../../src/core/skill-install.js";
+import { installSkillFromGitHub } from "../../src/core/skills/skill-install.js";
 import { buildHistoryTreeNodes } from "../../src/core/projection/history-tree.js";
 import { killTrackedDetachedChildren } from "../../src/utils/shell.js";
 import { startPtyServer, type PtyServer } from "../pty/pty-server.js";
 import { type Theme, theme, resolveThemeIcon, resolveThemeVideo } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
 import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "@tomsun28/pizza-protocol";
-import { installCrashHandlers } from "../../src/core/crash-handlers.js";
+import { installCrashHandlers } from "../../src/core/ops/crash-handlers.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
 	RpcCommand,

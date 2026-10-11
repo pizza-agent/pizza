@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildSystemPrompt } from "../src/core/system-prompt.js";
+import { buildSystemPrompt } from "../src/core/context/system-prompt.js";
 
 describe("buildSystemPrompt", () => {
 	describe("empty tools", () => {

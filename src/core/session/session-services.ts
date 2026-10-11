@@ -1,11 +1,11 @@
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../../config.js";
-import { AuthStorage } from "../auth-storage.js";
+import { AuthStorage } from "../auth/auth-storage.js";
 import type { ToolDefinition } from "../extensions/index.js";
-import { ModelRegistry } from "../model-registry.js";
-import { DefaultResourceLoader, type DefaultResourceLoaderOptions, type ResourceLoader } from "../resource-loader.js";
-import { SettingsManager } from "../settings-manager.js";
+import { ModelRegistry } from "../models/model-registry.js";
+import { DefaultResourceLoader, type DefaultResourceLoaderOptions, type ResourceLoader } from "../config/resource-loader.js";
+import { SettingsManager } from "../config/settings-manager.js";
 
 /**
  * Non-fatal issues collected while creating services or sessions.

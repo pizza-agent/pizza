@@ -15,7 +15,7 @@
 import os from "node:os";
 import path from "node:path";
 import { parseGitUrl } from "../../src/utils/git.js";
-import type { SourceInfo } from "../../src/core/source-info.js";
+import type { SourceInfo } from "../../src/core/skills/source-info.js";
 
 /** Scope buckets used to group resources in the startup listing. */
 export type ScopeGroup = "user" | "project" | "path";

@@ -26,7 +26,7 @@ import {
 	parseBuiltinToolInput,
 	type ParsedBuiltinToolInput,
 } from "./builtin-commands.js";
-import { hasShellControlSyntax, splitShellSegments, splitShellWords } from "../shell-words.js";
+import { hasShellControlSyntax, splitShellSegments, splitShellWords } from "../exec/shell-words.js";
 import { createEditToolDefinition, type EditToolDetails, type EditToolInput, type EditToolOptions } from "./edit.js";
 import { createReadToolDefinition, type ReadToolDetails, type ReadToolInput, type ReadToolOptions } from "./read.js";
 import { createHistoryTreeToolDefinition, type HistoryTreeToolInput } from "./history-tree.js";

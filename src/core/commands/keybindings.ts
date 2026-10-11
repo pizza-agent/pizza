@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { getAgentDir } from "../config.js";
+import { getAgentDir } from "../../config.js";
 
 export interface AppKeybindings {
 	"app.interrupt": true;

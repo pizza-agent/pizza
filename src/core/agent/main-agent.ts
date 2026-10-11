@@ -24,7 +24,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
-import { APP_NAME, getMainMemoryDir, getMainSoulPath } from "../config.js";
+import { APP_NAME, getMainMemoryDir, getMainSoulPath } from "../../config.js";
 
 export interface SoulFile {
 	path: string;

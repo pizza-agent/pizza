@@ -9,7 +9,7 @@ import type {
   BuiltinCommandDefinition,
   RegisteredBuiltinCommand,
 } from "../src/core/extensions/types.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
+import { createSyntheticSourceInfo } from "../src/core/skills/source-info.js";
 import { computerUseBuiltinCommand } from "../src/builtin-extensions/computer-use/cli-command.js";
 
 /** Minimal dynamic built-in used to exercise cli routing without the real backend. */

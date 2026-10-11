@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai/compat";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { getOAuthFlow } from "../src/core/oauth.js";
+import { getOAuthFlow } from "../src/core/auth/oauth.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
+import { clearApiKeyCache, ModelRegistry } from "../src/core/models/model-registry.js";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;

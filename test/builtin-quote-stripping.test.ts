@@ -21,7 +21,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { createBashTool } from "../src/core/tools/bash.js";
 import { parseBuiltinCommand, parseBuiltinToolInput } from "../src/core/tools/builtin-commands.js";
-import { splitShellWordsWithMeta } from "../src/core/shell-words.js";
+import { splitShellWordsWithMeta } from "../src/core/exec/shell-words.js";
 
 function parseEdit(cmd: string) {
 	const parsed = parseBuiltinCommand(cmd);

@@ -5,8 +5,8 @@
 import { existsSync } from "fs";
 import { execSync } from "child_process";
 import * as os from "node:os";
-import { getShellConfig } from "../utils/shell.js";
-import { type Skill } from "./skills.js";
+import { getShellConfig } from "../../utils/shell.js";
+import { type Skill } from "../skills/skills.js";
 
 /**
  * Build a compact skills hint for the system prompt.

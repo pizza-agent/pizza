@@ -57,9 +57,9 @@ import {
   VERSION,
 } from "../../src/config.js";
 import { getBuiltinSkillInfos } from "../../src/builtin-skills/index.js";
-import { getApiKeyOptions } from "../../src/core/oauth.js";
-import { parseSkillBlock } from "../../src/core/skill-block-parser.js";
-import { executeBashWithOperations } from "../../src/core/bash-executor.js";
+import { getApiKeyOptions } from "../../src/core/auth/oauth.js";
+import { parseSkillBlock } from "../../src/core/skills/skill-block-parser.js";
+import { executeBashWithOperations } from "../../src/core/exec/bash-executor.js";
 import {
   createLocalBashOperations,
   type BashOperations,
@@ -85,18 +85,18 @@ import type {
 import {
   FooterDataProvider,
   type ReadonlyFooterDataProvider,
-} from "../../src/core/footer-data-provider.js";
+} from "../../src/core/context/footer-data-provider.js";
 import {
   type AppKeybinding,
   KeybindingsManager,
-} from "../../src/core/keybindings.js";
+} from "../../src/core/commands/keybindings.js";
 import { computeMessageStats } from "../../src/core/session/session-stats.js";
-import { createCompactionSummaryMessage } from "../../src/core/messages.js";
+import { createCompactionSummaryMessage } from "../../src/core/context/messages.js";
 import {
   defaultModelPerProvider,
   findExactModelReferenceMatch,
-} from "../../src/core/model-resolver.js";
-import { DefaultPackageManager } from "../../src/core/package-manager.js";
+} from "../../src/core/models/model-resolver.js";
+import { DefaultPackageManager } from "../../src/core/skills/package-manager.js";
 import { GoalProjection } from "../../src/core/projection/goal-projection.js";
 import {
   buildRecentTaskHistory,
@@ -105,7 +105,7 @@ import {
 import type {
   ResourceDiagnostic,
   ResourceLoader,
-} from "../../src/core/resource-loader.js";
+} from "../../src/core/config/resource-loader.js";
 import {
   formatMissingSessionCwdPrompt,
   MissingSessionCwdError,
@@ -118,8 +118,8 @@ import {
   listWorkspaceSessions,
   listAllSessions,
 } from "../../src/core/session/session-listing.js";
-import { BUILTIN_SLASH_COMMANDS } from "../../src/core/slash-commands.js";
-import type { SourceInfo } from "../../src/core/source-info.js";
+import { BUILTIN_SLASH_COMMANDS } from "../../src/core/commands/slash-commands.js";
+import type { SourceInfo } from "../../src/core/skills/source-info.js";
 import type { TruncationResult } from "../../src/core/tools/truncate.js";
 import { copyToClipboard } from "../../src/utils/clipboard.js";
 import {

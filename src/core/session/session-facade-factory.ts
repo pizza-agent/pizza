@@ -21,7 +21,7 @@ import { join } from "node:path";
 import type { ImageContent, Model } from "@earendil-works/pi-ai/compat";
 import { getAgentDir, getMainMemoryDir } from "../../config.js";
 import type { AgentTool, ThinkingLevel } from "../agent/index.js";
-import { AuthStorage } from "../auth-storage.js";
+import { AuthStorage } from "../auth/auth-storage.js";
 import {
 	EventStoreExtensionSessionManager,
 	ExtensionRunner,
@@ -30,14 +30,14 @@ import {
 	type ToolDefinition as ExtensionToolDefinition,
 } from "../extensions/index.js";
 import { createToolRegistry } from "../intent/tool-adapter.js";
-import { ModelRegistry } from "../model-registry.js";
-import { DefaultResourceLoader, type ResourceLoader } from "../resource-loader.js";
+import { ModelRegistry } from "../models/model-registry.js";
+import { DefaultResourceLoader, type ResourceLoader } from "../config/resource-loader.js";
 import { toModelConfig } from "../runtime/ai-client.js";
-import { sealConfigCommandTrust } from "../resolve-config-value.js";
+import { sealConfigCommandTrust } from "../config/resolve-config-value.js";
 import { DefaultRetryPolicy } from "../runtime/policies.js";
 import { EventSourcedRuntime } from "../runtime/runtime.js";
 import { SessionFacade } from "./session-facade.js";
-import { SettingsManager } from "../settings-manager.js";
+import { SettingsManager } from "../config/settings-manager.js";
 import { DEFAULT_LLM_TOOLS } from "../tools/index.js";
 import type { BashToolOptions } from "../tools/bash.js";
 import type { SchedulerEngine } from "../scheduler/engine.js";

@@ -13,7 +13,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, test } from "vitest";
 import { getAgentDir } from "../src/config.js";
-import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "../src/core/prompt-templates.js";
+import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "../src/core/context/prompt-templates.js";
 
 // ============================================================================
 // substituteArgs

@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
 import type { ContentBlock, EventBase, EventType } from "../src/core/event-store/types.js";
 import type { ToolRegistry } from "../src/core/intent/types.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
+import { ModelRegistry } from "../src/core/models/model-registry.js";
 import { SessionFacade } from "../src/core/session/session-facade.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 import type { LLMClient, LLMResponse } from "../src/core/runtime/llm-types.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
 

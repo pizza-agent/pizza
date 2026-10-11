@@ -24,8 +24,8 @@ import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync, statSync } from "fs";
 import { join } from "path";
-import { APP_NAME, getAgentDir, VERSION } from "../config.js";
-import type { AuthStorage } from "./auth-storage.js";
+import { APP_NAME, getAgentDir, VERSION } from "../../config.js";
+import type { AuthStorage } from "../auth/auth-storage.js";
 import {
 	clearConfigValueCache,
 	collectConfigCommands,
@@ -33,9 +33,9 @@ import {
 	resolveConfigValueOrThrow,
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
-} from "./resolve-config-value.js";
-import { getOAuthFlows, getOAuthRequestAuth, registerOAuthFlow, resetOAuthFlows } from "./oauth.js";
-import { DEVIN_DEFAULT_API_SERVER_URL, devinProviderConfig, fetchDevinCatalog } from "./devin/index.js";
+} from "../config/resolve-config-value.js";
+import { getOAuthFlows, getOAuthRequestAuth, registerOAuthFlow, resetOAuthFlows } from "../auth/oauth.js";
+import { DEVIN_DEFAULT_API_SERVER_URL, devinProviderConfig, fetchDevinCatalog } from "../devin/index.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 const ajv = new Ajv();

@@ -21,7 +21,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getBuiltinSkillsDir } from "../config.js";
 import { parseFrontmatter } from "../utils/frontmatter.js";
-import type { SkillFrontmatter } from "../core/skills.js";
+import type { SkillFrontmatter } from "../core/skills/skills.js";
 
 interface BuiltinSkillDef {
 	/** Stable id (= directory name = skill name), persisted in user settings. */

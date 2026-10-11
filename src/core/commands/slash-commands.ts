@@ -1,4 +1,4 @@
-import type { SourceInfo } from "./source-info.js";
+import type { SourceInfo } from "../skills/source-info.js";
 
 export type SlashCommandSource = "extension" | "prompt" | "skill";
 

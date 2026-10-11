@@ -39,23 +39,23 @@ import type {
 } from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../../packages/tui/theme/theme.js";
-import type { BashResult } from "../bash-executor.js";
+import type { BashResult } from "../exec/bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
-import type { ExecOptions, ExecResult } from "../exec.js";
-import type { ReadonlyFooterDataProvider } from "../footer-data-provider.js";
-import type { KeybindingsManager } from "../keybindings.js";
-import type { CustomMessage } from "../messages.js";
-import type { ModelRegistry } from "../model-registry.js";
+import type { ExecOptions, ExecResult } from "../exec/exec.js";
+import type { ReadonlyFooterDataProvider } from "../context/footer-data-provider.js";
+import type { KeybindingsManager } from "../commands/keybindings.js";
+import type { CustomMessage } from "../context/messages.js";
+import type { ModelRegistry } from "../models/model-registry.js";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
 	SessionEntry,
 } from "../types/session-types.js";
 import type { ExtensionSessionManager } from "./session-context.js";
-import type { SlashCommandInfo } from "../slash-commands.js";
-import type { SourceInfo } from "../source-info.js";
-import type { BuildSystemPromptOptions } from "../system-prompt.js";
+import type { SlashCommandInfo } from "../commands/slash-commands.js";
+import type { SourceInfo } from "../skills/source-info.js";
+import type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
@@ -73,10 +73,10 @@ import type {
 	WriteToolInput,
 } from "../tools/index.js";
 
-export type { ExecOptions, ExecResult } from "../exec.js";
-export type { BuildSystemPromptOptions } from "../system-prompt.js";
+export type { ExecOptions, ExecResult } from "../exec/exec.js";
+export type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
-export type { AppKeybinding, KeybindingsManager } from "../keybindings.js";
+export type { AppKeybinding, KeybindingsManager } from "../commands/keybindings.js";
 
 // ============================================================================
 // UI Context

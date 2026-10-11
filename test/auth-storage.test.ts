@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerOAuthFlow } from "../src/core/oauth.js";
+import { registerOAuthFlow } from "../src/core/auth/oauth.js";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { clearConfigValueCache } from "../src/core/resolve-config-value.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
+import { clearConfigValueCache } from "../src/core/config/resolve-config-value.js";
 
 describe("AuthStorage", () => {
 	let tempDir: string;
@@ -461,7 +461,7 @@ describe("AuthStorage", () => {
 
 	describe("API key login (Sign in with an API key)", () => {
 		test("getApiKeyOptions returns providers with interactive key entry", async () => {
-			const { getApiKeyOptions } = await import("../src/core/oauth.js");
+			const { getApiKeyOptions } = await import("../src/core/auth/oauth.js");
 			const options = getApiKeyOptions();
 			expect(options.length).toBeGreaterThan(10);
 			const anthropic = options.find((o) => o.id === "anthropic");

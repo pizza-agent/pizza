@@ -2,7 +2,7 @@
  * Core modules shared between all run modes.
  */
 
-export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.js";
+export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./exec/bash-executor.js";
 export type { CompactionResult } from "./compaction/index.js";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
 // Extensions system
@@ -51,4 +51,4 @@ export {
 	type TurnStartEvent,
 	type WorkingIndicatorOptions,
 } from "./extensions/index.js";
-export { createSyntheticSourceInfo } from "./source-info.js";
+export { createSyntheticSourceInfo } from "./skills/source-info.js";

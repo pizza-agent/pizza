@@ -18,7 +18,7 @@
  */
 import chalk from "chalk";
 import { getAgentDir } from "./config.js";
-import { SettingsManager } from "./core/settings-manager.js";
+import { SettingsManager } from "./core/config/settings-manager.js";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions/index.js";
 import { getBuiltinSkillInfos, isBuiltinSkillDefaultEnabled, isBuiltinSkillId } from "./builtin-skills/index.js";
 

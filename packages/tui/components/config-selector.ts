@@ -15,8 +15,8 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { CONFIG_DIR_NAME } from "../../../src/config.js";
-import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../src/core/package-manager.js";
-import type { PackageSource, SettingsManager } from "../../../src/core/settings-manager.js";
+import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../src/core/skills/package-manager.js";
+import type { PackageSource, SettingsManager } from "../../../src/core/config/settings-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { rawKeyHint } from "./keybinding-hints.js";

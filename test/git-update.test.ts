@@ -12,8 +12,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultPackageManager } from "../src/core/package-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { DefaultPackageManager } from "../src/core/skills/package-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 
 // Skip git update tests in offline mode since they require actual git operations
 const skipInOfflineMode = process.env.PIZZA_OFFLINE === "1";

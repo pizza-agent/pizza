@@ -3,8 +3,8 @@
  */
 
 import { ProcessTerminal, TuiMainScreen } from "@earendil-works/pi-tui";
-import type { ResolvedPaths } from "../../src/core/package-manager.js";
-import type { SettingsManager } from "../../src/core/settings-manager.js";
+import type { ResolvedPaths } from "../../src/core/skills/package-manager.js";
+import type { SettingsManager } from "../../src/core/config/settings-manager.js";
 import { ConfigSelectorComponent } from "../tui/components/config-selector.js";
 import { initTheme, stopThemeWatcher } from "../tui/theme/theme.js";
 

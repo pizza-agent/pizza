@@ -10,11 +10,11 @@
 
 import { type CacheRetention, type Model, streamSimple } from "@earendil-works/pi-ai/compat";
 import type { ExtensionRunner } from "../extensions/index.js";
-import type { ModelRegistry } from "../model-registry.js";
+import type { ModelRegistry } from "../models/model-registry.js";
 import type { LLMClient } from "../runtime/llm-types.js";
 import { buildLlmClientFromStreamFn } from "../runtime/ai-client.js";
 import type { EventSourcedRuntime } from "../runtime/runtime.js";
-import type { SettingsManager } from "../settings-manager.js";
+import type { SettingsManager } from "../config/settings-manager.js";
 import { streamWithAdaptiveThinkingFallback } from "./adaptive-thinking.js";
 
 export interface LlmClientDeps {

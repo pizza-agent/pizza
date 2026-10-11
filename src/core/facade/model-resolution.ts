@@ -6,10 +6,10 @@ import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai/compat";
 import { getDocsPath } from "../../config.js";
 import type { ThinkingLevel } from "../agent/index.js";
-import { DEFAULT_THINKING_LEVEL } from "../defaults.js";
-import type { ModelRegistry } from "../model-registry.js";
-import { findInitialModel } from "../model-resolver.js";
-import type { SettingsManager } from "../settings-manager.js";
+import { DEFAULT_THINKING_LEVEL } from "../config/defaults.js";
+import type { ModelRegistry } from "../models/model-registry.js";
+import { findInitialModel } from "../models/model-resolver.js";
+import type { SettingsManager } from "../config/settings-manager.js";
 
 export interface ModelResolutionOptions {
 	model?: Model<any>;

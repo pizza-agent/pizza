@@ -7,12 +7,12 @@
  */
 
 import { APP_NAME, getMainSoulPath } from "../../config.js";
-import { getMainAgentGuidelines, isSoulUninitialized } from "../main-agent.js";
+import { getMainAgentGuidelines, isSoulUninitialized } from "../agent/main-agent.js";
 import type { ToolDefinition as ExtensionToolDefinition } from "../extensions/index.js";
 import { buildSessionBreadcrumb } from "../projection/history-tree.js";
 import type { SessionManager as ProjectionSessionManager } from "../projection/session-manager.js";
-import type { ResourceLoader } from "../resource-loader.js";
-import { buildSystemPrompt } from "../system-prompt.js";
+import type { ResourceLoader } from "../config/resource-loader.js";
+import { buildSystemPrompt } from "../context/system-prompt.js";
 import { createToolDefinition } from "../tools/index.js";
 import type { BashToolOptions } from "../tools/bash.js";
 import { createHistoryTreeToolDefinition } from "../tools/history-tree.js";

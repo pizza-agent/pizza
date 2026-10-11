@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DefaultResourceLoader } from "../src/core/resource-loader.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { DefaultResourceLoader } from "../src/core/config/resource-loader.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 
 describe("refreshSkillsIfChanged", () => {
 	it("picks up skills added and removed after initial reload", async () => {

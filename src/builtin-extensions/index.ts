@@ -12,7 +12,7 @@
  * 2. Register it in `BUILTIN_EXTENSIONS` below with a stable id.
  */
 
-import { BUILTIN_EXTENSION_SOURCE, type ExtensionRegistry } from "../core/extension-registry.js";
+import { BUILTIN_EXTENSION_SOURCE, type ExtensionRegistry } from "../core/extensions/extension-registry.js";
 import type { ExtensionFactory } from "../core/extensions/types.js";
 import {
 	AGENT_BROWSER_EXTENSION_ID,

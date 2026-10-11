@@ -2,34 +2,34 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import chalk from "chalk";
-import { CONFIG_DIR_NAME, getBuiltinSkillsDir, getMainDir, getMainMemoryDir } from "../config.js";
+import { CONFIG_DIR_NAME, getBuiltinSkillsDir, getMainDir, getMainMemoryDir } from "../../config.js";
 // Deliberate tui import: loadThemeFromPath is pure config parsing (reads a
 // theme JSON file), not rendering — no terminal/ANSI dependency at call time.
-import { loadThemeFromPath, type Theme } from "../../packages/tui/theme/theme.js";
-import type { ResourceDiagnostic } from "./diagnostics.js";
+import { loadThemeFromPath, type Theme } from "../../../packages/tui/theme/theme.js";
+import type { ResourceDiagnostic } from "../ops/diagnostics.js";
 
-export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
+export type { ResourceCollision, ResourceDiagnostic } from "../ops/diagnostics.js";
 
-import { isLocalPath } from "../utils/paths.js";
-import { loadLongTermMemory, loadSoulFile, type MemoryEntry, type SoulFile } from "./main-agent.js";
-import { createEventBus, type EventBus } from "./event-bus.js";
-import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
-import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
-import { collectAncestorAgentsSkillDirs, DefaultPackageManager, type ConfiguredPackage, type PathMetadata } from "./package-manager.js";
-import type { PromptTemplate } from "./prompt-templates.js";
-import { loadPromptTemplates } from "./prompt-templates.js";
+import { isLocalPath } from "../../utils/paths.js";
+import { loadLongTermMemory, loadSoulFile, type MemoryEntry, type SoulFile } from "../agent/main-agent.js";
+import { createEventBus, type EventBus } from "../event-bus.js";
+import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "../extensions/loader.js";
+import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "../extensions/types.js";
+import { collectAncestorAgentsSkillDirs, DefaultPackageManager, type ConfiguredPackage, type PathMetadata } from "../skills/package-manager.js";
+import type { PromptTemplate } from "../context/prompt-templates.js";
+import { loadPromptTemplates } from "../context/prompt-templates.js";
 import { SettingsManager } from "./settings-manager.js";
-import type { Skill } from "./skills.js";
-import { loadSkills } from "./skills.js";
-import { createSourceInfo, type SourceInfo } from "./source-info.js";
-import { getBuiltinExtensionFactories, type BuiltinExtension } from "../builtin-extensions/index.js";
+import type { Skill } from "../skills/skills.js";
+import { loadSkills } from "../skills/skills.js";
+import { createSourceInfo, type SourceInfo } from "../skills/source-info.js";
+import { getBuiltinExtensionFactories, type BuiltinExtension } from "../../builtin-extensions/index.js";
 import {
 	getBuiltinSkillIds,
 	getBuiltinSkillInfos,
 	getBuiltinSkillPath,
 	getEnabledBuiltinSkillPaths,
 	isBuiltinSkillEnabled,
-} from "../builtin-skills/index.js";
+} from "../../builtin-skills/index.js";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;

@@ -12,8 +12,8 @@
  */
 import chalk from "chalk";
 import { getAgentDir } from "./config.js";
-import { SettingsManager } from "./core/settings-manager.js";
-import { checkForUpdate } from "./core/update-checker.js";
+import { SettingsManager } from "./core/config/settings-manager.js";
+import { checkForUpdate } from "./core/ops/update-checker.js";
 
 export async function handleUpdateCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "update") {

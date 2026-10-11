@@ -16,7 +16,7 @@ import {
 	resolveConfigValue,
 	resolveConfigValueUncached,
 	sealConfigCommandTrust,
-} from "../src/core/resolve-config-value.js";
+} from "../src/core/config/resolve-config-value.js";
 
 describe("config command trust (TOFU)", () => {
 	beforeEach(() => {

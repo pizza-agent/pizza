@@ -9,8 +9,8 @@ import {
 	Text,
 	type TUI,
 } from "@earendil-works/pi-tui";
-import type { ModelRegistry } from "../../../src/core/model-registry.js";
-import type { SettingsManager } from "../../../src/core/settings-manager.js";
+import type { ModelRegistry } from "../../../src/core/models/model-registry.js";
+import type { SettingsManager } from "../../../src/core/config/settings-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

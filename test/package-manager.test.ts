@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/skills/package-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 
 function normalizeForMatch(value: string): string {
 	return value.replace(/\\/g, "/");

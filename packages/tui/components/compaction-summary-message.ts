@@ -1,5 +1,5 @@
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
-import type { CompactionSummaryMessage } from "../../../src/core/messages.js";
+import type { CompactionSummaryMessage } from "../../../src/core/context/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 

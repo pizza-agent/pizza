@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { IntentClassifier } from "../src/core/intent/classifier.js";
 
 describe("SettingsManager — safeMode tri-state", () => {

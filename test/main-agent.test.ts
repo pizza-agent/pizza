@@ -9,7 +9,7 @@ import {
 	isSoulUninitialized,
 	loadLongTermMemory,
 	loadSoulFile,
-} from "../src/core/main-agent.js";
+} from "../src/core/agent/main-agent.js";
 import { APP_NAME, getMainMemoryDir, getMainSoulPath } from "../src/config.js";
 
 describe("main-agent", () => {

@@ -16,12 +16,12 @@ import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
-import { CONFIG_DIR_NAME } from "../config.js";
-import { type GitSource, parseGitUrl } from "../utils/git.js";
-import { isLocalPath } from "../utils/paths.js";
-import { isStdoutTakenOver } from "./output-guard.js";
-import { BUILTIN_EXTENSION_SOURCE, recordToPackageSource } from "./extension-registry.js";
-import type { PackageSource, SettingsManager } from "./settings-manager.js";
+import { CONFIG_DIR_NAME } from "../../config.js";
+import { type GitSource, parseGitUrl } from "../../utils/git.js";
+import { isLocalPath } from "../../utils/paths.js";
+import { isStdoutTakenOver } from "../exec/output-guard.js";
+import { BUILTIN_EXTENSION_SOURCE, recordToPackageSource } from "../extensions/extension-registry.js";
+import type { PackageSource, SettingsManager } from "../config/settings-manager.js";
 
 const NETWORK_TIMEOUT_MS = 10000;
 const UPDATE_CHECK_CONCURRENCY = 4;
@@ -650,7 +650,7 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 }
 
 function normalizeExactPattern(pattern: string): string {
-	const normalized = pattern.startsWith("./") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
+	const normalized = pattern.startsWith("../") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
 	return toPosixPath(normalized);
 }
 

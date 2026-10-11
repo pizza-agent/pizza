@@ -4,8 +4,8 @@ import { ConfigFileVersionTracker } from "./config-file-version.js";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import { isBuiltinSkillDefaultEnabled, isBuiltinSkillEnabled } from "../builtin-skills/index.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
+import { isBuiltinSkillDefaultEnabled, isBuiltinSkillEnabled } from "../../builtin-skills/index.js";
 import {
 	BUILTIN_EXTENSION_SOURCE,
 	type ExtensionRecord,
@@ -13,7 +13,7 @@ import {
 	packageSourceToRecord,
 	recordToPackageSource,
 	withPackageFilters,
-} from "./extension-registry.js";
+} from "../extensions/extension-registry.js";
 
 /** File name of the plugin registry inside the agent dir. */
 export const EXTENSION_REGISTRY_FILE = "extensions.json";

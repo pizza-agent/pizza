@@ -9,7 +9,7 @@ import {
 	isUpdateCheckDisabledByEnv,
 	parseSemver,
 	pickDesktopAsset,
-} from "../src/core/update-checker.js";
+} from "../src/core/ops/update-checker.js";
 
 /** Build a fake Response for the injected fetch. */
 function jsonResponse(body: unknown, ok = true, status = 200): Response {

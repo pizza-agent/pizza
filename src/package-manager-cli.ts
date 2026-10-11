@@ -2,8 +2,8 @@ import chalk from "chalk";
 import { selectConfig } from "../packages/cli/config-selector.js";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions/index.js";
 import { APP_NAME, getAgentDir } from "./config.js";
-import { DefaultPackageManager } from "./core/package-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
+import { DefaultPackageManager } from "./core/skills/package-manager.js";
+import { SettingsManager } from "./core/config/settings-manager.js";
 
 export type PackageCommand = "install" | "remove" | "update" | "list" | "enable" | "disable";
 

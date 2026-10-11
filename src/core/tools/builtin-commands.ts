@@ -21,7 +21,7 @@ import {
 } from "./edit-diff.js";
 import { annotateTextWithLineAnchors } from "./line-anchors.js";
 import { truncateHead } from "./truncate.js";
-import { splitShellWords, splitShellWordsWithMeta } from "../shell-words.js";
+import { splitShellWords, splitShellWordsWithMeta } from "../exec/shell-words.js";
 
 export interface BuiltinCommandResult {
 	stdout: string;

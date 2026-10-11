@@ -25,7 +25,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, relative, isAbsolute, join } from "node:path";
 import { existsSync } from "node:fs";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
-import type { Skill } from "../skills.js";
+import type { Skill } from "../skills/skills.js";
 
 /** Supported `skill` subcommands. */
 export const SKILL_ACTIONS = ["list", "load", "read"] as const;

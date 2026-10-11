@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { processFileArguments } from "../packages/cli/file-processor.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { createReadTool } from "../src/core/tools/read.js";
 
 // 1x1 red PNG image as base64 (smallest valid PNG)

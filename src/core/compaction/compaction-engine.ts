@@ -9,7 +9,7 @@
 import type { AgentMessage } from "../agent/types.js";
 import type { EventBase } from "../event-store/types.js";
 import type { EventStore } from "../event-store/store.js";
-import { convertToLlm } from "../messages.js";
+import { convertToLlm } from "../context/messages.js";
 import { eventToMessage } from "../projection/event-to-message.js";
 import type { SessionProjection } from "../projection/session-projection.js";
 import type { LLMClient, ModelConfig, LLMResponse } from "../runtime/llm-types.js";

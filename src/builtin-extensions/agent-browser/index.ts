@@ -124,7 +124,7 @@ export async function checkBrowserAvailable(_cwd: string): Promise<BrowserAvaila
 
 /** Run `agent-browser install` (downloads Chrome for Testing). */
 export async function runAgentBrowserInstall(cwd: string): Promise<{ ok: boolean; message: string }> {
-	const { execCommand } = await import("../../core/exec.js");
+	const { execCommand } = await import("../../core/exec/exec.js");
 	const npmInstall = await execCommand("npm", ["install", "-g", "agent-browser"], cwd, {
 		timeout: 180_000,
 	});
@@ -154,7 +154,7 @@ export async function runAgentBrowserInstall(cwd: string): Promise<{ ok: boolean
 
 /** Run `npm uninstall -g agent-browser`. */
 export async function runAgentBrowserUninstall(cwd: string): Promise<{ ok: boolean; message: string }> {
-	const { execCommand } = await import("../../core/exec.js");
+	const { execCommand } = await import("../../core/exec/exec.js");
 	const result = await execCommand("npm", ["uninstall", "-g", "agent-browser"], cwd, {
 		timeout: 120_000,
 	});

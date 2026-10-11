@@ -10,7 +10,7 @@ import type { ToolDefinition as ExtensionToolDefinition, ToolInfo } from "../ext
 import type { ExtensionRunner } from "../extensions/index.js";
 import type { ToolDefinition as RuntimeToolDefinition } from "../runtime/llm-types.js";
 import type { EventSourcedRuntime } from "../runtime/runtime.js";
-import { createSyntheticSourceInfo } from "../source-info.js";
+import { createSyntheticSourceInfo } from "../skills/source-info.js";
 import { allToolNames, createToolDefinition, type ToolName } from "../tools/index.js";
 import type { PromptBuilder } from "./prompt-builder.js";
 

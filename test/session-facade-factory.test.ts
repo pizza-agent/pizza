@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { AuthStorage } from "../src/core/auth/auth-storage.js";
 import { createExtensionRuntime, type Extension, type ToolDefinition } from "../src/core/extensions/index.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import type { ResourceLoader } from "../src/core/resource-loader.js";
+import { ModelRegistry } from "../src/core/models/model-registry.js";
+import type { ResourceLoader } from "../src/core/config/resource-loader.js";
 import { SessionFacade } from "../src/core/session/session-facade.js";
 import { createSessionFacade } from "../src/core/session/session-facade-factory.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { createSyntheticSourceInfo } from "../src/core/skills/source-info.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 
 describe("createSessionFacade", () => {
 	const tempDirs: string[] = [];

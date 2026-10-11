@@ -1,5 +1,5 @@
 import { Editor, visibleWidth, type EditorOptions, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
-import type { AppKeybinding, KeybindingsManager } from "../../../src/core/keybindings.js";
+import type { AppKeybinding, KeybindingsManager } from "../../../src/core/commands/keybindings.js";
 import { theme } from "../theme/theme.js";
 
 /** Strip ANSI escape sequences for visible-text checks. */

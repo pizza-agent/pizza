@@ -2,7 +2,7 @@ import type { TextContent } from "@earendil-works/pi-ai/compat";
 import type { Component } from "@earendil-works/pi-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MessageRenderer } from "../../../src/core/extensions/types.js";
-import type { CustomMessage } from "../../../src/core/messages.js";
+import type { CustomMessage } from "../../../src/core/context/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**

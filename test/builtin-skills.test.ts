@@ -10,8 +10,8 @@ import {
 	isBuiltinSkillDefaultEnabled,
 	isBuiltinSkillId,
 } from "../src/builtin-skills/index.js";
-import { DefaultResourceLoader } from "../src/core/resource-loader.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import { DefaultResourceLoader } from "../src/core/config/resource-loader.js";
+import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { parseFrontmatter } from "../src/utils/frontmatter.js";
 
 describe("built-in skills registry", () => {

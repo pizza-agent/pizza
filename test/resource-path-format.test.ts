@@ -21,7 +21,7 @@ import {
 	getShortPath,
 	isPackageSource,
 } from "../packages/tui/resource-path-format.js";
-import type { SourceInfo } from "../src/core/source-info.js";
+import type { SourceInfo } from "../src/core/skills/source-info.js";
 
 const HOME = "/Users/tester";
 

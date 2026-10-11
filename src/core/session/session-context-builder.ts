@@ -11,7 +11,7 @@ import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
-} from "../messages.js";
+} from "../context/messages.js";
 import type {
 	CompactionEntry,
 	SessionContext,

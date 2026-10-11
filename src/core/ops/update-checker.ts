@@ -25,7 +25,7 @@ import {
 	detectInstallMethod,
 	getAgentDir,
 	getUpdateInstruction,
-} from "../config.js";
+} from "../../config.js";
 
 /** Where the "what's the latest version" answer comes from. */
 export type UpdateSource = "npm" | "github";

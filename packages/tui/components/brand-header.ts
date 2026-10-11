@@ -1,5 +1,5 @@
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { AppKeybinding } from "../../../src/core/keybindings.js";
+import type { AppKeybinding } from "../../../src/core/commands/keybindings.js";
 import type { TaskHistoryItem } from "../../../src/core/projection/task-history.js";
 import { theme } from "../theme/theme.js";
 import { keyHint, keyText, rawKeyHint } from "./keybinding-hints.js";

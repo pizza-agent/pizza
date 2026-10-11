@@ -8,9 +8,9 @@ import {
 	packageSourceToRecord,
 	recordToPackageSource,
 	withPackageFilters,
-} from "../src/core/extension-registry.js";
-import { DefaultPackageManager } from "../src/core/package-manager.js";
-import { EXTENSION_REGISTRY_FILE, SettingsManager } from "../src/core/settings-manager.js";
+} from "../src/core/extensions/extension-registry.js";
+import { DefaultPackageManager } from "../src/core/skills/package-manager.js";
+import { EXTENSION_REGISTRY_FILE, SettingsManager } from "../src/core/config/settings-manager.js";
 
 describe("ExtensionRegistry", () => {
 	it("round-trips records through patch/set/remove", () => {

@@ -3,9 +3,9 @@
  */
 
 import { spawn } from "node:child_process";
-import { waitForChildProcess } from "../utils/child-process.js";
-import { getShellEnv } from "../utils/shell.js";
-import { prefetchLoginShellPath } from "../utils/login-shell-path.js";
+import { waitForChildProcess } from "../../utils/child-process.js";
+import { getShellEnv } from "../../utils/shell.js";
+import { prefetchLoginShellPath } from "../../utils/login-shell-path.js";
 
 /**
  * Options for executing shell commands.

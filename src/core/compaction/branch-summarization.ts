@@ -13,7 +13,7 @@ import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
-} from "../messages.js";
+} from "../context/messages.js";
 import type { ReadonlySessionManager, SessionEntry } from "../types/session-types.js";
 import { estimateTokens } from "./compaction.js";
 import {

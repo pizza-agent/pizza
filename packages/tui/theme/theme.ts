@@ -6,7 +6,7 @@ import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
 import { highlight, supportsLanguage } from "cli-highlight";
 import { getCustomThemesDir, getThemesDir } from "../../../src/config.js";
-import type { SourceInfo } from "../../../src/core/source-info.js";
+import type { SourceInfo } from "../../../src/core/skills/source-info.js";
 
 // ============================================================================
 // Types & Schema

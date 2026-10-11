@@ -10,7 +10,7 @@
 
 import type { ApiKeyAuth, ModelAuth, OAuthAuth } from "@earendil-works/pi-ai/compat";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import { devinOAuth } from "./devin/oauth.js";
+import { devinOAuth } from "../devin/oauth.js";
 
 /** A login-able OAuth flow: pi-ai `OAuthAuth` plus pizza display metadata. */
 export interface OAuthFlow {
