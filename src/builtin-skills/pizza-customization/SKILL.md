@@ -170,6 +170,15 @@ Manage it entirely through the CLI — never edit `extensions.json` by hand:
     pizza plugin list | enable <src|builtin-id> | disable | update | remove
     pizza config            # TUI to toggle individual package resources
 
+Pizza also accepts the `"pi"` manifest used by packages published for the
+upstream pi ecosystem (https://pi.dev/packages), and maps pi's module
+specifiers (`@earendil-works/pi-coding-agent`, `@mariozechner/pi-coding-agent`,
+`typebox`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui`, plus the legacy
+`@mariozechner/pi-*` names) onto Pizza's API. Compatibility isn't guaranteed —
+pi APIs added after the fork or relying on pi-only features may fail to load
+(surface as diagnostics) — so always verify a third-party package after
+install. Prefer the `"pizza"` manifest and `pizza` specifier for anything new.
+
 Built-in plugins (`agent-browser`, `computer-use`) and built-in skills are
 listed/toggled with `pizza builtin list|enable|disable`.
 

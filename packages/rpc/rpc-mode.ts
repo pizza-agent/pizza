@@ -13,7 +13,7 @@
 
 import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentMessage } from "../../src/core/agent/types.js";
 import { computeMessageStats, type SessionStats } from "../../src/core/session-stats.js";
 import type {
@@ -275,8 +275,26 @@ async function refreshSkillsFromDisk(facade: SessionFacade): Promise<void> {
 async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionInfo[]> {
 	const infos: RpcExtensionInfo[] = [];
 	const loadedIds = new Set<string>();
-	const loaded = facade.resourceLoader?.getExtensions().extensions ?? [];
+	const extensionsResult = facade.resourceLoader?.getExtensions();
+	const loaded = extensionsResult?.extensions ?? [];
 	const cwd = facade.runtime?.cwd ?? process.cwd();
+
+	// Map extension load errors back to the package that produced them (error
+	// paths live under the package's installed dir) so the UI can flag a
+	// package that partially or fully failed to load — e.g. a pi-marketplace
+	// package importing APIs pizza doesn't provide.
+	const packages = facade.resourceLoader?.listConfiguredPackages?.() ?? [];
+	const packageLoadErrors = new Map<string, string>();
+	for (const pkg of packages) {
+		if (!pkg.installedPath) continue;
+		for (const err of extensionsResult?.errors ?? []) {
+			const rel = relative(pkg.installedPath, err.path);
+			if (rel && !rel.startsWith("..") && !isAbsolute(rel)) {
+				const prev = packageLoadErrors.get(pkg.source);
+				packageLoadErrors.set(pkg.source, prev ? `${prev}\n${err.error}` : err.error);
+			}
+		}
+	}
 
 	// Installed state of every built-in, read from extensions.json — no probing.
 	const registry = facade.settingsManager.extensions;
@@ -311,6 +329,7 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 			toolCount: ext.tools.size,
 			commandCount: ext.commands.size,
 			builtinCommandCount: ext.builtinCommands?.size ?? 0,
+			loadError: packageSource ? packageLoadErrors.get(packageSource) : undefined,
 		});
 	}
 
@@ -344,7 +363,7 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 	const loadedPackageSources = new Set(
 		loaded.filter((e) => e.sourceInfo?.origin === "package").map((e) => e.sourceInfo.source),
 	);
-	for (const pkg of facade.resourceLoader?.listConfiguredPackages?.() ?? []) {
+	for (const pkg of packages) {
 		if (loadedPackageSources.has(pkg.source)) continue;
 		const manifest = readInstalledPackageJson(pkg.installedPath);
 		infos.push({
@@ -361,6 +380,7 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 			toolCount: 0,
 			commandCount: 0,
 			builtinCommandCount: 0,
+			loadError: packageLoadErrors.get(pkg.source),
 		});
 	}
 
@@ -1422,6 +1442,16 @@ export async function runRpcModeWithFacade(
 				message: result.message,
 				installed: result.installed,
 			});
+		}
+
+		case "install_package": {
+			if (!facade.resourceLoader?.installConfiguredPackage) {
+				return error(id, "install_package", "Package installation is not available in this mode");
+			}
+			await facade.resourceLoader.installConfiguredPackage(command.source);
+			// Resources the package contributes (extensions, skills, ...) only
+			// become active after the session reloads its resources.
+			return success(id, "install_package", { source: command.source, installed: true, requiresReload: true });
 		}
 
 		case "remove_package": {

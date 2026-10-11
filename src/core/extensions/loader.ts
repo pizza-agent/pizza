@@ -69,9 +69,16 @@ function validateBuiltinCommandName(name: string): void {
 /** Modules available to extensions via virtualModules (for compiled Bun binary) */
 const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
+	typebox: _bundledTypebox,
 	"@earendil-works/pi-tui": _bundledTui,
+	"@mariozechner/pi-tui": _bundledTui,
 	"@earendil-works/pi-ai": _bundledAi,
+	"@mariozechner/pi-ai": _bundledAi,
 	pizza: _bundledPizza,
+	// Upstream pi specifiers — extensions published for pi (https://pi.dev/packages)
+	// import these; map them onto pizza's API surface so they load here too.
+	"@earendil-works/pi-coding-agent": _bundledPizza,
+	"@mariozechner/pi-coding-agent": _bundledPizza,
 };
 
 const require = createRequire(import.meta.url);
@@ -85,7 +92,13 @@ function getAliases(): Record<string, string> {
 	if (_aliases) return _aliases;
 
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
-	const packageIndex = path.resolve(__dirname, "../..", "index.js");
+	// Built package: dist/src/index.js. Source tree (vitest/dev): src/index.ts.
+	const packageIndex = (() => {
+		const distIndex = path.resolve(__dirname, "../..", "index.js");
+		if (fs.existsSync(distIndex)) return distIndex;
+		const srcIndex = path.resolve(__dirname, "../..", "index.ts");
+		return fs.existsSync(srcIndex) ? srcIndex : distIndex;
+	})();
 
 	const typeboxEntry = require.resolve("@sinclair/typebox");
 	const typeboxRoot = typeboxEntry.replace(/[\\/]build[\\/]cjs[\\/]index\.js$/, "");
@@ -119,11 +132,21 @@ function getAliases(): Record<string, string> {
 		}
 	};
 
+	const piTui = resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui");
+	const piAi = resolveWorkspaceOrImport("ai/dist/index.js", "@earendil-works/pi-ai");
+
 	_aliases = {
 		pizza: packageIndex,
-		"@earendil-works/pi-tui": resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui"),
-		"@earendil-works/pi-ai": resolveWorkspaceOrImport("ai/dist/index.js", "@earendil-works/pi-ai"),
+		// Upstream pi specifiers resolve to pizza's own API entry point so
+		// extensions published for pi (https://pi.dev/packages) load here too.
+		"@earendil-works/pi-coding-agent": packageIndex,
+		"@mariozechner/pi-coding-agent": packageIndex,
+		"@earendil-works/pi-tui": piTui,
+		"@mariozechner/pi-tui": piTui,
+		"@earendil-works/pi-ai": piAi,
+		"@mariozechner/pi-ai": piAi,
 		"@sinclair/typebox": typeboxRoot,
+		typebox: typeboxRoot,
 	};
 
 	return _aliases;
@@ -500,8 +523,11 @@ function readPizzaManifest(packageJsonPath: string): PizzaManifest | null {
 	try {
 		const content = fs.readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content);
-		if (pkg.pizza && typeof pkg.pizza === "object") {
-			return pkg.pizza as PizzaManifest;
+		// Accept "pi" as a fallback so packages published for the upstream pi
+		// ecosystem (https://pi.dev/packages) resolve their extensions too.
+		const manifest = pkg.pizza ?? pkg.pi;
+		if (manifest && typeof manifest === "object") {
+			return manifest as PizzaManifest;
 		}
 		return null;
 	} catch {

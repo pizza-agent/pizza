@@ -927,6 +927,51 @@ Content`,
 		});
 	});
 
+	describe("pi manifest compatibility", () => {
+		it("should resolve resources from a pi manifest when no pizza manifest exists", async () => {
+			const pkgDir = join(tempDir, "pi-manifest-pkg");
+			mkdirSync(join(pkgDir, "skills/pi-skill"), { recursive: true });
+			writeFileSync(join(pkgDir, "pi-ext.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "skills/pi-skill", "SKILL.md"),
+				"---\nname: pi-skill\ndescription: Pi skill\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "pi-manifest-pkg",
+					pi: {
+						extensions: ["pi-ext.ts"],
+						skills: ["skills"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.extensions.some((r) => isEnabled(r, "pi-ext.ts"))).toBe(true);
+			expect(result.skills.some((r) => isEnabled(r, "pi-skill", "includes"))).toBe(true);
+		});
+
+		it("should prefer the pizza manifest when both pi and pizza are present", async () => {
+			const pkgDir = join(tempDir, "dual-manifest-pkg");
+			mkdirSync(pkgDir, { recursive: true });
+			writeFileSync(join(pkgDir, "pizza-ext.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "pi-ext.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "dual-manifest-pkg",
+					pizza: { extensions: ["pizza-ext.ts"] },
+					pi: { extensions: ["pi-ext.ts"] },
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.extensions.some((r) => isEnabled(r, "pizza-ext.ts"))).toBe(true);
+			expect(result.extensions.some((r) => pathEndsWith(r.path, "pi-ext.ts"))).toBe(false);
+		});
+	});
+
 	describe("pattern filtering in package filters", () => {
 		it("should apply user filters on top of manifest filters (not replace)", async () => {
 			// Manifest excludes baz.ts, user excludes bar.ts

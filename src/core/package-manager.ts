@@ -514,8 +514,10 @@ function collectAutoThemeEntries(dir: string): string[] {
 function readPizzaManifestFile(packageJsonPath: string): PizzaManifest | null {
 	try {
 		const content = readFileSync(packageJsonPath, "utf-8");
-		const pkg = JSON.parse(content) as { pizza?: PizzaManifest };
-		return pkg.pizza ?? null;
+		// Accept "pi" as a fallback so packages published for the upstream pi
+		// ecosystem (https://pi.dev/packages) resolve their resources too.
+		const pkg = JSON.parse(content) as { pizza?: PizzaManifest; pi?: PizzaManifest };
+		return pkg.pizza ?? pkg.pi ?? null;
 	} catch {
 		return null;
 	}
@@ -1983,8 +1985,8 @@ export class DefaultPackageManager implements PackageManager {
 
 		try {
 			const content = readFileSync(packageJsonPath, "utf-8");
-			const pkg = JSON.parse(content) as { pizza?: PizzaManifest };
-			return pkg.pizza ?? null;
+			const pkg = JSON.parse(content) as { pizza?: PizzaManifest; pi?: PizzaManifest };
+			return pkg.pizza ?? pkg.pi ?? null;
 		} catch {
 			return null;
 		}

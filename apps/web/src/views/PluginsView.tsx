@@ -14,7 +14,10 @@ import {
 	setExtensionEnabled,
 	installExtension,
 	uninstallExtension,
+	installPluginPackage,
 	removePackage,
+	fetchPiPackages,
+	getCachedPiPackages,
 	getExtensionPermissions,
 	recheckExtensionPermissions,
 	openExtensionPermissionSettings,
@@ -22,6 +25,7 @@ import {
 	type SkillsShSkill,
 	type SkillInfo,
 	type ExtensionInfo,
+	type PiPackage,
 	type ExtensionPermissionKind,
 	type ExtensionPermissionState,
 } from "@/lib/transport";
@@ -465,6 +469,9 @@ function ExtensionCard({
 								<Badge tone="neutral">{t("plugins.extensions.disabled")}</Badge>
 							))}
 						<Badge tone="neutral">{kindLabel}</Badge>
+						{ext.loadError && (
+							<Badge tone="danger">{t("plugins.extensions.loadFailed")}</Badge>
+						)}
 						{ext.installable && (
 							<Badge tone={ext.installed ? "success" : "warning"}>
 								{ext.installed ? t("plugins.extensions.installed") : t("plugins.extensions.notInstalled")}
@@ -486,6 +493,11 @@ function ExtensionCard({
 							</span>
 						)}
 					</div>
+					{ext.loadError && (
+						<p className="mt-2 line-clamp-2 font-mono text-[10px] leading-relaxed text-danger">
+							{ext.loadError}
+						</p>
+					)}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					{menuItems.length > 0 && (
@@ -506,6 +518,83 @@ function ExtensionCard({
 					onRecheck={() => onRecheckPermissions(ext.id)}
 				/>
 			)}
+		</Card>
+	);
+}
+
+function PiPackageCard({
+	pkg,
+	installed,
+	failed,
+	installing,
+	onInstall,
+}: {
+	pkg: PiPackage;
+	installed: boolean;
+	/** Installed but failed to load (e.g. uses APIs pizza doesn't provide). */
+	failed: boolean;
+	installing: boolean;
+	onInstall: () => void;
+}) {
+	const { t } = useTranslation();
+	const links = [
+		{ icon: ExternalLink, label: t("plugins.extensions.directory.view"), onClick: () => openExternal(pkg.url) },
+		...(pkg.npmUrl
+			? [{ icon: ExternalLink, label: t("plugins.extensions.directory.npm"), onClick: () => openExternal(pkg.npmUrl!) }]
+			: []),
+		...(pkg.repoUrl
+			? [{ icon: ExternalLink, label: t("plugins.extensions.directory.repo"), onClick: () => openExternal(pkg.repoUrl!) }]
+			: []),
+	];
+	return (
+		<Card className="@container transition-colors hover:border-accent/40">
+			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2">
+						<Puzzle className="h-4 w-4 shrink-0 text-accent" />
+						<span className="truncate text-sm font-medium text-fg">{pkg.name}</span>
+					</div>
+					{pkg.description && (
+						<p className="mt-2 line-clamp-2 text-xs text-muted">{pkg.description}</p>
+					)}
+					<div className="mt-3 flex flex-wrap items-center gap-2">
+						{installed && failed ? (
+							<Badge tone="danger">{t("plugins.extensions.loadFailed")}</Badge>
+						) : installed ? (
+							<Badge tone="success">{t("plugins.extensions.directory.installed")}</Badge>
+						) : installing ? (
+							<Badge tone="accent">{t("plugins.extensions.directory.installing")}</Badge>
+						) : (
+							<Badge tone="accent">pi</Badge>
+						)}
+						{pkg.author && <Badge tone="neutral">{pkg.author}</Badge>}
+						{pkg.downloadsLabel && (
+							<span className="text-[10px] text-muted">{pkg.downloadsLabel}</span>
+						)}
+					</div>
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					<MoreMenu
+						title={t("plugins.extensions.actions")}
+						items={[
+							...links,
+							...(installed
+								? []
+								: [
+										{ divider: true as const },
+										{
+											icon: installing ? Loader2 : Download,
+											label: installing
+												? t("plugins.extensions.directory.installing")
+												: t("plugins.extensions.directory.install"),
+											onClick: onInstall,
+											disabled: installing,
+										},
+									]),
+						]}
+					/>
+				</div>
+			</div>
 		</Card>
 	);
 }
@@ -621,14 +710,27 @@ function ExtensionPermissionGuide({
 	);
 }
 
+/** Extract the npm package name from an installed package source ("npm:foo@1.2.3" -> "foo"). */
+function packageSourceNpmName(source: string | undefined): string | null {
+	if (!source || !source.startsWith("npm:")) return null;
+	const spec = source.slice(4);
+	// Scoped names contain one slash; strip a trailing @version unless it's the scope prefix.
+	const at = spec.lastIndexOf("@");
+	return at > 0 ? spec.slice(0, at) : spec;
+}
+
 function ExtensionsTab() {
 	const { t } = useTranslation();
 	const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
 	const [extensionPermissions, setExtensionPermissions] = useState<Record<string, ExtensionPermissionState>>({});
+	const [dirPackages, setDirPackages] = useState<PiPackage[]>(() => getCachedPiPackages() ?? []);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 	const [reloadHint, setReloadHint] = useState(false);
 	const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
+	const [search, setSearch] = useState("");
+	const [installingName, setInstallingName] = useState<string | null>(null);
+	const [installedNames, setInstalledNames] = useState<Set<string>>(() => new Set());
 	const permissionRequestSeq = useRef(0);
 
 	const refreshPermissions = useCallback(async (exts: ExtensionInfo[]) => {
@@ -682,10 +784,18 @@ function ExtensionsTab() {
 		try {
 			setLoading(true);
 			setError("");
-			const exts = await getExtensions();
-			setExtensions(exts);
-			setLoading(false);
-			void refreshPermissions(exts);
+			// The pi.dev directory may fail independently (offline, CORS in
+			// browser mode) — don't let it take down the installed list.
+			const [exts, dir] = await Promise.allSettled([getExtensions(), fetchPiPackages()]);
+			if (exts.status === "fulfilled") {
+				setExtensions(exts.value);
+				setLoading(false);
+				void refreshPermissions(exts.value);
+			} else {
+				setError(exts.reason instanceof Error ? exts.reason.message : String(exts.reason));
+				setLoading(false);
+			}
+			if (dir.status === "fulfilled") setDirPackages(dir.value);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 			setLoading(false);
@@ -710,7 +820,8 @@ function ExtensionsTab() {
 	);
 
 	const [busyId, setBusyId] = useState<string | null>(null);
-	const [installMessage, setInstallMessage] = useState<string | null>(null);
+	/** Action feedback banner — errors render in danger color so failures aren't missed. */
+	const [installMessage, setInstallMessage] = useState<{ text: string; error: boolean } | null>(null);
 	// Synchronous guard so rapid double-clicks can't bypass the busyId state update.
 	const lifecycleLock = useRef<string | null>(null);
 
@@ -722,7 +833,7 @@ function ExtensionsTab() {
 			setInstallMessage(null);
 			try {
 				const result = await fn(id);
-				setInstallMessage(result.message);
+				setInstallMessage({ text: result.message, error: !result.ok });
 				if (result.ok) {
 					// Re-sync with the agent: install/uninstall may change tool/command counts,
 					// enabled state, or other fields beyond just `installed`.
@@ -732,7 +843,7 @@ function ExtensionsTab() {
 					setExtensions((prev) => prev.map((e) => (e.id === id ? { ...e, installed: result.installed } : e)));
 				}
 			} catch (e) {
-				setInstallMessage(e instanceof Error ? e.message : String(e));
+				setInstallMessage({ text: e instanceof Error ? e.message : String(e), error: true });
 			} finally {
 				lifecycleLock.current = null;
 				setBusyId(null);
@@ -761,12 +872,65 @@ function ExtensionsTab() {
 					setReloadHint(result.requiresReload);
 					setExtensions((prev) => prev.filter((e) => e.id !== source && e.packageSource !== source));
 				} else {
-					setInstallMessage(result.error ?? t("plugins.extensions.removePackageFailed"));
+					setInstallMessage({
+						text: result.error ?? t("plugins.extensions.removePackageFailed"),
+						error: true,
+					});
 				}
 			} catch (e) {
-				setInstallMessage(e instanceof Error ? e.message : String(e));
+				setInstallMessage({ text: e instanceof Error ? e.message : String(e), error: true });
 			} finally {
 				setBusyId(null);
+			}
+		},
+		[t],
+	);
+
+	const handleInstallPackage = useCallback(
+		async (pkg: PiPackage) => {
+			setInstallingName(pkg.name);
+			setInstallMessage(null);
+			const markInstalled = (requiresReload = true) => {
+				setInstalledNames((prev) => new Set(prev).add(pkg.name));
+				setReloadHint(requiresReload);
+				setInstallMessage({
+					text: t("plugins.extensions.directory.installedMsg", { name: pkg.name }),
+					error: false,
+				});
+			};
+			/** The install may complete server-side while its response frame is lost
+			 *  (channel reconnect mid-install). Re-check before reporting failure. */
+			const confirmInstalled = async (): Promise<boolean> => {
+				try {
+					const exts = await getExtensions();
+					setExtensions(exts);
+					return exts.some(
+						(e) => packageSourceNpmName(e.packageSource ?? e.id) === pkg.name,
+					);
+				} catch {
+					return false;
+				}
+			};
+			try {
+				const result = await installPluginPackage(`npm:${pkg.name}`);
+				if (result.installed) {
+					markInstalled(result.requiresReload);
+				} else if (await confirmInstalled()) {
+					markInstalled();
+				} else {
+					setInstallMessage({
+						text: result.error ?? t("plugins.extensions.directory.installFailed"),
+						error: true,
+					});
+				}
+			} catch (e) {
+				if (await confirmInstalled()) {
+					markInstalled();
+				} else {
+					setInstallMessage({ text: e instanceof Error ? e.message : String(e), error: true });
+				}
+			} finally {
+				setInstallingName(null);
 			}
 		},
 		[t],
@@ -778,9 +942,9 @@ function ExtensionsTab() {
 		const busyTimeout = window.setTimeout(() => setPermissionBusy(null), PERMISSION_OPEN_BUSY_MS);
 		try {
 			const result = await openExtensionPermissionSettings(id, kind);
-			if (!result.ok && result.message) setInstallMessage(result.message);
+			if (!result.ok && result.message) setInstallMessage({ text: result.message, error: true });
 		} catch (e) {
-			setInstallMessage(e instanceof Error ? e.message : String(e));
+			setInstallMessage({ text: e instanceof Error ? e.message : String(e), error: true });
 		} finally {
 			window.clearTimeout(busyTimeout);
 			setPermissionBusy(null);
@@ -817,13 +981,13 @@ function ExtensionsTab() {
 			if (permissionRequestSeq.current !== requestId) return;
 			setExtensionPermissions((prev) => ({ ...prev, [id]: result }));
 			setInstallMessage(result.ready
-				? t("plugins.extensions.permissions.ready")
-				: t("plugins.extensions.permissions.stillMissing"));
+				? { text: t("plugins.extensions.permissions.ready"), error: false }
+				: { text: t("plugins.extensions.permissions.stillMissing"), error: true });
 		} catch (e) {
 			settled = true;
 			window.clearTimeout(timeout);
 			if (permissionRequestSeq.current !== requestId) return;
-			setInstallMessage(e instanceof Error ? e.message : String(e));
+			setInstallMessage({ text: e instanceof Error ? e.message : String(e), error: true });
 			setExtensionPermissions((prev) => ({
 				...prev,
 				[id]: permissionFallbackState(
@@ -853,9 +1017,51 @@ function ExtensionsTab() {
 		);
 	}
 
+	const query = search.trim().toLowerCase();
+	const filteredExtensions = query
+		? extensions.filter(
+				(e) =>
+					e.name.toLowerCase().includes(query) ||
+					e.description?.toLowerCase().includes(query) ||
+					e.packageSource?.toLowerCase().includes(query),
+			)
+		: extensions;
+	const filteredDir = query
+		? dirPackages.filter(
+				(p) =>
+					p.name.toLowerCase().includes(query) ||
+					p.description?.toLowerCase().includes(query) ||
+					p.author?.toLowerCase().includes(query),
+			)
+		: dirPackages;
+	// Names of npm packages already installed via the package manager.
+	const installedPkgNames = new Set(
+		extensions
+			.filter((e) => e.kind === "package")
+			.map((e) => packageSourceNpmName(e.packageSource ?? e.id))
+			.filter((n): n is string => n !== null),
+	);
+	// Installed npm packages whose extensions failed to load this session.
+	const loadFailedNames = new Set(
+		extensions
+			.filter((e) => e.kind === "package" && e.loadError)
+			.map((e) => packageSourceNpmName(e.packageSource ?? e.id))
+			.filter((n): n is string => n !== null),
+	);
+
 	return (
 		<div className="space-y-4">
-			<div className="flex items-center justify-end">
+			<div className="flex items-center gap-2">
+				<div className="relative flex-1">
+					<Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+					<input
+						type="text"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						placeholder={t("plugins.extensions.search")}
+						className="w-full rounded-md border border-border bg-surface px-9 py-2 font-mono text-xs text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+					/>
+				</div>
 				<Button size="sm" tone="neutral" onClick={refresh}>
 					{t("plugins.refresh")}
 				</Button>
@@ -868,32 +1074,71 @@ function ExtensionsTab() {
 			)}
 			{installMessage && (
 				<Card>
-					<p className="text-xs text-muted">{installMessage}</p>
+					<p className={cn("text-xs", installMessage.error ? "text-danger" : "text-muted")}>
+						{installMessage.text}
+					</p>
 				</Card>
 			)}
 
-			{extensions.length === 0 ? (
+			{filteredExtensions.length > 0 && (
+				<>
+					<h2 className="mb-3 text-sm font-semibold text-fg">
+						{t("plugins.extensions.installedSection")} ({filteredExtensions.length})
+					</h2>
+					<div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+						{filteredExtensions.map((ext) => (
+							<ExtensionCard
+								key={ext.id}
+								ext={ext}
+								onToggle={handleToggle}
+								onInstall={handleInstall}
+								onUninstall={handleUninstall}
+								permissionState={extensionPermissions[ext.id]}
+								permissionBusy={permissionBusy}
+								onOpenPermission={handleOpenPermission}
+								onRecheckPermissions={handleRecheckPermissions}
+								onRemovePackage={handleRemovePackage}
+								busyId={busyId}
+							/>
+						))}
+					</div>
+				</>
+			)}
+			{filteredExtensions.length === 0 && extensions.length === 0 && (
 				<Card>
 					<div className="py-6 text-center">
 						<Puzzle className="mx-auto mb-2 h-8 w-8 text-muted/40" />
 						<p className="font-mono text-xs text-muted">{t("plugins.extensions.empty")}</p>
 					</div>
 				</Card>
+			)}
+
+			<div className="mb-3">
+				<h2 className="text-sm font-semibold text-fg">
+					{t("plugins.extensions.directory.section")} ({filteredDir.length})
+				</h2>
+				<p className="mt-1 text-[11px] leading-relaxed text-muted">
+					{t("plugins.extensions.directory.compatNote")}
+				</p>
+			</div>
+
+			{filteredDir.length === 0 ? (
+				<Card>
+					<div className="py-6 text-center">
+						<Puzzle className="mx-auto mb-2 h-8 w-8 text-muted/40" />
+						<p className="font-mono text-xs text-muted">{t("plugins.extensions.directory.empty")}</p>
+					</div>
+				</Card>
 			) : (
 				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					{extensions.map((ext) => (
-						<ExtensionCard
-							key={ext.id}
-							ext={ext}
-							onToggle={handleToggle}
-							onInstall={handleInstall}
-							onUninstall={handleUninstall}
-							permissionState={extensionPermissions[ext.id]}
-							permissionBusy={permissionBusy}
-							onOpenPermission={handleOpenPermission}
-							onRecheckPermissions={handleRecheckPermissions}
-							onRemovePackage={handleRemovePackage}
-							busyId={busyId}
+					{filteredDir.map((pkg) => (
+						<PiPackageCard
+							key={pkg.name}
+							pkg={pkg}
+							installed={installedPkgNames.has(pkg.name) || installedNames.has(pkg.name)}
+							failed={loadFailedNames.has(pkg.name)}
+							installing={installingName === pkg.name}
+							onInstall={() => void handleInstallPackage(pkg)}
 						/>
 					))}
 				</div>

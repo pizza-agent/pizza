@@ -306,6 +306,7 @@ export type RpcCommand =
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
 	| { id?: string; type: "install_extension"; extensionId: string }
 	| { id?: string; type: "uninstall_extension"; extensionId: string }
+	| { id?: string; type: "install_package"; source: string }
 	| { id?: string; type: "remove_package"; source: string }
 	| { id?: string; type: "get_extension_permissions"; extensionId: string }
 	| { id?: string; type: "recheck_extension_permissions"; extensionId: string }
@@ -424,6 +425,12 @@ export interface RpcExtensionInfo {
 	commandCount: number;
 	/** Number of dynamic built-in cli commands this extension registers (e.g. computer-use's `_computer_use`). */
 	builtinCommandCount: number;
+	/**
+	 * For package extensions: extension load errors attributed to this package
+	 * (e.g. a pi-marketplace package importing APIs the runtime doesn't have).
+	 * Absent when the package loaded cleanly.
+	 */
+	loadError?: string;
 }
 
 /** A theme known to the agent (built-in, user dir, or extension-contributed), as returned by get_themes. */
@@ -614,6 +621,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
 	| { id?: string; type: "response"; command: "uninstall_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
+	| { id?: string; type: "response"; command: "install_package"; success: true; data: { source: string; installed: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "remove_package"; success: true; data: { source: string; removed: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "get_extension_permissions"; success: true; data: RpcExtensionPermissionState }
 	| { id?: string; type: "response"; command: "recheck_extension_permissions"; success: true; data: RpcExtensionPermissionState }

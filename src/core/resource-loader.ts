@@ -75,6 +75,8 @@ export interface ResourceLoader {
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	/** Installed plugin packages configured in settings (may contribute any resource type). */
 	listConfiguredPackages?(): ConfiguredPackage[];
+	/** Install a plugin package (npm/git/local source) and persist it to extensions.json. */
+	installConfiguredPackage?(source: string): Promise<void>;
 	/** Remove an installed package (files for npm/git) and drop its extensions.json record. Returns false when not installed. */
 	removeConfiguredPackage?(source: string): Promise<boolean>;
 	/** Enable/disable an installed package (takes effect on the next resource reload). Returns false when not installed. */
@@ -371,6 +373,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 	/** Installed plugin packages configured in settings (may contribute any resource type). */
 	listConfiguredPackages(): ConfiguredPackage[] {
 		return this.packageManager.listConfiguredPackages();
+	}
+
+	async installConfiguredPackage(source: string): Promise<void> {
+		await this.packageManager.installAndPersist(source);
 	}
 
 	async removeConfiguredPackage(source: string): Promise<boolean> {

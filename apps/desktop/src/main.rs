@@ -48,6 +48,7 @@ fn main() {
 			bridge::git_log,
 			bridge::git_show,
 			bridge::fetch_skills_sh,
+			bridge::fetch_pi_packages,
 			bridge::oauth_login,
 			bridge::oauth_login_answer,
 			bridge::oauth_login_cancel,

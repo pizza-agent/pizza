@@ -474,6 +474,8 @@ export interface ExtensionInfo {
 	commandCount: number;
 	/** Dynamic built-in cli commands registered by this extension (e.g. `_computer_use`). */
 	builtinCommandCount: number;
+	/** For package extensions: load errors attributed to this package (e.g. pi packages needing APIs pizza lacks). */
+	loadError?: string;
 }
 
 export type ExtensionPermissionKind = "accessibility" | "screenRecording";
@@ -723,6 +725,151 @@ export async function fetchSkillsSh(force = false): Promise<SkillsShSkill[]> {
 		return skills;
 	} catch {
 		return cached?.skills ?? [];
+	}
+}
+
+// --- Pi package directory (pi.dev/packages) ---
+
+export interface PiPackage {
+	name: string;
+	description?: string;
+	author?: string;
+	/** Monthly download count as rendered by pi.dev (e.g. "1.6M/mo"). */
+	downloadsLabel?: string;
+	downloads?: number;
+	types: string[];
+	/** pi.dev package detail page. */
+	url: string;
+	npmUrl?: string;
+	repoUrl?: string;
+}
+
+const PI_PACKAGES_CACHE_KEY = "pizza-pi-packages-cache";
+/** The pi.dev directory changes slowly — cache it for a few days. */
+const PI_PACKAGES_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+/** How many directory pages to scrape (50 packages per page). */
+const PI_PACKAGES_PAGES = 3;
+
+let piPackagesMemCache: { packages: PiPackage[]; fetchedAt: number } | null = null;
+
+function readPiPackagesCache(): { packages: PiPackage[]; fetchedAt: number } | null {
+	if (piPackagesMemCache) return piPackagesMemCache;
+	try {
+		const raw = localStorage.getItem(PI_PACKAGES_CACHE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed?.packages) && typeof parsed.fetchedAt === "number") {
+			piPackagesMemCache = parsed;
+			return parsed;
+		}
+	} catch {
+		/* ignore */
+	}
+	return null;
+}
+
+function writePiPackagesCache(packages: PiPackage[]): void {
+	const entry = { packages, fetchedAt: Date.now() };
+	piPackagesMemCache = entry;
+	try {
+		localStorage.setItem(PI_PACKAGES_CACHE_KEY, JSON.stringify(entry));
+	} catch {
+		/* quota — memory cache still works */
+	}
+}
+
+/** Whatever is currently cached (fresh or stale), or null — for instant first paint. */
+export function getCachedPiPackages(): PiPackage[] | null {
+	return readPiPackagesCache()?.packages ?? null;
+}
+
+function parsePiPackagesHtml(html: string, acc: Map<string, PiPackage>): void {
+	const doc = new DOMParser().parseFromString(html, "text/html");
+	for (const card of doc.querySelectorAll<HTMLElement>("article[data-package-card]")) {
+		const name = card.dataset.packageName;
+		if (!name || acc.has(name)) continue;
+		const description = card.querySelector(".packages-desc")?.textContent?.trim() || undefined;
+		const meta = card.querySelectorAll(".packages-meta span");
+		const author = meta[0]?.textContent?.trim() || undefined;
+		const downloadsLabel = meta[1]?.textContent?.trim() || undefined;
+		const downloads = Number(card.dataset.packageDownloads) || undefined;
+		const types = (card.dataset.packageTypes ?? "").split(/\s+/).filter(Boolean);
+		const link = card.querySelector<HTMLAnchorElement>("a[data-package-link]")?.getAttribute("href") ?? "";
+		const links = Array.from(card.querySelectorAll<HTMLAnchorElement>(".packages-links a"))
+			.map((a) => a.getAttribute("href") ?? "")
+			.filter(Boolean);
+		const npmUrl = links.find((l) => l.includes("npmjs.com/package/"));
+		const repoUrl = links.find((l) => l.startsWith("https://github.com/") && !l.includes("package-report"));
+		acc.set(name, {
+			name,
+			description,
+			author,
+			downloadsLabel,
+			downloads,
+			types,
+			url: `https://pi.dev${link.split("?")[0]}`,
+			npmUrl,
+			repoUrl,
+		});
+	}
+}
+
+/**
+ * Fetch the extension directory from https://pi.dev/packages.
+ * The catalog is server-rendered HTML (no public JSON API), so we scrape the
+ * package cards' data attributes. Pages are fetched sorted by downloads.
+ */
+export async function fetchPiPackages(force = false): Promise<PiPackage[]> {
+	const cached = readPiPackagesCache();
+	if (!force && cached && Date.now() - cached.fetchedAt < PI_PACKAGES_TTL_MS) {
+		return cached.packages;
+	}
+	try {
+		const query = "type=extension&sort=downloads";
+		const fetchPage = async (page: number): Promise<string> => {
+			const q = `${query}&page=${page}`;
+			if (isTauri()) {
+				const core = await import("@tauri-apps/api/core");
+				return core.invoke<string>("fetch_pi_packages", { query: q });
+			}
+			const res = await fetch(`https://pi.dev/packages?${q}`, {
+				headers: { Accept: "text/html" },
+			});
+			if (!res.ok) throw new Error(`pi.dev returned status ${res.status}`);
+			return res.text();
+		};
+		const pages = await Promise.all(
+			Array.from({ length: PI_PACKAGES_PAGES }, (_, i) => fetchPage(i + 1)),
+		);
+		const acc = new Map<string, PiPackage>();
+		for (const html of pages) parsePiPackagesHtml(html, acc);
+		const packages = Array.from(acc.values());
+		// An empty scrape almost always means the page markup changed — keep
+		// serving whatever we had rather than rendering an empty directory.
+		if (packages.length === 0) return cached?.packages ?? [];
+		writePiPackagesCache(packages);
+		return packages;
+	} catch {
+		return cached?.packages ?? [];
+	}
+}
+
+/**
+ * Install a plugin package (npm/git/local source, e.g. "npm:pi-mcp-adapter")
+ * through the agent's package manager. Requires a session reload before its
+ * resources activate.
+ */
+export async function installPluginPackage(
+	source: string,
+): Promise<{ installed: boolean; requiresReload: boolean; error?: string }> {
+	try {
+		const r = await sendCommandAwait<{ installed: boolean; requiresReload: boolean }>(
+			{ type: "install_package", source },
+			300000,
+		);
+		return { installed: r.data?.installed ?? false, requiresReload: r.data?.requiresReload ?? true };
+	} catch (e) {
+		return { installed: false, requiresReload: false, error: e instanceof Error ? e.message : String(e) };
 	}
 }
 

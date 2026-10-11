@@ -475,6 +475,22 @@
       "uninstalling": "Uninstalling…",
       "removePackageConfirm": "Remove package \"{{name}}\"? Its resources stay loaded until the session restarts.",
       "removePackageFailed": "Failed to remove the package.",
+      "loadFailed": "Load failed",
+            "search": "Search extensions...",
+      "installedSection": "Installed Extensions",
+      "directory": {
+        "section": "Pi Package Directory",
+        "compatNote": "Packages from pi.dev are built for pi, not pizza. Most common API imports are mapped automatically, but compatibility is not guaranteed — some packages may fail to load or behave differently. Install executes package code.",
+        "empty": "No packages found",
+        "view": "View on pi.dev",
+        "npm": "Open on npm",
+        "repo": "Open repository",
+        "install": "Install",
+        "installing": "Installing…",
+        "installed": "Installed",
+        "installFailed": "Failed to install the package.",
+        "installedMsg": "Installed {{name}}. Restart the session to activate it."
+      },
       "actions": "Actions",
       "permissions": {
         "checking": "Checking desktop automation permissions",

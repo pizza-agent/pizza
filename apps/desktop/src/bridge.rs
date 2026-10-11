@@ -3728,6 +3728,34 @@ pub async fn fetch_skills_sh() -> Result<String, String> {
 	Ok(html)
 }
 
+/// Fetch a pi.dev packages catalog page via Rust (bypasses CORS).
+/// `query` is the raw query string (e.g. "type=extension&sort=downloads&page=1").
+#[tauri::command]
+pub async fn fetch_pi_packages(query: String) -> Result<String, String> {
+	let client = reqwest::Client::builder()
+		.user_agent("pizza-desktop/0.1")
+		.timeout(Duration::from_secs(15))
+		.build()
+		.map_err(|e| format!("HTTP client error: {e}"))?;
+
+	let res = client
+		.get(format!("https://pi.dev/packages?{query}"))
+		.send()
+		.await
+		.map_err(|e| format!("Fetch error: {e}"))?;
+
+	if !res.status().is_success() {
+		return Err(format!("pi.dev returned status {}", res.status()));
+	}
+
+	let html = res
+		.text()
+		.await
+		.map_err(|e| format!("Read body error: {e}"))?;
+
+	Ok(html)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

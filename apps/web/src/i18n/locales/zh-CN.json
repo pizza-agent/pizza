@@ -475,6 +475,22 @@
       "uninstalling": "卸载中…",
       "removePackageConfirm": "移除插件包 \"{{name}}\"？其资源在会话重启前仍会保持加载。",
       "removePackageFailed": "移除插件包失败。",
+      "loadFailed": "加载失败",
+            "search": "搜索扩展…",
+      "installedSection": "已安装的扩展",
+      "directory": {
+        "section": "Pi 扩展包市场",
+        "compatNote": "来自 pi.dev 的扩展包是为 pi 编写的,不是 pizza。常见的 API 导入已做自动映射,但不保证完全兼容 — 部分包可能加载失败或行为不一致。安装会执行包内代码。",
+        "empty": "没有找到扩展包",
+        "view": "在 pi.dev 查看",
+        "npm": "在 npm 查看",
+        "repo": "打开仓库",
+        "install": "安装",
+        "installing": "安装中…",
+        "installed": "已安装",
+        "installFailed": "安装扩展包失败。",
+        "installedMsg": "已安装 {{name}},重启会话后生效。"
+      },
       "actions": "操作",
       "permissions": {
         "checking": "正在检测电脑自动化权限",
