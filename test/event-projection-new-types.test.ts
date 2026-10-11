@@ -265,3 +265,38 @@ describe("new event-driven control event payloads", () => {
 		]);
 	});
 });
+
+describe("eventToMessage — AGENT_MESSAGE_END malformed content defense", () => {
+	it("projects string content as a text block instead of crashing", () => {
+		// Regression: a producer writing stringified content (compaction
+		// artifact / older event format) crashed the whole projection on
+		// rawContent.filter.
+		const msg = eventToMessage(
+			mkEvent("AGENT_MESSAGE_END", {
+				content: "plain string content",
+				model: { provider: "anthropic", model_id: "claude-sonnet" },
+				usage: { input: 1, output: 1, cache_read: 0, cache_write: 0, total: 2, cost: 0 },
+				stop_reason: "stop",
+			}),
+		);
+		expect(msg).not.toBeNull();
+		expect(msg).toMatchObject({
+			role: "assistant",
+			content: [{ type: "text", text: "plain string content" }],
+		});
+	});
+
+	it("projects missing content as an empty assistant message", () => {
+		const msg = eventToMessage(
+			mkEvent("AGENT_MESSAGE_END", {
+				content: undefined,
+				model: { provider: "anthropic", model_id: "claude-sonnet" },
+				usage: { input: 1, output: 1, cache_read: 0, cache_write: 0, total: 2, cost: 0 },
+				stop_reason: "error",
+				error_message: "aborted",
+			}),
+		);
+		expect(msg).not.toBeNull();
+		expect(msg).toMatchObject({ role: "assistant", content: [] });
+	});
+});

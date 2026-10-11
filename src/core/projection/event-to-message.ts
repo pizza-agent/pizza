@@ -102,8 +102,15 @@ export function eventToMessage(event: EventBase): AgentMessage | null {
 			const payload = event.payload as AgentMessageEndEvent["payload"];
 
 			// Convert content - AGENT_MESSAGE_END from our event store
-			// contains text/image blocks from the LLM response
-			const rawContent = payload.content as unknown[];
+			// contains text/image blocks from the LLM response.
+			// Defense: tolerate string content (compaction artifacts, older
+			// event formats) instead of crashing the whole projection.
+			const payloadContent: unknown = payload.content;
+			const rawContent: unknown[] = Array.isArray(payloadContent)
+				? payloadContent
+				: typeof payloadContent === "string" && payloadContent.length > 0
+					? [{ type: "text", text: payloadContent }]
+					: [];
 			const content: (TextContent | ThinkingContent | ToolCall)[] = rawContent
 				.filter((block): block is TextContent | ThinkingContent | ToolCall => {
 					const b = block as { type?: string };

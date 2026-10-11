@@ -121,3 +121,32 @@ describe("sanitizeToolPairing", () => {
 		expect(sanitizeToolPairing(once)).toEqual(once);
 	});
 });
+describe("sanitizeToolPairing — malformed content defense", () => {
+	it("does not crash on an assistant message with string content (compaction artifact)", () => {
+		// Regression: projection crashed when a producer wrote a stringified
+		// content payload; toolCallIds assumed Array.filter.
+		const malformed = {
+			role: "assistant",
+			content: "I was going to call a tool, but the content got stringified.",
+			timestamp: 999,
+		} as unknown as AssistantMessage;
+		const input: AgentMessage[] = [
+			user("hi"),
+			malformed,
+			assistant(["t1"], "call it"),
+			toolResult("t1"),
+		];
+		const out = sanitizeToolPairing(input);
+		// String content counts as content → message retained, no calls to pair.
+		expect(out).toHaveLength(4);
+		expect(out[1]).toBe(malformed);
+	});
+
+	it("treats null/undefined assistant content as empty and drops the message", () => {
+		const malformed = { role: "assistant", content: null, timestamp: 999 } as unknown as AssistantMessage;
+		const input: AgentMessage[] = [user("hi"), malformed, assistant([], "ok")];
+		const out = sanitizeToolPairing(input);
+		expect(out).toHaveLength(2);
+		expect(out[1]).toMatchObject({ role: "assistant" });
+	});
+});

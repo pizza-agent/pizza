@@ -36,6 +36,9 @@ function isToolResult(msg: AgentMessage): msg is ToolResultMessage {
 
 function toolCallIds(msg: AgentMessage): string[] {
 	if (!isAssistant(msg)) return [];
+	// Defense: the event log can carry a stringified/malformed content payload
+	// (e.g. a compaction artifact); never assume an array.
+	if (!Array.isArray(msg.content)) return [];
 	return msg.content
 		.filter((block): block is ToolCall => block.type === "toolCall")
 		.map((block) => block.id);
@@ -91,7 +94,8 @@ export function sanitizeToolPairing(messages: AgentMessage[]): AgentMessage[] {
 		if (calls.length === 0) {
 			// Failed-turn artifact: assistant message with neither text/thinking
 			// content nor tool calls. Keep only if it carries any content.
-			const hasContent = msg.content.length > 0;
+			const rawContent: unknown = msg.content;
+			const hasContent = Array.isArray(rawContent) ? rawContent.length > 0 : typeof rawContent === "string" && rawContent.length > 0;
 			if (!hasContent) result.pop();
 			continue;
 		}
