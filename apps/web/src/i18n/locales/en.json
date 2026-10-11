@@ -86,6 +86,8 @@
     "attachImage": "Attach image",
     "noModelsAvailable": "No models available",
     "selectModel": "Select model",
+    "searchModels": "Search models…",
+    "noModelMatches": "No matching models",
     "thinkingLevel": "Thinking",
     "configureApiKey": "Configure API key in Settings →",
     "stopDictation": "Stop dictation",

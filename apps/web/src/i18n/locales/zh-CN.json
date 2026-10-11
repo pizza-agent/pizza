@@ -86,6 +86,8 @@
     "attachImage": "添加图片",
     "noModelsAvailable": "无可用模型",
     "selectModel": "选择模型",
+    "searchModels": "搜索模型…",
+    "noModelMatches": "无匹配模型",
     "thinkingLevel": "思考",
     "configureApiKey": "在设置中配置 API 密钥 →",
     "stopDictation": "停止听写",

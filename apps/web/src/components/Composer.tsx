@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight } from "lucide-react";
+import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn, isTauri, samePath, pathBasename } from "@/lib/utils";
 import {
@@ -353,6 +353,40 @@ export function Composer({
 	// (hasAuth === false) are hidden from the selector entirely — they can't
 	// be used until the user configures an API key in Settings.
 	const visibleModels = models.filter((m) => m.hasAuth !== false);
+
+	// Model-selector search — the popup filters by name / provider:id as you
+	// type; `/model <query>` prefills this when no exact match exists.
+	const [modelQuery, setModelQuery] = useState("");
+	const [modelMenuIndex, setModelMenuIndex] = useState(0);
+	const modelSearchRef = useRef<HTMLInputElement>(null);
+	const modelItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+
+	const filteredModels = useMemo(() => {
+		const q = modelQuery.trim().toLowerCase();
+		if (!q) return visibleModels;
+		return visibleModels.filter(
+			(m) =>
+				m.name.toLowerCase().includes(q) ||
+				m.id.toLowerCase().includes(q) ||
+				m.provider.toLowerCase().includes(q) ||
+				`${m.provider}/${m.id}`.toLowerCase().includes(q),
+		);
+	}, [visibleModels, modelQuery]);
+
+	// Focus the search box when the model menu opens; reset state on close.
+	useEffect(() => {
+		if (modelMenuOpen) {
+			setModelMenuIndex(0);
+			requestAnimationFrame(() => modelSearchRef.current?.focus());
+		} else {
+			setModelQuery("");
+		}
+	}, [modelMenuOpen]);
+
+	// Keep the keyboard-highlighted model in view while navigating.
+	useEffect(() => {
+		modelItemRefs.current.get(modelMenuIndex)?.scrollIntoView({ block: "nearest" });
+	}, [modelMenuIndex]);
 
 	const hasSpeechSupport =
 		typeof window !== "undefined" &&
@@ -810,6 +844,8 @@ ${insert}`;
 					if (match) {
 						await handleModelSelect(match);
 					} else {
+						// No match — open the selector pre-filtered with the query.
+						setModelQuery(args);
 						setModelMenuOpen(true);
 					}
 					return;
@@ -1761,35 +1797,77 @@ ${insert}`;
 									<ChevronDown className="h-3.5 w-3.5" />
 								</button>
 								{modelMenuOpen && visibleModels.length > 0 && (
-									<div className={cn("absolute bottom-full right-0 mb-2 max-h-80 w-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}>
-										{visibleModels.map((m) => {
-											const key = `${m.provider}:${m.id}`;
-											const selected = displayedModel
-												? m.provider === displayedModel.provider && m.id === displayedModel.id
-												: false;
-											return (
-												<button
-													key={key}
-													type="button"
-													onClick={() => handleModelSelect(m)}
-													className={cn(
-														"flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors",
-														"hover:bg-surface-2",
-														selected ? "text-fg" : "text-muted",
-													)}
-												>
-													<span className="min-w-0 flex-1">
-														<span className="block truncate text-fg">{m.name}</span>
-														<span className="block truncate text-[10px] text-muted">
-															{m.provider}
-														</span>
-													</span>
-													{selected ? (
-														<Check className="h-3.5 w-3.5 shrink-0 text-accent" />
-													) : null}
-												</button>
-											);
-										})}
+									<div className={cn("absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}>
+										{/* Search — autofocused on open; ↑/↓+Enter pick from the filtered list */}
+										<div className="flex items-center gap-1.5 border-b border-border/60 px-2.5 pb-1.5">
+											<Search className="h-3.5 w-3.5 shrink-0 text-muted" />
+											<input
+												ref={modelSearchRef}
+												value={modelQuery}
+												onChange={(e) => {
+													setModelQuery(e.target.value);
+													setModelMenuIndex(0);
+												}}
+												onKeyDown={(e) => {
+													if (e.key === "ArrowDown") {
+														e.preventDefault();
+														setModelMenuIndex((i) => Math.min(i + 1, filteredModels.length - 1));
+													} else if (e.key === "ArrowUp") {
+														e.preventDefault();
+														setModelMenuIndex((i) => Math.max(i - 1, 0));
+													} else if (e.key === "Enter") {
+														e.preventDefault();
+														const m = filteredModels[Math.min(modelMenuIndex, filteredModels.length - 1)];
+														if (m) void handleModelSelect(m);
+													} else if (e.key === "Escape") {
+														e.preventDefault();
+														setModelMenuOpen(false);
+														textareaRef.current?.focus();
+													}
+												}}
+												placeholder={t("composer.searchModels")}
+												className="w-full bg-transparent py-1 text-xs text-fg outline-none placeholder:text-muted"
+											/>
+										</div>
+										<div className="max-h-64 overflow-y-auto pt-1">
+											{filteredModels.length === 0 ? (
+												<div className="px-2.5 py-2 text-[11px] text-muted">{t("composer.noModelMatches")}</div>
+											) : (
+												filteredModels.map((m, i) => {
+													const key = `${m.provider}:${m.id}`;
+													const selected = displayedModel
+														? m.provider === displayedModel.provider && m.id === displayedModel.id
+														: false;
+													const highlighted = i === modelMenuIndex;
+													return (
+														<button
+															key={key}
+															ref={(el) => {
+																if (el) modelItemRefs.current.set(i, el);
+															}}
+															type="button"
+															onClick={() => handleModelSelect(m)}
+															onMouseMove={() => setModelMenuIndex(i)}
+															className={cn(
+																"flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors",
+																highlighted ? "bg-surface-2" : "hover:bg-surface-2",
+																selected ? "text-fg" : "text-muted",
+															)}
+														>
+															<span className="min-w-0 flex-1">
+																<span className="block truncate text-fg">{m.name}</span>
+																<span className="block truncate text-[10px] text-muted">
+																	{m.provider}
+																</span>
+															</span>
+															{selected ? (
+																<Check className="h-3.5 w-3.5 shrink-0 text-accent" />
+															) : null}
+														</button>
+													);
+												})
+											)}
+										</div>
 									{/* Thinking level — controls reasoning effort for the current model */}
 									<div className="mt-1 border-t border-border/60 pt-1">
 										<div className="px-2.5 py-1 text-[11px] font-medium text-muted">
