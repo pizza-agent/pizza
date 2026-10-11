@@ -52,8 +52,10 @@ const execMock = vi.hoisted(() => ({
 		if (installed) {
 			writeFileSync(bin, "#!/bin/sh\n");
 			chmodSync(bin, 0o755);
+			if (process.platform === "win32") writeFileSync(`${bin}.cmd`, "@echo off\r\n");
 		} else {
 			rmSync(bin, { force: true });
+			rmSync(`${bin}.cmd`, { force: true });
 		}
 	},
 }));
@@ -76,6 +78,7 @@ vi.mock("../src/core/exec.js", () => ({
 }));
 
 const tempDirs: string[] = [];
+const openFacades: SessionFacade[] = [];
 
 const emptyRegistry: ToolRegistry = {
 	get: () => undefined,
@@ -119,13 +122,15 @@ function createFacade(client?: LLMClient, modelRegistry?: ModelRegistry, resourc
 		model: { provider: "test", model_id: "test-model" },
 		tools: [],
 	});
-	return new SessionFacade({
+	const facade = new SessionFacade({
 		runtime,
 		settingsManager: SettingsManager.inMemory({ defaultProvider: "test", defaultModel: "test-model" }),
 		modelRegistry,
 		resourceLoader,
 		disposers: [() => store.close()],
 	});
+	openFacades.push(facade);
+	return facade;
 }
 
 function parseOutputLines(): Array<Record<string, unknown>> {
@@ -160,6 +165,7 @@ describe("runRpcModeWithFacade", () => {
 		}
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
+		for (const facade of openFacades.splice(0)) facade.dispose();
 		for (const dir of tempDirs.splice(0)) {
 			if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 		}
