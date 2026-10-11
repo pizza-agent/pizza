@@ -124,6 +124,36 @@ type RetryScheduleResult = "scheduled" | "not_retryable" | "max_attempts" | "bac
 const MAX_CONSECUTIVE_IDENTICAL_TOOL_ROUNDS = 6;
 
 /**
+ * How many times the reactor re-asks the model after it produces an
+ * "empty answer" — an assistant message with no text and no tool calls
+ * (e.g. the whole reply stayed inside thinking). Without this the turn
+ * completes silently and the user never sees a reply.
+ */
+const MAX_EMPTY_ANSWER_RETRIES = 3;
+
+/**
+ * Transient instruction appended to the LLM context on an empty-answer
+ * retry. Not persisted to the event log — it steers only the next call.
+ */
+const EMPTY_ANSWER_NUDGE =
+	"Your previous reply contained only reasoning and no visible answer. " +
+	"Respond now with the actual reply as message text, or invoke a tool if work remains — " +
+	"do not leave the answer inside thinking.";
+
+/** Whether an assistant message's content has any non-empty text block. */
+function contentHasText(content: unknown): boolean {
+	if (!Array.isArray(content)) return false;
+	return content.some(
+		(block) =>
+			!!block &&
+			typeof block === "object" &&
+			(block as { type?: string }).type === "text" &&
+			typeof (block as { text?: unknown }).text === "string" &&
+			(block as { text: string }).text.trim().length > 0,
+	);
+}
+
+/**
  * Compute a stable hash of a tool call's arguments for loop detection.
  * Uses FNV-1a (32-bit) — fast, dependency-free, good enough for signatures.
  */
@@ -168,6 +198,8 @@ export class Reactor {
 	private set _turnInFlight(v:boolean) { this.turnState.turnInFlight = v; }
 	private get _toolRoundSignatures():string[][] { return this.turnState.toolRoundSignatures; }
 	private set _toolRoundSignatures(v:string[][]) { this.turnState.toolRoundSignatures = v; }
+	private get _emptyAnswerRetries():number { return this.turnState.emptyAnswerRetries; }
+	private set _emptyAnswerRetries(v:number) { this.turnState.emptyAnswerRetries = v; }
 
 	/** Aborter for the current compaction run (if any). */
 	private compactionAbort: AbortController | undefined;
@@ -470,6 +502,7 @@ export class Reactor {
 
 		// Reset loop detection for a new prompt cycle
 		this._toolRoundSignatures = [];
+		this._emptyAnswerRetries = 0;
 
 		// Emit thinking start
 		this._emit({
@@ -622,9 +655,22 @@ export class Reactor {
 		const payload = event.payload as { reason: string; retry_attempt?: number };
 
 		// Build context from projection
-		const context = this.config.projection.buildContext({
+		let context = this.config.projection.buildContext({
 			max_tokens: this.config.contextBudget,
 		});
+
+		// An empty-answer retry gets a transient nudge appended to the context.
+		// It is NOT persisted to the event log — the retry's AGENT_TURN_REQUESTED
+		// event is the durable trace; the nudge steers only this one call.
+		if (payload.reason === "empty_answer_retry") {
+			context = {
+				...context,
+				messages: [
+					...context.messages,
+					{ role: "user", content: EMPTY_ANSWER_NUDGE, timestamp: Date.now() },
+				],
+			};
+		}
 
 		// Stash context for the LLM_CALL_REQUESTED handler. MUST be set before _emit
 		// because store subscribers fire synchronously and _onLlmCallRequested reads
@@ -801,6 +847,32 @@ export class Reactor {
 		}
 
 		if (toolCalls.length === 0 || payload.stop_reason !== "tool_use") {
+			// Empty-answer guard: the message produced no text and no tool calls
+			// (the whole reply stayed inside thinking, or content came back
+			// empty). Re-request the turn with a nudge instead of completing —
+			// otherwise the user gets a silent no-reply. Errors keep the normal
+			// completion path so _scheduleRetryForCompletedError can apply the
+			// retry policy/backoff to real failures.
+			if (
+				payload.stop_reason !== "error" &&
+				!contentHasText(payload.content) &&
+				this._emptyAnswerRetries < MAX_EMPTY_ANSWER_RETRIES
+			) {
+				this._emptyAnswerRetries++;
+				this._emit({
+					actor_id: "coder_agent",
+					type: "AGENT_TURN_END",
+					payload: { tool_calls_count: 0 },
+					caused_by: event.event_id,
+				});
+				this._emit({
+					actor_id: "coder_agent",
+					type: "AGENT_TURN_REQUESTED",
+					payload: { reason: "empty_answer_retry" },
+					caused_by: event.event_id,
+				});
+				return;
+			}
 			// No tool calls — emit turn end and complete the turn
 			this._emit({
 				actor_id: "coder_agent",
@@ -1183,6 +1255,7 @@ export class Reactor {
 		// The turn is over from the reactor's perspective. If a queued follow-up is
 		// delivered below, its USER_MESSAGE handler re-sets this to true synchronously.
 		this._turnInFlight = false;
+		this._emptyAnswerRetries = 0;
 
 		// If abort() was called, discard any pending follow-ups so the reactor stops.
 		// _abortedByUser is set by _onUserInterrupt when the interrupt has no new content.
@@ -1259,6 +1332,7 @@ export class Reactor {
 		if (next.userMessageEventId) {
 			this._turnInFlight = true;
 			this._toolRoundSignatures = [];
+			this._emptyAnswerRetries = 0;
 			this._emit({
 				actor_id: "coder_agent",
 				type: "AGENT_THINKING_START",

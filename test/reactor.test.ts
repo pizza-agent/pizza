@@ -275,7 +275,7 @@ describe("Reactor (event-driven core)", () => {
 						receivedToolCallId = options?.tool_call_id;
 						receivedSignal = options?.signal;
 						options?.onUpdate?.({
-							content: [{ type: "text", text: `partial ${String(args.text ?? "")}` }],
+							content: [{ type: "text", text: `partial ${String(args.text ?? "")}` } as { type: string }],
 						});
 						return { content: [{ type: "text", text: String(args.text ?? "") }], is_error: false };
 					},
@@ -837,7 +837,7 @@ describe("Reactor (event-driven core)", () => {
 					return { content: [{ type: "text", text: "not used" }], is_error: false };
 				},
 				async createCheckpoint() {
-					return { id: "checkpoint", label: "checkpoint", runtime_id: "test_runtime", created_at: Date.now(), metadata: {} };
+					return { checkpoint_id: "checkpoint", path: cwd, created_at: Date.now() };
 				},
 				async restoreCheckpoint() {},
 				async getStatus() {
@@ -1010,6 +1010,121 @@ describe("Reactor (event-driven core)", () => {
 		expect((completed[0].payload as { reason: string }).reason).toBe("loop_detected");
 		// Should stop after 6 identical rounds, not 8
 		expect(calls).toBe(6);
+
+		runtime.dispose();
+	});
+
+	it("re-asks the model with a transient nudge when the answer is thinking-only", async () => {
+		const cwd = makeTempDir();
+		const registry = makeRegistry();
+
+		let calls = 0;
+		const seenMessageCounts: number[] = [];
+		let lastCallLastMessage: { role?: string; content?: unknown } | undefined;
+		const client: LLMClient = {
+			async complete(request): Promise<LLMResponse> {
+				calls++;
+				seenMessageCounts.push(request.messages.length);
+				lastCallLastMessage = request.messages[request.messages.length - 1] as
+					| { role?: string; content?: unknown }
+					| undefined;
+				if (calls === 1) {
+					// Degenerate reply: only thinking, no visible text, no tool calls.
+					return {
+						content: [{ type: "thinking", thinking: "the answer is 42 but I never say it" } as ContentBlock],
+						provider: "test",
+						model: "test",
+						usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+						stopReason: "stop",
+					};
+				}
+				return {
+					content: [{ type: "text", text: "done" } as ContentBlock],
+					provider: "test",
+					model: "test",
+					usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+					stopReason: "stop",
+				};
+			},
+		};
+
+		const runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			systemPrompt: "",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		await runtime.prompt("hi");
+
+		expect(calls).toBe(2);
+
+		const requested = runtime.store.query({ types: ["AGENT_TURN_REQUESTED"] });
+		expect(requested.map((e) => (e.payload as { reason: string }).reason)).toEqual([
+			"user_message",
+			"empty_answer_retry",
+		]);
+
+		// The retry round saw the thinking-only assistant reply plus one
+		// extra (transient) user nudge at the tail.
+		expect(seenMessageCounts[1]).toBe(seenMessageCounts[0]! + 2);
+		expect(lastCallLastMessage?.role).toBe("user");
+		expect(String(lastCallLastMessage?.content)).toContain("no visible answer");
+
+		const completed = runtime.store.query({ types: ["AGENT_TURN_COMPLETED"] });
+		expect(completed).toHaveLength(1);
+		expect((completed[0].payload as { reason: string }).reason).toBe("stop");
+
+		// The nudge is transient — it is never persisted as a USER_MESSAGE.
+		expect(runtime.store.query({ types: ["USER_MESSAGE"] })).toHaveLength(1);
+
+		runtime.dispose();
+	});
+
+	it("gives up re-asking after the empty-answer retry cap", async () => {
+		const cwd = makeTempDir();
+		const registry = makeRegistry();
+
+		let calls = 0;
+		const client: LLMClient = {
+			async complete(): Promise<LLMResponse> {
+				calls++;
+				return {
+					content: [{ type: "thinking", thinking: "still thinking" } as ContentBlock],
+					provider: "test",
+					model: "test",
+					usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+					stopReason: "stop",
+				};
+			},
+		};
+
+		const runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			systemPrompt: "",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		await runtime.prompt("hi");
+
+		// 1 initial + 3 empty-answer retries, then the turn completes anyway.
+		expect(calls).toBe(4);
+
+		const requested = runtime.store.query({ types: ["AGENT_TURN_REQUESTED"] });
+		expect(
+			requested.filter((e) => (e.payload as { reason: string }).reason === "empty_answer_retry"),
+		).toHaveLength(3);
+
+		const completed = runtime.store.query({ types: ["AGENT_TURN_COMPLETED"] });
+		expect(completed).toHaveLength(1);
+		expect((completed[0].payload as { reason: string }).reason).toBe("stop");
 
 		runtime.dispose();
 	});

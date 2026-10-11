@@ -91,6 +91,9 @@ export class TurnState {
 	/** Turn loop-detection signatures for the current prompt cycle. */
 	toolRoundSignatures: string[][] = [];
 
+	/** Consecutive empty-answer nudges sent in the current prompt cycle. */
+	emptyAnswerRetries = 0;
+
 	/** True while a turn (or its retry backoff) is in flight. */
 	turnInFlight = false;
 
@@ -199,6 +202,7 @@ export class TurnState {
 		this.turnInFlight = false;
 		this.abortedByUser = false;
 		this.resetLoopDetection();
+		this.emptyAnswerRetries = 0;
 	}
 
 	/**

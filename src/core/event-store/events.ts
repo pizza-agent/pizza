@@ -540,7 +540,7 @@ export interface AgentTurnRequestedEvent extends EventBase {
 	type: "AGENT_TURN_REQUESTED";
 	payload: {
 		/** Why this turn was requested */
-		reason: "user_message" | "tool_results" | "retry" | "steer" | "follow_up";
+		reason: "user_message" | "tool_results" | "retry" | "steer" | "follow_up" | "empty_answer_retry";
 		/** Retry attempt counter (0 on first attempt) */
 		retry_attempt?: number;
 	};
