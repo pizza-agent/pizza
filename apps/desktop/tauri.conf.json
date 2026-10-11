@@ -1,6 +1,6 @@
 {
 	"productName": "Pizza",
-	"version": "0.3.6",
+	"version": "0.3.7",
 	"identifier": "ai.pizza.gui",
 	"build": {
 		"beforeDevCommand": {
@@ -67,7 +67,9 @@
 	"plugins": {
 		"updater": {
 			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREODlEQjhDNkUxNDFDRDcKUldUWEhCUnVqTnVKM2RNSUlVZEYrazBmdFZTem00YTlDMFJUSTZRMnp0MnpBK2NudHdtYlkwY08K",
-			"endpoints": ["https://github.com/pizza-agent/pizza/releases/latest/download/latest.json"],
+			"endpoints": [
+				"https://github.com/pizza-agent/pizza/releases/latest/download/latest.json"
+			],
 			"windows": {
 				"installMode": "passive"
 			}
