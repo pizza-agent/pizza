@@ -71,10 +71,12 @@ describe.skipIf(process.platform === "win32")("login-shell-path", () => {
 		const mod = await import("../src/utils/login-shell-path.js");
 		expect(await mod.prefetchLoginShellPath()).toBe("/fake/login/bin");
 		expect(runs()).toBe(1);
+		const capturedAt = Number(process.env[AT_KEY]);
 		vi.useFakeTimers({ toFake: ["Date"] });
 		vi.setSystemTime(Date.now() + mod.LOGIN_SHELL_PATH_TTL_MS + 1000);
 		mod.resolveLoginShellPath();
 		await vi.waitFor(() => expect(runs()).toBe(2), { timeout: 5000 });
+		await vi.waitFor(() => expect(Number(process.env[AT_KEY])).toBeGreaterThan(capturedAt), { timeout: 5000 });
 	});
 
 	it("a failed refresh keeps the previously captured PATH", async () => {
