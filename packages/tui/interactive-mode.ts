@@ -4288,7 +4288,7 @@ export class InteractiveMode {
             id: skill.id,
             name: skill.name,
             description: skill.description,
-            enabled: this.settingsManager.getEnabledBuiltinSkills().has(skill.id),
+            enabled: this.settingsManager.isBuiltinSkillEnabled(skill.id),
           })),
           transport: this.settingsManager.getTransport(),
           thinkingLevel: this.currentThinkingLevel,

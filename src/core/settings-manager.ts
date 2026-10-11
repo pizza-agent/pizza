@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { isBuiltinSkillDefaultEnabled, isBuiltinSkillEnabled } from "../builtin-skills/index.js";
 import {
 	BUILTIN_EXTENSION_SOURCE,
 	type ExtensionRecord,
@@ -151,7 +152,8 @@ export interface Settings {
 	themes?: string[]; // Array of local theme file paths or directories
 	/** @deprecated Migrated into extensions.json (see ExtensionRegistry) on load; use setBuiltinExtensionDisabled. */
 	disabledBuiltinExtensions?: string[];
-	enabledBuiltinSkills?: string[]; // Built-in skill ids to enable (e.g. ["pizza-self-optimization"]). Empty/absent = all built-in skills DISABLED by default.
+	enabledBuiltinSkills?: string[]; // Built-in skill ids to enable (e.g. ["pizza-self-optimization"]). Only needed for opt-in skills; enabledByDefault skills ignore this list.
+	disabledBuiltinSkills?: string[]; // Built-in skill ids to disable. Only meaningful for enabledByDefault skills — the denylist wins over the allowlist.
 	disabledSkills?: string[]; // Names of discovered (non-built-in) skills to disable. Empty/absent = every discovered skill is loaded.
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
@@ -1175,17 +1177,46 @@ export class SettingsManager {
 		return new Set(this.settings.enabledBuiltinSkills ?? []);
 	}
 
-	/** Enable (true) or disable (false) a built-in skill by id, persisted to user settings. */
+	/** Return the set of built-in skill ids the user has explicitly disabled. */
+	getDisabledBuiltinSkills(): Set<string> {
+		return new Set(this.settings.disabledBuiltinSkills ?? []);
+	}
+
+	/** Effective enabled state of a built-in skill (allowlist + enabledByDefault − denylist). */
+	isBuiltinSkillEnabled(id: string): boolean {
+		return isBuiltinSkillEnabled(id, this.getEnabledBuiltinSkills(), this.getDisabledBuiltinSkills());
+	}
+
+	/**
+	 * Enable (true) or disable (false) a built-in skill by id, persisted to
+	 * user settings. Opt-in skills are recorded in the `enabledBuiltinSkills`
+	 * allowlist; `enabledByDefault` skills in the `disabledBuiltinSkills`
+	 * denylist — the redundant entry on the other list is always cleared.
+	 */
 	setBuiltinSkillEnabled(id: string, enabled: boolean): void {
-		const current = new Set(this.settings.enabledBuiltinSkills ?? []);
+		const enabledSet = new Set(this.settings.enabledBuiltinSkills ?? []);
+		const disabledSet = new Set(this.settings.disabledBuiltinSkills ?? []);
 		if (enabled) {
-			current.add(id);
+			disabledSet.delete(id);
+			if (isBuiltinSkillDefaultEnabled(id)) {
+				enabledSet.delete(id); // redundant for a default-enabled skill
+			} else {
+				enabledSet.add(id);
+			}
 		} else {
-			current.delete(id);
+			enabledSet.delete(id);
+			if (isBuiltinSkillDefaultEnabled(id)) {
+				disabledSet.add(id);
+			} else {
+				disabledSet.delete(id);
+			}
 		}
-		const arr = Array.from(current);
-		this.globalSettings.enabledBuiltinSkills = arr.length > 0 ? arr : undefined;
+		const enabledArr = Array.from(enabledSet);
+		const disabledArr = Array.from(disabledSet);
+		this.globalSettings.enabledBuiltinSkills = enabledArr.length > 0 ? enabledArr : undefined;
+		this.globalSettings.disabledBuiltinSkills = disabledArr.length > 0 ? disabledArr : undefined;
 		this.markModified("enabledBuiltinSkills");
+		this.markModified("disabledBuiltinSkills");
 		this.save();
 	}
 

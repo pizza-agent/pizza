@@ -7,6 +7,7 @@ import {
 	getBuiltinSkillInfos,
 	getBuiltinSkillPath,
 	getEnabledBuiltinSkillPaths,
+	isBuiltinSkillDefaultEnabled,
 	isBuiltinSkillId,
 } from "../src/builtin-skills/index.js";
 import { DefaultResourceLoader } from "../src/core/resource-loader.js";
@@ -52,10 +53,18 @@ describe("built-in skills registry", () => {
 
 	it("getEnabledBuiltinSkillPaths returns only enabled ids, in registry order", () => {
 		const ids = getBuiltinSkillIds();
-		expect(getEnabledBuiltinSkillPaths(new Set())).toEqual([]);
+		// Default-enabled ids ship on without any allowlist entry.
+		const defaultOn = ids.filter((id) => isBuiltinSkillDefaultEnabled(id));
+		expect(defaultOn.length).toBeGreaterThan(0);
+		expect(getEnabledBuiltinSkillPaths(new Set())).toEqual(defaultOn.map((id) => getBuiltinSkillPath(id)));
 		// Unknown ids are ignored; known ones come back in registry order.
 		const enabled = new Set([ids[0], "not-a-builtin-skill"]);
-		expect(getEnabledBuiltinSkillPaths(enabled)).toEqual([getBuiltinSkillPath(ids[0])]);
+		const expected = ids.filter((id) => enabled.has(id) || defaultOn.includes(id));
+		expect(getEnabledBuiltinSkillPaths(enabled)).toEqual(expected.map((id) => getBuiltinSkillPath(id)));
+		// The denylist opts a default-enabled skill out.
+		expect(getEnabledBuiltinSkillPaths(new Set(), new Set(defaultOn))).toEqual([]);
+		// …and wins over a stale allowlist entry.
+		expect(getEnabledBuiltinSkillPaths(new Set(defaultOn), new Set(defaultOn))).toEqual([]);
 	});
 });
 
@@ -93,14 +102,25 @@ describe("built-in skills loading (resource loader)", () => {
 		return existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) : {};
 	}
 
-	it("are disabled by default (no settings)", async () => {
+	it("load only enabledByDefault skills with no settings", async () => {
 		const loader = new DefaultResourceLoader({ cwd, agentDir });
 		await loader.reload();
 
 		const { skills } = loader.getSkills();
 		for (const id of getBuiltinSkillIds()) {
-			expect(skills.some((s) => s.name === id)).toBe(false);
+			expect(skills.some((s) => s.name === id), `${id}`).toBe(isBuiltinSkillDefaultEnabled(id));
 		}
+	});
+
+	it("stay unloaded when an enabledByDefault skill is denylisted", async () => {
+		writeSettings({ disabledBuiltinSkills: ["pizza-customization"] });
+		const loader = new DefaultResourceLoader({ cwd, agentDir });
+		await loader.reload();
+
+		expect(loader.getSkills().skills.some((s) => s.name === "pizza-customization")).toBe(false);
+		const entry = loader.getSkillCatalog().find((e) => e.skill.name === "pizza-customization");
+		expect(entry?.enabled).toBe(false);
+		expect(entry?.builtinId).toBe("pizza-customization");
 	});
 
 	it("load when enabled via settings.enabledBuiltinSkills, attributed to the builtin source", async () => {
@@ -149,7 +169,7 @@ describe("built-in skills loading (resource loader)", () => {
 		expect(loader.getSkills().skills.some((s) => s.name === "pizza-self-optimization")).toBe(false);
 	});
 
-	it("lists disabled built-in skills in the catalog so they can be enabled", async () => {
+	it("lists every built-in skill in the catalog with its effective enabled state", async () => {
 		const loader = new DefaultResourceLoader({ cwd, agentDir });
 		await loader.reload();
 
@@ -157,7 +177,7 @@ describe("built-in skills loading (resource loader)", () => {
 		for (const id of getBuiltinSkillIds()) {
 			const entry = catalog.find((e) => e.skill.name === id);
 			expect(entry, `${id} should be in the catalog`).toBeDefined();
-			expect(entry?.enabled).toBe(false);
+			expect(entry?.enabled, `${id}`).toBe(isBuiltinSkillDefaultEnabled(id));
 			expect(entry?.builtinId).toBe(id);
 			expect(entry?.skill.description.length).toBeGreaterThan(0);
 		}
@@ -177,6 +197,25 @@ describe("built-in skills loading (resource loader)", () => {
 		expect(loader.getSkills().skills.some((s) => s.name === "pizza-self-optimization")).toBe(false);
 		// Still listed (disabled) so the UI can turn it back on.
 		expect(loader.getSkillCatalog().some((e) => e.skill.name === "pizza-self-optimization" && !e.enabled)).toBe(true);
+	});
+
+	it("setSkillEnabled toggles an enabledByDefault built-in through the denylist", async () => {
+		const settingsManager = SettingsManager.create(cwd, agentDir);
+		const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+		await loader.reload();
+
+		// On by default; disabling writes the denylist, not the allowlist.
+		expect(loader.getSkills().skills.some((s) => s.name === "pizza-customization")).toBe(true);
+		expect(loader.setSkillEnabled("pizza-customization", false)).toBe(true);
+		expect(loader.getSkills().skills.some((s) => s.name === "pizza-customization")).toBe(false);
+		await settingsManager.flush();
+		expect(readSettings().disabledBuiltinSkills).toContain("pizza-customization");
+		expect(readSettings().enabledBuiltinSkills).toBeUndefined();
+
+		expect(loader.setSkillEnabled("pizza-customization", true)).toBe(true);
+		expect(loader.getSkills().skills.some((s) => s.name === "pizza-customization")).toBe(true);
+		await settingsManager.flush();
+		expect(readSettings().disabledBuiltinSkills).toBeUndefined();
 	});
 
 	it("setSkillEnabled disables a discovered skill through the denylist, keeping it listed", async () => {

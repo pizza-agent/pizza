@@ -70,7 +70,7 @@ describe("handleBuiltinCommand (skills)", () => {
 		if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
 	});
 
-	it("lists built-in skills as disabled by default", async () => {
+	it("lists built-in skills", async () => {
 		expect(await handleBuiltinCommand(["builtin", "list"])).toBe(true);
 	});
 
@@ -89,6 +89,24 @@ describe("handleBuiltinCommand (skills)", () => {
 		await new Promise((r) => setTimeout(r, 50));
 		raw = JSON.parse(readFileSync(settingsPath, "utf-8"));
 		expect(raw.enabledBuiltinSkills ?? []).not.toContain("pizza-self-optimization");
+	});
+
+	it("disables an enabledByDefault skill via the denylist, then re-enables it", async () => {
+		process.chdir(cwd);
+		await handleBuiltinCommand(["builtin", "disable", "pizza-customization"]);
+		// settings writes are queued; let them flush to disk.
+		await new Promise((r) => setTimeout(r, 50));
+
+		const settingsPath = join(agentDir, "settings.json");
+		expect(existsSync(settingsPath)).toBe(true);
+		let raw = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		expect(raw.disabledBuiltinSkills).toContain("pizza-customization");
+		expect(raw.enabledBuiltinSkills ?? []).not.toContain("pizza-customization");
+
+		await handleBuiltinCommand(["builtin", "enable", "pizza-customization"]);
+		await new Promise((r) => setTimeout(r, 50));
+		raw = JSON.parse(readFileSync(settingsPath, "utf-8"));
+		expect(raw.disabledBuiltinSkills ?? []).not.toContain("pizza-customization");
 	});
 
 	it("rejects unknown ids", async () => {

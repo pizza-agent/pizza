@@ -6,8 +6,9 @@
  * disabled the in-session command is gone — so this CLI command is the recovery
  * path: list them and enable/disable by id without editing settings.json by hand.
  *
- * Built-in skills are SKILL.md files shipped with Pizza. They are DISABLED by
- * default and must be enabled explicitly here (or via /settings in a session):
+ * Built-in skills are SKILL.md files shipped with Pizza. Most are DISABLED by
+ * default and must be enabled explicitly here (or via /settings in a session);
+ * a few are enabled by default and can be turned off the same way:
  *   pizza builtin enable pizza-self-optimization
  *
  * Usage:
@@ -19,7 +20,7 @@ import chalk from "chalk";
 import { getAgentDir } from "./config.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions/index.js";
-import { getBuiltinSkillInfos, isBuiltinSkillId } from "./builtin-skills/index.js";
+import { getBuiltinSkillInfos, isBuiltinSkillDefaultEnabled, isBuiltinSkillId } from "./builtin-skills/index.js";
 
 export async function handleBuiltinCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "builtin") {
@@ -37,7 +38,6 @@ export async function handleBuiltinCommand(args: string[]): Promise<boolean> {
 	switch (subcommand) {
 		case "list": {
 			const disabled = settingsManager.getDisabledBuiltinExtensions();
-			const enabledSkills = settingsManager.getEnabledBuiltinSkills();
 			const skills = getBuiltinSkillInfos();
 
 			if (BUILTIN_EXTENSIONS.length === 0 && skills.length === 0) {
@@ -58,11 +58,15 @@ export async function handleBuiltinCommand(args: string[]): Promise<boolean> {
 					console.log();
 				}
 				console.log(chalk.bold("Built-in skills:"));
-				console.log(chalk.dim("  (disabled by default — enable with `pizza builtin enable <id>`)"));
+				console.log(chalk.dim("  (toggle with `pizza builtin enable|disable <id>`)"));
 				for (const skill of skills) {
-					const state = enabledSkills.has(skill.id) ? chalk.green("enabled") : chalk.red("disabled");
+					const enabled = settingsManager.isBuiltinSkillEnabled(skill.id);
+					const state = enabled ? chalk.green("enabled") : chalk.red("disabled");
+					const defaultTag = isBuiltinSkillDefaultEnabled(skill.id)
+						? chalk.dim(enabled ? " (default)" : " (default, disabled)")
+						: "";
 					const description = skill.description ? `  ${chalk.dim(skill.description)}` : "";
-					console.log(`  ${skill.id.padEnd(20)} ${state}${description}`);
+					console.log(`  ${skill.id.padEnd(20)} ${state}${defaultTag}${description}`);
 				}
 			}
 			return true;

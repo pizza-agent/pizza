@@ -29,7 +29,7 @@ export interface Args {
 	noExtensions?: boolean;
 	/** Disable built-in extensions (e.g. agent-browser). */
 	noBuiltinExtensions?: boolean;
-	/** Disable built-in skills (they are disabled by default; this also ignores settings.enabledBuiltinSkills). */
+	/** Disable built-in skills (ignores settings.enabledBuiltinSkills / disabledBuiltinSkills). */
 	noBuiltinSkills?: boolean;
 	print?: boolean;
 	export?: string;

@@ -28,6 +28,7 @@ import {
 	getBuiltinSkillInfos,
 	getBuiltinSkillPath,
 	getEnabledBuiltinSkillPaths,
+	isBuiltinSkillEnabled,
 } from "../builtin-skills/index.js";
 
 export interface ResourceExtensionPaths {
@@ -54,9 +55,11 @@ export interface ResourceLoader {
 	/** Every known skill with its enabled state (built-in skills included). */
 	getSkillCatalog?(): SkillCatalogEntry[];
 	/**
-	 * Enable or disable a skill by name and re-load skills. Built-in skills are
-	 * toggled through the `enabledBuiltinSkills` allowlist, discovered skills
-	 * through the `disabledSkills` denylist. Returns false for unknown names.
+	 * Enable or disable a skill by name and re-load skills. Opt-in built-in
+	 * skills are toggled through the `enabledBuiltinSkills` allowlist,
+	 * `enabledByDefault` built-ins through the `disabledBuiltinSkills`
+	 * denylist, and discovered skills through the `disabledSkills` denylist.
+	 * Returns false for unknown names.
 	 */
 	setSkillEnabled?(name: string, enabled: boolean): boolean;
 	/**
@@ -193,7 +196,7 @@ export interface DefaultResourceLoaderOptions {
 	noExtensions?: boolean;
 	/** Skip loading built-in extensions (agent-browser, …). Default: false. */
 	noBuiltinExtensions?: boolean;
-	/** Skip loading built-in skills entirely (they are disabled by default anyway). Default: false. */
+	/** Skip loading built-in skills entirely. Default: false. */
 	noBuiltinSkills?: boolean;
 	noSkills?: boolean;
 	noPromptTemplates?: boolean;
@@ -696,7 +699,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			getBuiltinSkillIds().map((id) => [getBuiltinSkillPath(id), id] as const),
 		);
 		// Discovered skills are enabled unless denylisted; built-in skills only
-		// reach this point when their allowlist entry is set, so they are enabled.
+		// reach this point when effectively enabled, so they are enabled.
 		const disabledNames = this.settingsManager.getDisabledSkills();
 		const catalog: SkillCatalogEntry[] = loaded.map((skill) => {
 			const builtinId = builtinIdsByPath.get(skill.filePath);
@@ -725,8 +728,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return [];
 		}
 		const enabledIds = this.settingsManager.getEnabledBuiltinSkills();
+		const disabledIds = this.settingsManager.getDisabledBuiltinSkills();
 		return getBuiltinSkillInfos()
-			.filter((info) => !enabledIds.has(info.id))
+			.filter((info) => !isBuiltinSkillEnabled(info.id, enabledIds, disabledIds))
 			.map((info) => ({
 				enabled: false,
 				builtinId: info.id,
@@ -747,9 +751,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	/**
-	 * Toggle a skill by name. Built-in skills are opt-in (allowlist), discovered
-	 * skills are opt-out (denylist); either way the change is persisted to user
-	 * settings and skills are re-loaded so the caller can rebuild its prompt.
+	 * Toggle a skill by name. Opt-in built-in skills use the allowlist,
+	 * enabled-by-default built-ins the `disabledBuiltinSkills` denylist,
+	 * discovered skills the `disabledSkills` denylist; either way the change is
+	 * persisted to user settings and skills are re-loaded so the caller can
+	 * rebuild its prompt.
 	 */
 	setSkillEnabled(name: string, enabled: boolean): boolean {
 		const entry = this.skillCatalog.find((candidate) => candidate.skill.name === name);
@@ -819,14 +825,18 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	/**
-	 * SKILL.md paths of the built-in skills currently enabled in settings.
-	 * Built-in skills are disabled by default (`enabledBuiltinSkills` allowlist).
+	 * SKILL.md paths of the built-in skills effectively enabled in settings
+	 * (`enabledBuiltinSkills` allowlist + `enabledByDefault` skills not in the
+	 * `disabledBuiltinSkills` denylist).
 	 */
 	private getBuiltinSkillPaths(): string[] {
 		if (this.noSkills || this.noBuiltinSkills) {
 			return [];
 		}
-		const paths = getEnabledBuiltinSkillPaths(this.settingsManager.getEnabledBuiltinSkills());
+		const paths = getEnabledBuiltinSkillPaths(
+			this.settingsManager.getEnabledBuiltinSkills(),
+			this.settingsManager.getDisabledBuiltinSkills(),
+		);
 		for (const path of paths) {
 			// Register source attribution so these show up as `builtin` (persisted map,
 			// unlike the per-reload metadataByPath).
