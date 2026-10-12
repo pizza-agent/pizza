@@ -58,14 +58,26 @@ export default {
 		 *  `downloadResource` (that one calls im/v1/file.get, which only serves
 		 *  files the bot itself uploaded → 400 on user voice messages). */
 		const downloadMessageResource = async (messageId: string, fileKey: string): Promise<Buffer> => {
-			const res = await lark.rawClient.im.v1.messageResource.get({
-				path: { message_id: messageId, file_key: fileKey },
-				params: { type: "file" },
-			});
-			const stream = res.getReadableStream() as Readable;
-			const chunks: Buffer[] = [];
-			for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
-			return Buffer.concat(chunks);
+			// Retry once — the resource stream occasionally resets mid-download
+			// ("socket connection was closed unexpectedly"), and losing a voice
+			// message over a transient hiccup is worse than a second fetch.
+			let lastErr: unknown;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				try {
+					const res = await lark.rawClient.im.v1.messageResource.get({
+						path: { message_id: messageId, file_key: fileKey },
+						params: { type: "file" },
+					});
+					const stream = res.getReadableStream() as Readable;
+					const chunks: Buffer[] = [];
+					for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+					return Buffer.concat(chunks);
+				} catch (err) {
+					lastErr = err;
+					console.warn(`[lark] resource download attempt ${attempt + 1} failed: ${errorMessage(err)}`);
+				}
+			}
+			throw lastErr;
 		};
 		const lark = createLarkChannel({
 			appId: config.appId!,
