@@ -2888,8 +2888,12 @@ pub async fn transcribe_audio(audio_b64: String, mime_type: String) -> Result<St
 #[tauri::command]
 pub async fn read_voice_clip(rel_path: String) -> Result<String, String> {
 	log_file(&format!("read_voice_clip: {}", rel_path));
-	let cache_dir = agent_dir()?.join("voice-cache");
-	let full = cache_dir.join(&rel_path);
+	// rel_path is agentDir-relative and already includes the `voice-cache/`
+	// prefix (e.g. "voice-cache/lark/<key>.m4a") — resolve against agent_dir,
+	// then verify it stays inside voice-cache/.
+	let agent = agent_dir()?;
+	let cache_dir = agent.join("voice-cache");
+	let full = agent.join(&rel_path);
 	let canonical = full
 		.canonicalize()
 		.map_err(|e| format!("voice clip not found: {e}"))?;
