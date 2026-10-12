@@ -98,6 +98,7 @@ export type RpcResponse =
 
 	// Bash
 	| { id?: string; type: "response"; command: "bash"; success: true; data: BashResult }
+	| { id?: string; type: "response"; command: "transcribe_audio"; success: true; data: { text: string; provider: string } }
 	| { id?: string; type: "response"; command: "abort_bash"; success: true }
 
 	// Session

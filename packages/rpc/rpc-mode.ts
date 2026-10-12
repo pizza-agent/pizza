@@ -55,7 +55,7 @@ import type {
 	RpcSkillInfo,
 	RpcThemeInfo,
 } from "./rpc-types.js";
-import { getThemesDir } from "../../src/config.js";
+import { getAgentDir, getThemesDir } from "../../src/config.js";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
 
 // Re-export types for consumers
@@ -1272,6 +1272,33 @@ export async function runRpcModeWithFacade(
 
 			case "abort_bash":
 				return success(id, "abort_bash");
+
+			// Desktop dictation: the webview records audio with MediaRecorder and
+			// posts it here; we run the same voice pipeline the channel adapters
+			// use so settings.json `voice` (groq / openai-compatible / cli) is
+			// honored consistently. Returns "not configured" so callers can fall
+			// back to the Rust-side whisper path.
+			case "transcribe_audio": {
+				const { createVoicePipeline } = await import("../channels/voice.js");
+				const pipeline = createVoicePipeline(getAgentDir());
+				if (!pipeline.enabled) {
+					return error(id, "transcribe_audio", "voice transcription not configured (set voice.provider in settings.json)");
+				}
+				const audio = Buffer.from(command.audioB64, "base64");
+				if (audio.length === 0) return error(id, "transcribe_audio", "empty audio payload");
+				if (audio.length > 25 * 1024 * 1024) return error(id, "transcribe_audio", "audio too large (>25MB)");
+				try {
+					const result = await pipeline.transcribe({
+						audio,
+						format: command.format || "webm",
+						durationMs: command.durationMs,
+					});
+					if (!result?.text) return error(id, "transcribe_audio", "clip skipped (duration out of range)");
+					return success(id, "transcribe_audio", { text: result.text, provider: result.provider });
+				} catch (e) {
+					return error(id, "transcribe_audio", e instanceof Error ? e.message : String(e));
+				}
+			}
 
 			case "export_html": {
 				const descriptor = facade.getProjection().getDescriptor();

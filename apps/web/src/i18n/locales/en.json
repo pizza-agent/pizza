@@ -119,7 +119,9 @@
     "rejectedFiles_one": "1 file was skipped",
     "rejectedFiles_other": "{{count}} files were skipped",
     "scheduledTask": "Scheduled task",
-    "scheduledTaskHint": "Run a task automatically at the right time"
+    "scheduledTaskHint": "Run a task automatically at the right time",
+    "cancelRecording": "Cancel recording (Esc)",
+    "finishRecording": "Finish & transcribe"
   },
   "mention": {
     "files": "Files",

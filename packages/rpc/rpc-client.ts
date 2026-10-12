@@ -537,7 +537,7 @@ export class RpcClient {
 	 * gateway multiplexer can forward arbitrary frames without a per-command
 	 * typed wrapper.
 	 */
-	async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+	async sendCommand(command: RpcCommand, timeoutMs = 30_000): Promise<RpcResponse> {
 		if (!this.process?.stdin) {
 			throw new Error("Client not started");
 		}
@@ -550,7 +550,7 @@ export class RpcClient {
 			const timeout = setTimeout(() => {
 				this.pendingRequests.delete(id);
 				reject(new Error(`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`));
-			}, 30000);
+			}, timeoutMs);
 
 			this.pendingRequests.set(id, {
 				resolve: (response) => {

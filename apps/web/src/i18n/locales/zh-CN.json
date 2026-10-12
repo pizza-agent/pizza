@@ -119,7 +119,9 @@
     "rejectedFiles_one": "已跳过 1 个文件",
     "rejectedFiles_other": "已跳过 {{count}} 个文件",
     "scheduledTask": "定时任务",
-    "scheduledTaskHint": "在指定时间自动执行任务"
+    "scheduledTaskHint": "在指定时间自动执行任务",
+    "cancelRecording": "取消录音 (Esc)",
+    "finishRecording": "完成并转文字"
   },
   "mention": {
     "files": "文件",

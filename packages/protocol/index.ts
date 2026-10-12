@@ -313,6 +313,12 @@ export type RpcCommand =
 	| { id?: string; type: "bash"; command: string }
 	| { id?: string; type: "abort_bash" }
 
+	// Voice input (desktop dictation). base64 audio + container format
+	// ("webm", "mp4", "wav", …); the sidecar runs the configured voice
+	// pipeline (settings.json `voice`) and returns transcript text. Fails
+	// when no inbound provider is configured.
+	| { id?: string; type: "transcribe_audio"; audioB64: string; format: string; durationMs?: number }
+
 	// Session
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
@@ -628,6 +634,7 @@ export type RpcResponse =
 
 	// Bash
 	| { id?: string; type: "response"; command: "bash"; success: true; data: unknown }
+	| { id?: string; type: "response"; command: "transcribe_audio"; success: true; data: { text: string; provider: string } }
 	| { id?: string; type: "response"; command: "abort_bash"; success: true }
 
 	// Session

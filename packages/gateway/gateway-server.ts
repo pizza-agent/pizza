@@ -81,7 +81,7 @@ export interface AgentConnection {
 	stop(): Promise<void>;
 	onEvent(listener: (event: unknown) => void): () => void;
 	onExit(listener: () => void): () => void;
-	sendCommand(command: RpcCommand): Promise<RpcResponse>;
+	sendCommand(command: RpcCommand, timeoutMs?: number): Promise<RpcResponse>;
 	/**
 	 * Hand the agent a prompt. Resolves once the agent has *accepted* it (the
 	 * turn then runs asynchronously); rejects when the agent refuses it, e.g.
@@ -815,7 +815,11 @@ function nextMessageId(): string {
 				// stream, and toggling busy around an instant ack would be wrong.
 				entry.lastActivity = Date.now();
 				try {
-					const response = await entry.client.sendCommand(request.frame as RpcCommand);
+					// Local STT (cli voice provider) can spend a minute loading a
+					// model on first use — give dictation room beyond the 30s default.
+					const cmdTimeout =
+						(request.frame as { type?: string })?.type === "transcribe_audio" ? 150_000 : undefined;
+					const response = await entry.client.sendCommand(request.frame as RpcCommand, cmdTimeout);
 					// Route the response back to THIS channel only (events fan out separately).
 					write({ type: "rpc", workspace: cwd, frame: response as GatewayRpcFrame });
 				} catch (error) {

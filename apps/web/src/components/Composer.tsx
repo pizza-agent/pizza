@@ -273,6 +273,12 @@ export function Composer({
 	const [modelTotal, setModelTotal] = useState(0);
 	const [recording, setRecording] = useState(false);
 	const [transcribing, setTranscribing] = useState(false);
+	// Voice-input UX state: elapsed timer + input level + interim speech text
+	// (browser path) + dismissable error strip.
+	const [recordSecs, setRecordSecs] = useState(0);
+	const [recordLevel, setRecordLevel] = useState(0);
+	const [interimText, setInterimText] = useState("");
+	const [voiceError, setVoiceError] = useState<string | null>(null);
 	const [modelMenuOpen, setModelMenuOpen] = useState(false);
 	const [approvalMenuOpen, setApprovalMenuOpen] = useState(false);
 	const { t } = useTranslation();
@@ -282,6 +288,11 @@ export function Composer({
 	const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 	const audioChunksRef = useRef<Blob[]>([]);
 	const mediaStreamRef = useRef<MediaStream | null>(null);
+	const recordCancelledRef = useRef(false);
+	const recordStartRef = useRef(0);
+	const recordMimeRef = useRef("audio/webm");
+	const audioCtxRef = useRef<AudioContext | null>(null);
+	const levelRafRef = useRef(0);
 	const modelMenuRef = useRef<HTMLDivElement>(null);
 	const approvalMenuRef = useRef<HTMLDivElement>(null);
 	const plusMenuRef = useRef<HTMLDivElement>(null);
@@ -929,34 +940,77 @@ ${insert}`;
 		}
 	}, []);
 
+	/** Tear down the mic stream + level meter (shared by stop/cancel). */
+	const teardownAudio = useCallback(() => {
+		mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+		mediaStreamRef.current = null;
+		if (levelRafRef.current) {
+			cancelAnimationFrame(levelRafRef.current);
+			levelRafRef.current = 0;
+		}
+		void audioCtxRef.current?.close().catch(() => {});
+		audioCtxRef.current = null;
+		setRecordLevel(0);
+	}, []);
+
+	/** Live input level via WebAudio — cosmetic meter, safe to skip on error. */
+	const attachLevelMeter = useCallback((stream: MediaStream) => {
+		try {
+			const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+			if (!Ctx) return;
+			const ctx = new Ctx();
+			audioCtxRef.current = ctx;
+			const analyser = ctx.createAnalyser();
+			analyser.fftSize = 256;
+			analyser.smoothingTimeConstant = 0.6;
+			ctx.createMediaStreamSource(stream).connect(analyser);
+			const buf = new Uint8Array(analyser.frequencyBinCount);
+			const tick = () => {
+				if (!audioCtxRef.current) return;
+				analyser.getByteFrequencyData(buf);
+				let sum = 0;
+				for (const v of buf) sum += v;
+				setRecordLevel(Math.min(1, sum / buf.length / 140));
+				levelRafRef.current = requestAnimationFrame(tick);
+			};
+			tick();
+		} catch { /* meter is best-effort */ }
+	}, []);
+
 	const startRecording = useCallback(() => {
 		if (isTauri()) {
-			// Desktop (Tauri): use MediaRecorder to capture audio, then
-			// transcribe via the Rust backend (OpenAI Whisper API).
+			// Desktop (Tauri): MediaRecorder capture → sidecar transcribe_audio
+			// (voice.pipeline settings) with a Rust/whisper fallback.
 			void (async () => {
 				try {
 					const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 					mediaStreamRef.current = stream;
-					const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-						? "audio/webm"
-						: "audio/mp4";
-					const recorder = new MediaRecorder(stream, { mimeType });
+					attachLevelMeter(stream);
+					// audio/mp4 (AAC) plays nicest with WKWebKit + whisper.
+					const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
+						? "audio/mp4"
+						: MediaRecorder.isTypeSupported("audio/webm")
+							? "audio/webm"
+							: "";
+					const recorder = mimeType
+						? new MediaRecorder(stream, { mimeType })
+						: new MediaRecorder(stream);
+					recordMimeRef.current = recorder.mimeType || mimeType || "audio/webm";
 					audioChunksRef.current = [];
 					recorder.ondataavailable = (e) => {
 						if (e.data.size > 0) audioChunksRef.current.push(e.data);
 					};
 					recorder.onstop = () => {
-						// Stop all audio tracks.
-						mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-						mediaStreamRef.current = null;
-
-						const blob = new Blob(audioChunksRef.current, { type: mimeType });
+						teardownAudio();
+						const cancelled = recordCancelledRef.current;
+						recordCancelledRef.current = false;
+						const blob = new Blob(audioChunksRef.current, { type: recordMimeRef.current });
 						audioChunksRef.current = [];
-						if (blob.size === 0) {
+						if (cancelled || blob.size === 0) {
 							setTranscribing(false);
 							return;
 						}
-						// Convert to base64 and invoke Tauri transcribe command.
+						const durationMs = Date.now() - recordStartRef.current;
 						const reader = new FileReader();
 						reader.onload = async () => {
 							const result = reader.result;
@@ -966,20 +1020,44 @@ ${insert}`;
 							}
 							const comma = result.indexOf(",");
 							const b64 = comma >= 0 ? result.slice(comma + 1) : result;
+							const format = recordMimeRef.current.includes("mp4") ? "mp4"
+								: recordMimeRef.current.includes("wav") ? "wav"
+								: recordMimeRef.current.includes("ogg") ? "ogg"
+								: "webm";
 							try {
-								const { invoke } = await import("@tauri-apps/api/core");
-								const text = await invoke<string>("transcribe_audio", {
-									audioB64: b64,
-									mimeType,
-								});
+								// 125s: the cli transcriber itself allows 120s and the
+								// first call may pay a local-model load.
+								const resp = await sendCommandAwait<{ text: string; provider: string }>(
+									{ type: "transcribe_audio", audioB64: b64, format, durationMs },
+									125_000,
+								);
+								const text = resp.data?.text;
 								if (text) {
 									setInput((prev) => (prev ? prev.trimEnd() + " " : "") + text);
 								}
-							} catch (e) {
-								console.error("[composer] transcribe failed:", e);
-								const msg = e instanceof Error ? e.message : String(e);
-								// Show error as a brief placeholder — user will see it.
-								setInput((prev) => prev + (prev ? " " : "") + `[${msg}]`);
+							} catch (sidecarErr) {
+								const msg = sidecarErr instanceof Error ? sidecarErr.message : String(sidecarErr);
+								// Only fall back to the Rust bridge (OpenAI whisper-1) when
+								// the sidecar reports no voice pipeline — timeouts and
+								// transcription errors are surfaced as-is.
+								if (/not configured/i.test(msg)) {
+									try {
+										const { invoke } = await import("@tauri-apps/api/core");
+										const text = await invoke<string>("transcribe_audio", {
+											audioB64: b64,
+											mimeType: recordMimeRef.current,
+										});
+										if (text) {
+											setInput((prev) => (prev ? prev.trimEnd() + " " : "") + text);
+										}
+									} catch (rustErr) {
+										console.error("[composer] transcribe fallback failed:", rustErr);
+										setVoiceError(rustErr instanceof Error ? rustErr.message : String(rustErr));
+									}
+								} else {
+									console.error("[composer] transcribe failed:", sidecarErr);
+									setVoiceError(msg);
+								}
 							} finally {
 								setTranscribing(false);
 							}
@@ -988,12 +1066,18 @@ ${insert}`;
 						reader.readAsDataURL(blob);
 					};
 					mediaRecorderRef.current = recorder;
+					recordStartRef.current = Date.now();
+					setVoiceError(null);
+					setInterimText("");
+					setRecordSecs(0);
 					setRecording(true);
-					recorder.start();
+					recorder.start(250);
 				} catch (e) {
 					console.error("[composer] mic access failed:", e);
+					teardownAudio();
 					setRecording(false);
 					setTranscribing(false);
+					setVoiceError(e instanceof Error ? e.message : String(e));
 				}
 			})();
 			return;
@@ -1014,15 +1098,20 @@ ${insert}`;
 
 		recognition.onresult = (event: SpeechRecognitionEvent) => {
 			let final = "";
+			let interim = "";
 			for (let i = event.resultIndex; i < event.results.length; i++) {
 				const result = event.results[i];
 				const text = result[0]?.transcript ?? "";
 				if (result.isFinal && text) {
 					final += (final ? " " : "") + text;
+				} else {
+					interim += text;
 				}
 			}
+			setInterimText(interim);
 			if (final) {
 				setInput((prev) => (prev ? prev.trimEnd() + " " : "") + final);
+				setInterimText("");
 			}
 		};
 
@@ -1030,15 +1119,20 @@ ${insert}`;
 		recognition.onend = () => setRecording(false);
 
 		recognitionRef.current = recognition;
+		recordStartRef.current = Date.now();
+		setVoiceError(null);
+		setInterimText("");
+		setRecordSecs(0);
 		setRecording(true);
 		recognition.start();
-	}, []);
+	}, [attachLevelMeter, teardownAudio]);
 
 	const stopRecording = useCallback(() => {
 		if (isTauri()) {
 			const recorder = mediaRecorderRef.current;
 			if (recorder && recorder.state !== "inactive") {
 				setRecording(false);
+				setInterimText("");
 				setTranscribing(true);
 				recorder.stop();
 			}
@@ -1046,6 +1140,57 @@ ${insert}`;
 		}
 		recognitionRef.current?.stop();
 	}, []);
+
+	/** Drop the in-progress clip entirely (Esc / ✕). */
+	const cancelRecording = useCallback(() => {
+		if (isTauri()) {
+			const recorder = mediaRecorderRef.current;
+			if (recorder && recorder.state !== "inactive") {
+				recordCancelledRef.current = true;
+				setRecording(false);
+				setTranscribing(false);
+				recorder.stop(); // onstop sees the flag and discards the blob
+				return;
+			}
+			setRecording(false);
+			setTranscribing(false);
+			teardownAudio();
+			return;
+		}
+		// abort() discards pending results without emitting them — absent
+		// from the DOM lib's older SpeechRecognition typing, so call loosely.
+		(recognitionRef.current as unknown as { abort?: () => void } | null)?.abort?.();
+		setRecording(false);
+	}, [teardownAudio]);
+
+	// Elapsed timer while recording; auto-stop at 2min so an unattended
+	// session can't hold the mic open forever.
+	useEffect(() => {
+		if (!recording) return;
+		const iv = window.setInterval(() => {
+			const secs = Math.floor((Date.now() - recordStartRef.current) / 1000);
+			setRecordSecs(secs);
+			if (secs >= 120) stopRecording();
+		}, 250);
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				cancelRecording();
+			}
+		};
+		document.addEventListener("keydown", onKey, true);
+		return () => {
+			window.clearInterval(iv);
+			document.removeEventListener("keydown", onKey, true);
+		};
+	}, [recording, stopRecording, cancelRecording]);
+
+	// Voice errors self-dismiss.
+	useEffect(() => {
+		if (!voiceError) return;
+		const t = window.setTimeout(() => setVoiceError(null), 8000);
+		return () => window.clearTimeout(t);
+	}, [voiceError]);
 
 	const addFiles = useCallback(async (files: FileList | File[]) => {
 		// Image attachments stay as base64 inline attachments; anything else
@@ -1327,7 +1472,7 @@ ${insert}`;
 		const outgoingImages = images.length > 0 ? images : undefined;
 		const outgoingFiles = files.length > 0 ? files : undefined;
 		if ((!message && !outgoingImages && !outgoingFiles) || !sidecarReady) return;
-		if (recording) stopRecording();
+		if (recording || transcribing) return; // the recording bar owns the input
 		onSend(message, outgoingImages, outgoingFiles);
 		setInput("");
 		setImages([]);
@@ -1337,7 +1482,7 @@ ${insert}`;
 	};
 
 	const canSend =
-		sidecarReady && (!!input.trim() || images.length > 0 || files.length > 0);
+		sidecarReady && !recording && !transcribing && (!!input.trim() || images.length > 0 || files.length > 0);
 
 	return (
 		<div className="bg-bg px-6 py-4">
@@ -1491,7 +1636,69 @@ ${insert}`;
 							</ul>
 						</div>
 					)}
+					{voiceError && (
+						<div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+							<span className="truncate">{voiceError}</span>
+							<button
+								type="button"
+								onClick={() => setVoiceError(null)}
+								className="shrink-0 rounded p-0.5 transition-colors hover:bg-danger/10"
+								title={t("common.dismiss")}
+							>
+								<X className="h-3 w-3" />
+							</button>
+						</div>
+					)}
 					<div className="relative">
+						{recording || transcribing ? (
+							<div className="flex min-h-[2.5rem] items-center gap-3 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2">
+								{recording ? (
+									<>
+										<button
+											type="button"
+											onClick={cancelRecording}
+											className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-fg"
+											title={t("composer.cancelRecording")}
+										>
+											<X className="h-3.5 w-3.5" />
+										</button>
+										<span className="relative flex h-2.5 w-2.5 shrink-0">
+											<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-danger opacity-60" />
+											<span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-danger" />
+										</span>
+										{interimText ? (
+											<span className="min-w-0 flex-1 truncate text-sm italic text-muted">{interimText}</span>
+										) : (
+											<div className="flex h-4 flex-1 items-center gap-[3px]" aria-hidden>
+												{[0.4, 0.75, 1, 0.75, 0.4].map((f, i) => (
+													<span
+														key={i}
+														className="w-[3px] rounded-full bg-danger/70 transition-[height] duration-100"
+														style={{ height: `${Math.max(3, Math.round(recordLevel * 16 * f))}px` }}
+													/>
+												))}
+											</div>
+										)}
+										<span className="shrink-0 font-mono text-xs tabular-nums text-danger">
+											{Math.floor(recordSecs / 60)}:{String(recordSecs % 60).padStart(2, "0")}
+										</span>
+										<button
+											type="button"
+											onClick={stopRecording}
+											className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-danger text-white transition-colors hover:opacity-90"
+											title={t("composer.finishRecording")}
+										>
+											<Check className="h-3.5 w-3.5" />
+										</button>
+									</>
+								) : (
+									<>
+										<Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+										<span className="flex-1 text-sm text-muted">{t("composer.transcribing")}</span>
+									</>
+								)}
+							</div>
+						) : (
 						<textarea
 							ref={textareaRef}
 							className="w-full resize-none bg-transparent px-1 py-1 text-sm text-fg outline-none placeholder:text-muted min-h-[2.5rem] max-h-80"
@@ -1609,6 +1816,7 @@ ${insert}`;
 								}
 							}}
 						/>
+						)}
 						{mentionActive && (
 							<MentionMenu
 								items={filteredMentionItems}
@@ -1922,12 +2130,14 @@ ${insert}`;
 									transcribing
 										? t("composer.transcribing")
 										: recording
-											? t("composer.stopDictation")
+											? t("composer.finishRecording")
 											: t("composer.voiceInput")
 								}
 							>
 								{transcribing ? (
 									<Loader2 className="h-4 w-4 animate-spin" />
+								) : recording ? (
+									<Square className="h-3.5 w-3.5 fill-current" />
 								) : (
 									<Mic className="h-4 w-4" />
 								)}
