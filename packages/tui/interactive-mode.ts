@@ -257,6 +257,21 @@ function isUnknownModel(model: Model<any> | undefined): boolean {
   );
 }
 
+/**
+ * Humanize inbound voice markup for the transcript: adapters deliver
+ * `<voice …>transcript</voice>` (or `<audio …/>` when untranscribed), which
+ * the model understands but raw markup reads badly in the chat.
+ */
+function humanizeVoiceTags(text: string): string {
+  return text
+    .replace(/<voice\s+([^>]*)>([\s\S]*?)<\/voice>/g, (_m, attrs: string, body: string) => {
+      const dur = /duration=\"(\d+(?:\.\d+)?)s\"/.exec(attrs)?.[1];
+      return `🔊 voice${dur ? ` (${dur}s)` : ""}: ${body.trim()}`;
+    })
+    .replace(/<audio\s+[^>]*\/>\n?\[voice message received but not transcribed\]/g, "🔊 voice message (not transcribed)")
+    .replace(/<audio\s+[^>]*\/>/g, "🔊 voice message");
+}
+
 function hasDefaultModelProvider(
   providerId: string,
 ): providerId is keyof typeof defaultModelPerProvider {
@@ -3452,7 +3467,7 @@ export class InteractiveMode {
       typeof message.content === "string"
         ? [{ type: "text", text: message.content }]
         : message.content.filter((c: { type: string }) => c.type === "text");
-    return textBlocks.map((c) => (c as { text: string }).text).join("");
+    return textBlocks.map((c) => humanizeVoiceTags((c as { text: string }).text)).join("");
   }
 
   /**

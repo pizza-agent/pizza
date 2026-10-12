@@ -25,10 +25,10 @@
 
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { AuthStorage } from "../../src/core/auth/auth-storage.js";
 import { resolveConfigValue } from "../../src/core/config/resolve-config-value.js";
 
@@ -226,6 +226,20 @@ function execShell(cmd: string, timeoutMs: number): Promise<{ stdout: string; st
 	});
 }
 
+/**
+ * Cache an inbound clip under `<agentDir>/voice-cache/` so UIs can offer
+ * playback later. Returns the agentDir-relative path for the `file` attr —
+ * opaque to the model, resolvable by trusted UI components only.
+ */
+export function cacheClip(agentDir: string, channel: string, key: string, ext: string, audio: Buffer): string {
+	const safe = (s: string): string => s.replace(/[^\w.-]/g, "_");
+	const rel = join("voice-cache", safe(channel), `${safe(key)}.${ext}`);
+	const abs = join(agentDir, rel);
+	mkdirSync(dirname(abs), { recursive: true });
+	writeFileSync(abs, audio);
+	return rel;
+}
+
 // ── the pipeline adapters call ────────────────────────────────────────────
 
 /**
@@ -234,10 +248,10 @@ function execShell(cmd: string, timeoutMs: number): Promise<{ stdout: string; st
  * transcript exists, so the agent asks the user to type instead of trying to
  * interpret the tag.
  */
-export function voicePrompt(opts: { key?: string; durationMs?: number; transcript?: string }): string {
-	const { key, durationMs, transcript } = opts;
+export function voicePrompt(opts: { key?: string; durationMs?: number; transcript?: string; file?: string }): string {
+	const { key, durationMs, transcript, file } = opts;
 	const duration = durationMs ? Math.round(durationMs / 1000) : undefined;
-	const attrs = `${key ? ` key="${key}"` : ""}${duration !== undefined ? ` duration="${duration}s"` : ""}`;
+	const attrs = `${key ? ` key="${key}"` : ""}${duration !== undefined ? ` duration="${duration}s"` : ""}${file ? ` file="${file}"` : ""}`;
 	return transcript
 		? `<voice${attrs}>${transcript}</voice>`
 		: `<audio${attrs}/>\n[voice message received but not transcribed]`;

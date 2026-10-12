@@ -126,3 +126,52 @@ export function parseTellCommand(command: string): TellCommandInfo | null {
 	if (pos) return { action, to: pos[1] ?? pos[2] ?? pos[3] };
 	return { action };
 }
+// ── Voice clips ───────────────────────────────────────────────────────────
+
+/** One voice clip embedded in a message body — parsed from the adapter's
+ *  `<voice key="…" duration="Ns" file="voice-cache/…">transcript</voice>`
+ *  (or untranscribed `<audio …/>`) tag. */
+export interface VoiceClip {
+	/** Platform resource key (lark file_key / telegram file_id / discord id). */
+	key?: string;
+	/** Duration in seconds, when the platform reported it. */
+	durationS?: number;
+	/** voice-cache-relative path of the downloaded clip; absent when the
+	 *  adapter couldn't download it — playback button hidden then. */
+	file?: string;
+	/** Transcript text; absent on the untranscribed <audio/> fallback. */
+	transcript?: string;
+}
+
+export type VoiceSegment = { type: "text"; text: string } | { type: "voice"; clip: VoiceClip };
+
+const VOICE_RE = /<voice\s+([^>]*)>([\s\S]*?)<\/voice>|<audio\s+([^/]*)\/>/g;
+const ATTR_RE = /([a-zA-Z_][\w.-]*)\s*=\s*"([^"]*)"/g;
+
+/**
+ * Split a message body into text runs and voice clips. Returns a single text
+ * segment when nothing voice-related is present.
+ */
+export function splitVoiceSegments(body: string): VoiceSegment[] {
+	const segments: VoiceSegment[] = [];
+	let last = 0;
+	for (const m of body.matchAll(VOICE_RE)) {
+		const idx = m.index ?? 0;
+		if (idx > last) segments.push({ type: "text", text: body.slice(last, idx) });
+		const attrs = new Map<string, string>();
+		const attrSrc = m[1] ?? m[3] ?? "";
+		for (const a of attrSrc.matchAll(ATTR_RE)) attrs.set(a[1], a[2]);
+		const duration = attrs.get("duration");
+		const clip: VoiceClip = {
+			key: attrs.get("key"),
+			durationS: duration ? Number.parseFloat(duration) : undefined,
+			file: attrs.get("file"),
+			transcript: m[2]?.trim() || undefined,
+		};
+		segments.push({ type: "voice", clip });
+		last = idx + m[0].length;
+	}
+	if (last < body.length) segments.push({ type: "text", text: body.slice(last) });
+	if (segments.length === 0) segments.push({ type: "text", text: body });
+	return segments;
+}

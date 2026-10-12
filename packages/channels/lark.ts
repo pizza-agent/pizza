@@ -20,7 +20,7 @@ import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
 import type { Readable } from "node:stream";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { createVoicePipeline, voicePrompt } from "./voice.js";
+import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
 
 /**
  * Threaded replies stay readable in group chats, but in p2p DMs the Feishu
@@ -94,8 +94,9 @@ export default {
 				void lark.addReaction(msg.messageId, "Get").catch(() => {});
 				try {
 					const buf = await downloadMessageResource(msg.messageId, audio.fileKey);
+					const file = cacheClip(runtime.dir, "lark", audio.fileKey, "opus", buf);
 					const result = await voice.transcribe({ audio: buf, format: "opus", durationMs: audio.durationMs });
-					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text }) + (text ? `\n${text}` : "");
+					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text, file }) + (text ? `\n${text}` : "");
 				} catch (err) {
 					console.error(`[lark] voice transcription failed for ${chatId}:`, errorMessage(err));
 					await lark

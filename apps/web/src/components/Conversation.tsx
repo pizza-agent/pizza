@@ -2,7 +2,8 @@ import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { highlightText } from "@/lib/highlight";
-import { INTERNAL_MESSAGE_KINDS, parseTellCommand, workspaceNameFrom, type AgentMessageInfo } from "@/lib/agent-messages";
+import { INTERNAL_MESSAGE_KINDS, parseTellCommand, splitVoiceSegments, workspaceNameFrom, type AgentMessageInfo } from "@/lib/agent-messages";
+import { VoiceClipChip } from "./VoiceClip";
 import { CHANNEL_TYPES } from "@/lib/channels";
 import { Markdown } from "./Markdown";
 import { Button, Badge } from "@/components/ui";
@@ -693,7 +694,15 @@ const AgentMessageCard = memo(function AgentMessageCard({
 					)}
 				</div>
 				<div className="select-text whitespace-pre-wrap break-words px-4 py-3 text-sm leading-relaxed text-fg">
-					{highlight ? highlightText(am.body, highlight, highlightActive) : am.body}
+					{splitVoiceSegments(am.body).map((seg, i) =>
+						seg.type === "voice" ? (
+							<VoiceClipChip key={i} clip={seg.clip} />
+						) : highlight ? (
+							highlightText(seg.text, highlight, highlightActive)
+						) : (
+							seg.text
+						),
+					)}
 				</div>
 			</div>
 			<div
