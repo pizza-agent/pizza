@@ -16,24 +16,10 @@
  * `im:resource` too — voice-message transcription downloads the clip.
  */
 
-import type { NormalizedMessage, ResourceDescriptor } from "@larksuiteoapi/node-sdk";
+import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { createVoicePipeline } from "./voice.js";
-
-/**
- * Inbound text for a voice message. `transcript` set → the agent reads it as
- * the user's words; absent → forward the platform's <audio> placeholder so
- * the agent at least knows a voice message arrived.
- */
-function voicePrompt(resource: ResourceDescriptor, transcript?: string): string {
-	const duration = resource.durationMs ? Math.round(resource.durationMs / 1000) : undefined;
-	const attrs = ` key="${resource.fileKey}"${duration !== undefined ? ` duration="${duration}s"` : ""}`;
-	// The hint line tells the agent a voice clip arrived but no transcript is
-	// available, so it should ask the user to type instead of trying to
-	// interpret the tag.
-	return transcript ? `<voice${attrs}>${transcript}</voice>` : `<audio${attrs}/>\n[voice message received but not transcribed]`;
-}
+import { createVoicePipeline, voicePrompt } from "./voice.js";
 
 /**
  * Threaded replies stay readable in group chats, but in p2p DMs the Feishu
@@ -85,19 +71,19 @@ export default {
 			// provider is configured; otherwise forward the <audio> tag as-is.
 			const audio = msg.resources?.find((r) => r.type === "audio");
 			if (audio && !voice.enabled) {
-				text = voicePrompt(audio) + (text ? `\n${text}` : "");
+				text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs }) + (text ? `\n${text}` : "");
 			} else if (audio) {
 				void lark.addReaction(msg.messageId, "Get").catch(() => {});
 				try {
 					const buf = await lark.downloadResource(audio.fileKey, "file");
 					const result = await voice.transcribe({ audio: buf, format: "opus", durationMs: audio.durationMs });
-					text = voicePrompt(audio, result?.text) + (text ? `\n${text}` : "");
+					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text }) + (text ? `\n${text}` : "");
 				} catch (err) {
 					console.error(`[lark] voice transcription failed for ${chatId}:`, errorMessage(err));
 					await lark
 						.send(chatId, { text: `⚠️ Voice transcription failed: ${errorMessage(err)}` }, sendOpts(msg))
 						.catch(() => {});
-					text = voicePrompt(audio) + (text ? `\n${text}` : "");
+					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs }) + (text ? `\n${text}` : "");
 				}
 			}
 

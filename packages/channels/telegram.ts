@@ -10,6 +10,7 @@
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { chunk, errorMessage, failureReply, provenance, proxyFromEnv, redactProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
+import { createVoicePipeline, voicePrompt } from "./voice.js";
 
 export default {
 	validate: (input) => (input.token?.trim() ? null : "Bot token is required"),
@@ -32,7 +33,55 @@ export default {
 		const bot = new Bot(config.token!, agent ? { client: { baseFetchConfig: { agent } as never } } : undefined);
 		if (proxy) console.log(`[telegram] routing API via proxy ${redactProxy(proxy)}`);
 
+		// Voice pipeline — no-op unless settings.json has a `voice` section.
+		const voice = createVoicePipeline(runtime.dir);
+
 		bot.command("start", (ctx) => ctx.reply("I'm a Pizza agent bridge. Send me a message."));
+
+		// Voice messages (and audio files): download via getFile, transcribe
+		// when configured, and deliver the transcript like a text message.
+		for (const kind of ["voice", "audio"] as const) {
+			bot.on(`message:${kind}`, async (ctx) => {
+				const chatId = String(ctx.chat.id);
+				const clip = ctx.message[kind];
+				if (!clip) return;
+				const fileKey = clip.file_id;
+				const durationMs = clip.duration ? clip.duration * 1000 : undefined;
+				const sender =
+					[ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") ||
+					(ctx.from?.username ? `@${ctx.from.username}` : undefined);
+				const prompt = (transcript?: string): string =>
+					voicePrompt({ key: fileKey, durationMs, transcript });
+
+				try {
+					await ctx.react("👀").catch(() => {});
+					if (!voice.enabled) {
+						const reply = await runtime.deliver(config.workspace, prompt(), provenance("telegram", chatId, sender));
+						for (const part of chunk(reply, 4000)) await ctx.reply(part);
+						return;
+					}
+					await ctx.replyWithChatAction("typing");
+					const file = await ctx.getFile();
+					const res = await fetch(
+						`https://api.telegram.org/file/bot${config.token}/${file.file_path}`,
+						{ signal: AbortSignal.timeout(60_000) },
+					);
+					if (!res.ok) throw new Error(`Telegram file download failed (HTTP ${res.status})`);
+					const buf = Buffer.from(await res.arrayBuffer());
+					const format = file.file_path?.split(".").pop() ?? "oga";
+					const result = await voice.transcribe({ audio: buf, format, durationMs });
+					const reply = await runtime.deliver(
+						config.workspace,
+						prompt(result?.text),
+						provenance("telegram", chatId, sender),
+					);
+					for (const part of chunk(reply, 4000)) await ctx.reply(part);
+				} catch (err) {
+					console.error(`[telegram] voice handling failed for chat ${chatId}:`, errorMessage(err));
+					await ctx.reply(`⚠️ Voice transcription failed: ${errorMessage(err)}`).catch(() => {});
+				}
+			});
+		}
 
 		// Every non-command text message → deliver to the agent, reply back.
 		bot.on("message:text", async (ctx) => {

@@ -9,9 +9,19 @@
  * Default: answer only @mentions or DMs; PIZZA_ANSWER_ALL=1 replies to everything.
  */
 
-import type { Message } from "discord.js";
+import type { Attachment, Message } from "discord.js";
 import { ANSWER_ALL, chunk, failureReply, errorMessage, provenance, proxyFromEnv, redactProxy, routeHttpsThroughProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
+import { createVoicePipeline, voicePrompt } from "./voice.js";
+
+/** First audio-ish attachment on a message — voice messages and uploaded
+ *  audio files alike. `duration_secs` is only present on real voice clips. */
+function audioAttachment(msg: Message): Attachment | undefined {
+	for (const att of msg.attachments.values()) {
+		if (att.contentType?.startsWith("audio/")) return att;
+	}
+	return undefined;
+}
 
 export default {
 	validate: (input) => (input.token?.trim() ? null : "Bot token is required"),
@@ -47,6 +57,9 @@ export default {
 
 		discord.once("ready", () => console.log(`[discord] logged in as ${discord.user?.tag}`));
 
+		// Voice pipeline — no-op unless settings.json has a `voice` section.
+		const voice = createVoicePipeline(runtime.dir);
+
 		discord.on("messageCreate", async (msg: Message) => {
 			if (msg.author.bot) return; // never loop on bots
 
@@ -59,7 +72,30 @@ export default {
 			const isMention = msg.mentions.has(discord.user!, { ignoreEveryone: true });
 			if (!ANSWER_ALL && !isMention && !msg.channel.isDMBased()) return;
 
-			const text = msg.content.replace(/<@!?\d+>/g, "").trim(); // strip the @bot mention
+			let text = msg.content.replace(/<@!?\d+>/g, "").trim(); // strip the @bot mention
+
+			// Audio attachments (voice messages upload as audio/ogg): transcribe
+			// when a voice provider is configured, else forward the placeholder.
+			const clip = audioAttachment(msg);
+			if (clip && !voice.enabled) {
+				text = voicePrompt({ key: clip.id, transcript: undefined }) + (text ? `\n${text}` : "");
+			} else if (clip) {
+				void msg.react("👀").catch(() => {});
+				try {
+					const res = await fetch(clip.url, { signal: AbortSignal.timeout(60_000) });
+					if (!res.ok) throw new Error(`attachment download failed (HTTP ${res.status})`);
+					const buf = Buffer.from(await res.arrayBuffer());
+					const format = clip.name?.split(".").pop() ?? "ogg";
+					const result = await voice.transcribe({ audio: buf, format });
+					text =
+						voicePrompt({ key: clip.id, transcript: result?.text }) + (text ? `\n${text}` : "");
+				} catch (err) {
+					console.error(`[discord] voice transcription failed in ${channelName}:`, errorMessage(err));
+					await msg.reply(`⚠️ Voice transcription failed: ${errorMessage(err)}`).catch(() => {});
+					text = voicePrompt({ key: clip.id }) + (text ? `\n${text}` : "");
+				}
+			}
+
 			if (!text) return;
 
 			// Instant read-receipt — a 👀 reaction says "received" without waiting

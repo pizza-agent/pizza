@@ -210,6 +210,21 @@ function execShell(cmd: string, timeoutMs: number): Promise<{ stdout: string; st
 
 // ── the pipeline adapters call ────────────────────────────────────────────
 
+/**
+ * Inbound text for a voice clip. `transcript` set → the agent reads it as the
+ * user's words; absent → an <audio> placeholder plus a hint that no
+ * transcript exists, so the agent asks the user to type instead of trying to
+ * interpret the tag.
+ */
+export function voicePrompt(opts: { key?: string; durationMs?: number; transcript?: string }): string {
+	const { key, durationMs, transcript } = opts;
+	const duration = durationMs ? Math.round(durationMs / 1000) : undefined;
+	const attrs = `${key ? ` key="${key}"` : ""}${duration !== undefined ? ` duration="${duration}s"` : ""}`;
+	return transcript
+		? `<voice${attrs}>${transcript}</voice>`
+		: `<audio${attrs}/>\n[voice message received but not transcribed]`;
+}
+
 export interface VoicePipeline {
 	/** False when `voice.provider` isn't configured — the adapter should skip
 	 *  downloading the clip entirely and forward the <audio> tag as today. */
