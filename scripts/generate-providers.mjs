@@ -7,7 +7,7 @@
  *   - apps/desktop/src/bridge.rs (`list_providers`)
  *   - apps/web/scripts/dev-bridge.mjs (`listProviders`)
  *
- * Keep in sync with `getProviderDisplayName()` in src/core/model-registry.ts.
+ * Keep in sync with `getProviderDisplayName()` in src/core/models/model-registry.ts.
  * Run via `npm run generate-providers` (also part of `npm run build`).
  */
 import { writeFile, mkdir } from "node:fs/promises";
@@ -20,7 +20,7 @@ const outDir = fileURLToPath(new URL("../dist/", import.meta.url));
 const outFile = path.join(outDir, "providers.json");
 
 // Display-name overrides where pizza wants a different label than pi-ai.
-// Keep in sync with PROVIDER_NAME_OVERRIDES in src/core/model-registry.ts.
+// Keep in sync with PROVIDER_NAME_OVERRIDES in src/core/models/model-registry.ts.
 const overrides = {};
 
 const providers = {};
@@ -29,7 +29,7 @@ for (const provider of builtinProviders()) {
 }
 
 // Providers implemented in pizza's own layer (not pi-ai's catalog).
-// Keep in sync with getBuiltinFlows() in src/core/oauth.ts.
+// Keep in sync with getBuiltinFlows() in src/core/auth/oauth.ts.
 providers["devin"] = "Devin (Devin CLI account)";
 
 await mkdir(outDir, { recursive: true });
