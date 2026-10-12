@@ -145,7 +145,7 @@ export interface VoiceClip {
 
 export type VoiceSegment = { type: "text"; text: string } | { type: "voice"; clip: VoiceClip };
 
-const VOICE_RE = /<voice\s+([^>]*)>([\s\S]*?)<\/voice>|<audio\s+([^/]*)\/>/g;
+const VOICE_RE = /<voice\s+([^>]*)>([\s\S]*?)<\/voice>|<audio\s+([^>]*?)\/>/g;
 const ATTR_RE = /([a-zA-Z_][\w.-]*)\s*=\s*"([^"]*)"/g;
 
 /**

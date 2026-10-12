@@ -124,7 +124,9 @@ export default {
 
 			// Audio file shares (voice clips, mp3s): download via the bot token
 			// and transcribe when a voice provider is configured.
-			const clip = input.files?.find((f) => f.mimetype?.startsWith("audio/") || f.duration_ms);
+			const clip = input.files?.find(
+				(f) => f.mimetype?.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|oga|opus|webm)$/i.test(f.name ?? ""),
+			);
 			const thread_ts0 = input.threadTs ?? input.ts;
 			if (clip && !voice.enabled) {
 				text =

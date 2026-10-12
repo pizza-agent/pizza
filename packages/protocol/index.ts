@@ -191,6 +191,9 @@ export interface VoiceSettings {
 	language?: string;
 	/** Voice clips shorter than this are skipped (default 0). */
 	minDurationMs?: number;
+	/** Clips longer than this are rejected — long recordings burn STT time
+	 *  (default 300_000 = 5 min). */
+	maxDurationMs?: number;
 	/** "cli" provider: command template; `{file}` is the audio path. */
 	command?: string;
 	/** "cli" provider: audio format fed to the command (default "wav"). */

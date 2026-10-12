@@ -25,36 +25,18 @@
 
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { VoiceSettings } from "@tomsun28/pizza-protocol";
 import { AuthStorage } from "../../src/core/auth/auth-storage.js";
 import { resolveConfigValue } from "../../src/core/config/resolve-config-value.js";
 
 // ── config ────────────────────────────────────────────────────────────────
 
-export type VoiceProvider = "groq" | "openai-compatible" | "cli";
-
-export interface VoiceSettings {
-	provider?: VoiceProvider;
-	/** STT model id; defaults per provider (groq → whisper-large-v3-turbo). */
-	model?: string;
-	/** Transcriptions endpoint base (openai-compatible provider). */
-	baseUrl?: string;
-	/** Optional key override — "env:NAME", "!command", or literal. Otherwise
-	 *  resolved from auth.json[<provider>] then provider env vars. */
-	apiKey?: string;
-	/** BCP-47 language hint passed to providers that accept one. */
-	language?: string;
-	/** Voice clips shorter than this are skipped. Default 0. */
-	minDurationMs?: number;
-	/** cli provider: command template; `{file}` is replaced with the audio path. */
-	command?: string;
-	/** cli provider: audio format fed to the command. Default "wav" (converted
-	 *  with ffmpeg when the input isn't wav already). */
-	format?: string;
-}
+export type { VoiceSettings };
+export type VoiceProvider = NonNullable<VoiceSettings["provider"]>;
 
 /** Read the `voice` section of `<agentDir>/settings.json`; {} when absent. */
 export function loadVoiceSettings(agentDir: string): VoiceSettings {
@@ -63,7 +45,8 @@ export function loadVoiceSettings(agentDir: string): VoiceSettings {
 	try {
 		const parsed = JSON.parse(readFileSync(path, "utf8")) as { voice?: VoiceSettings };
 		return parsed.voice ?? {};
-	} catch {
+	} catch (err) {
+		console.warn(`[voice] ignoring settings.json — parse failed: ${err instanceof Error ? err.message : String(err)}`);
 		return {};
 	}
 }
@@ -208,12 +191,10 @@ async function ensureFormat(audio: Buffer, from: string, want: string): Promise<
 	try {
 		await writeFile(inFile, audio);
 		await execShell(`ffmpeg -y -v error -i "${inFile}" -ar 16000 -ac 1 "${outFile}"`, 60_000);
-		return Buffer.from(await import("node:fs/promises").then((fs) => fs.readFile(outFile)));
+		return Buffer.from(await readFile(outFile));
 	} finally {
-		void import("node:fs/promises").then((fs) => {
-			fs.unlink(inFile).catch(() => {});
-			fs.unlink(outFile).catch(() => {});
-		});
+		void unlink(inFile).catch(() => {});
+		void unlink(outFile).catch(() => {});
 	}
 }
 
@@ -231,13 +212,39 @@ function execShell(cmd: string, timeoutMs: number): Promise<{ stdout: string; st
  * playback later. Returns the agentDir-relative path for the `file` attr —
  * opaque to the model, resolvable by trusted UI components only.
  */
+const CACHE_MAX_FILES = 200;
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 export function cacheClip(agentDir: string, channel: string, key: string, ext: string, audio: Buffer): string {
 	const safe = (s: string): string => s.replace(/[^\w.-]/g, "_");
 	const rel = join("voice-cache", safe(channel), `${safe(key)}.${ext}`);
 	const abs = join(agentDir, rel);
 	mkdirSync(dirname(abs), { recursive: true });
 	writeFileSync(abs, audio);
+	pruneVoiceCache(agentDir);
 	return rel;
+}
+
+/** Drop clips older than 7 days, then oldest-first beyond 200 files. */
+function pruneVoiceCache(agentDir: string): void {
+	const root = join(agentDir, "voice-cache");
+	try {
+		const files: { path: string; mtime: number }[] = [];
+		for (const dir of readdirSync(root, { withFileTypes: true })) {
+			if (!dir.isDirectory()) continue;
+			for (const f of readdirSync(join(root, dir.name))) {
+				const p = join(root, dir.name, f);
+				try {
+					files.push({ path: p, mtime: statSync(p).mtimeMs });
+				} catch { /* gone */ }
+			}
+		}
+		const cutoff = Date.now() - CACHE_MAX_AGE_MS;
+		const stale = files.filter((f) => f.mtime < cutoff);
+		for (const f of stale) unlinkSync(f.path);
+		const live = files.filter((f) => f.mtime >= cutoff).sort((a, b) => a.mtime - b.mtime);
+		for (const f of live.slice(0, Math.max(0, live.length - CACHE_MAX_FILES))) unlinkSync(f.path);
+	} catch { /* best effort */ }
 }
 
 // ── the pipeline adapters call ────────────────────────────────────────────
@@ -252,8 +259,11 @@ export function voicePrompt(opts: { key?: string; durationMs?: number; transcrip
 	const { key, durationMs, transcript, file } = opts;
 	const duration = durationMs ? Math.round(durationMs / 1000) : undefined;
 	const attrs = `${key ? ` key="${key}"` : ""}${duration !== undefined ? ` duration="${duration}s"` : ""}${file ? ` file="${file}"` : ""}`;
-	return transcript
-		? `<voice${attrs}>${transcript}</voice>`
+	// Neutralize markup inside the transcript — STT output is arbitrary text
+	// and a stray "</voice>" would corrupt UI segmentation.
+	const safe = transcript?.replace(/<\/?(voice|audio|message)[^>]*>/gi, "") ?? "";
+	return safe
+		? `<voice${attrs}>${safe}</voice>`
 		: `<audio${attrs}/>\n[voice message received but not transcribed]`;
 }
 
@@ -276,14 +286,18 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 	if (!provider) {
 		return { enabled: false, transcribe: async () => null };
 	}
+	const withinDuration = (input: TranscribeInput): boolean => {
+		const d = input.durationMs;
+		if (d === undefined) return true;
+		if (settings.minDurationMs && d < settings.minDurationMs) return false;
+		if (d > (settings.maxDurationMs ?? 300_000)) return false;
+		return true;
+	};
 	if (provider === "cli") {
 		const cli = makeCliTranscriber(settings);
 		return {
 			enabled: true,
-			transcribe: (input) => {
-				if (settings.minDurationMs && (input.durationMs ?? Infinity) < settings.minDurationMs) return Promise.resolve(null);
-				return cli.transcribe(input);
-			},
+			transcribe: (input) => (withinDuration(input) ? cli.transcribe(input) : Promise.resolve(null)),
 		};
 	}
 	if (provider === "groq" || provider === "openai-compatible") {
@@ -305,7 +319,7 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 		return {
 			enabled: true,
 			transcribe: async (input) => {
-				if (settings.minDurationMs && (input.durationMs ?? Infinity) < settings.minDurationMs) return null;
+				if (!withinDuration(input)) return null;
 				return (await getTranscriber()).transcribe(input);
 			},
 		};
