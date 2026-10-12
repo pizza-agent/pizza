@@ -19,6 +19,15 @@ import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
 
+/**
+ * Threaded replies stay readable in group chats, but in p2p DMs the Feishu
+ * client collapses `replyTo` posts into a sub-thread with no normal
+ * notification — users see the bot "not replying". DMs get top-level sends.
+ */
+function sendOpts(msg: NormalizedMessage): { replyTo?: string } {
+	return msg.chatType === "group" ? { replyTo: msg.messageId } : {};
+}
+
 export default {
 	validate(input) {
 		if (!input.appId?.trim()) return "App ID is required";
@@ -62,10 +71,12 @@ export default {
 				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName));
 				// Reply in-thread so a busy group chat stays readable. The SDK chunks
 				// long markdown itself (outbound.textChunkLimit).
-				if (reply.trim()) await lark.send(chatId, { markdown: reply }, { replyTo: msg.messageId });
+				if (reply.trim()) await lark.send(chatId, { markdown: reply }, sendOpts(msg));
 			} catch (err) {
 				console.error(`[lark] deliver failed for ${chatId}→${config.workspace}:`, errorMessage(err));
-				await lark.send(chatId, { text: failureReply(err) }, { replyTo: msg.messageId }).catch(() => {});
+				await lark.send(chatId, { text: failureReply(err) }, sendOpts(msg)).catch((sendErr) => {
+					console.error(`[lark] failure reply also failed for ${chatId}:`, errorMessage(sendErr));
+				});
 			}
 		});
 
