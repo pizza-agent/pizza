@@ -17,6 +17,7 @@
  */
 
 import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
+import type { Readable } from "node:stream";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
 import { createVoicePipeline, voicePrompt } from "./voice.js";
@@ -52,6 +53,20 @@ export default {
 
 	async start(config, runtime) {
 		const { Domain, createLarkChannel } = await import("@larksuiteoapi/node-sdk");
+
+		/** Download a message attachment — im.v1.messageResource.get, not
+		 *  `downloadResource` (that one calls im/v1/file.get, which only serves
+		 *  files the bot itself uploaded → 400 on user voice messages). */
+		const downloadMessageResource = async (messageId: string, fileKey: string): Promise<Buffer> => {
+			const res = await lark.rawClient.im.v1.messageResource.get({
+				path: { message_id: messageId, file_key: fileKey },
+				params: { type: "file" },
+			});
+			const stream = res.getReadableStream() as Readable;
+			const chunks: Buffer[] = [];
+			for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+			return Buffer.concat(chunks);
+		};
 		const lark = createLarkChannel({
 			appId: config.appId!,
 			appSecret: config.appSecret!,
@@ -70,12 +85,15 @@ export default {
 			// Voice message: download the clip and transcribe it when a voice
 			// provider is configured; otherwise forward the <audio> tag as-is.
 			const audio = msg.resources?.find((r) => r.type === "audio");
+			// The SDK also leaves a raw <audio …/> placeholder in msg.content —
+			// drop it so the prompt doesn't carry the tag twice.
+			if (audio && text) text = text.replace(/<audio[^>]*\/>/g, "").trim();
 			if (audio && !voice.enabled) {
 				text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs }) + (text ? `\n${text}` : "");
 			} else if (audio) {
 				void lark.addReaction(msg.messageId, "Get").catch(() => {});
 				try {
-					const buf = await lark.downloadResource(audio.fileKey, "file");
+					const buf = await downloadMessageResource(msg.messageId, audio.fileKey);
 					const result = await voice.transcribe({ audio: buf, format: "opus", durationMs: audio.durationMs });
 					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text }) + (text ? `\n${text}` : "");
 				} catch (err) {

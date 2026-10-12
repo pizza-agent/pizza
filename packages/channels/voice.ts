@@ -14,7 +14,8 @@
  *                                              // otherwise auth.json[provider] → env
  *       "language": "zh",                      // optional hint
  *       "minDurationMs": 500,                  // skip shorter clips (default 0)
- *       "command": "whisper-cli -m model.bin -f {file} -nt"  // cli provider
+ *       "command": "whisper-cli -m model.bin -f {file} -nt"  // cli provider;
+ *                                                  // {file} = audio, {out} = transcript path
  *   } }
  *
  * Secrets never live here in plaintext unless the user insists — `apiKey`
@@ -25,7 +26,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthStorage } from "../../src/core/auth/auth-storage.js";
@@ -159,24 +160,41 @@ function makeApiTranscriber(
 	};
 }
 
-/** cli provider — write audio to a temp file, run the command template,
- *  take stdout as the transcript. `{file}` in the command is the audio path. */
+/** cli provider — write audio to a temp file, run the command template.
+ *  `{file}` in the command is the audio path; `{out}` is an output path —
+ *  when used, the transcript is read from `{out}` (or `{out}.txt` for tools
+ *  like whisper that append an extension) instead of stdout. */
 function makeCliTranscriber(settings: VoiceSettings): Transcriber {
 	return {
 		async transcribe(input) {
 			const template = settings.command?.trim();
 			if (!template) throw new Error('voice.command is required for the "cli" provider');
 			const wantFormat = settings.format ?? "wav";
-			const tmp = join(tmpdir(), `pizza-voice-${randomBytes(6).toString("hex")}.${wantFormat}`);
+			const id = randomBytes(6).toString("hex");
+			const tmp = join(tmpdir(), `pizza-voice-${id}.${wantFormat}`);
+			const out = join(tmpdir(), `pizza-voice-out-${id}`);
 			try {
 				await writeFile(tmp, await ensureFormat(input.audio, input.format, wantFormat));
-				const cmd = template.replaceAll("{file}", tmp);
+				const cmd = template.replaceAll("{file}", tmp).replaceAll("{out}", out);
 				const { stdout } = await execShell(cmd, 120_000);
-				const text = stdout.trim();
+				let text = stdout.trim();
+				if (!text && template.includes("{out}")) {
+					// Tools like mlx-whisper write <name>.txt; others write {out}.
+					for (const p of [out, `${out}.txt`]) {
+						try {
+							text = (await readFile(p, "utf8")).trim();
+							if (text) break;
+						} catch {
+							/* keep looking */
+						}
+					}
+				}
 				if (!text) throw new Error("cli transcriber produced no output");
 				return { text, provider: "cli" };
 			} finally {
-				void import("node:fs/promises").then((fs) => fs.unlink(tmp).catch(() => {}));
+				void unlink(tmp).catch(() => {});
+				void unlink(out).catch(() => {});
+				void unlink(`${out}.txt`).catch(() => {});
 			}
 		},
 	};
