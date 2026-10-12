@@ -62,7 +62,9 @@ export default {
 			// ("socket connection was closed unexpectedly"), and losing a voice
 			// message over a transient hiccup is worse than a second fetch.
 			let lastErr: unknown;
-			for (let attempt = 0; attempt < 2; attempt++) {
+			// The resource endpoint's socket gets reset fairly often (observed
+			// repeatedly on flaky networks) — 3 attempts with linear backoff.
+			for (let attempt = 0; attempt < 3; attempt++) {
 				try {
 					const res = await lark.rawClient.im.v1.messageResource.get({
 						path: { message_id: messageId, file_key: fileKey },
@@ -74,7 +76,8 @@ export default {
 					return Buffer.concat(chunks);
 				} catch (err) {
 					lastErr = err;
-					console.warn(`[lark] resource download attempt ${attempt + 1} failed: ${errorMessage(err)}`);
+					console.warn(`[lark] resource download attempt ${attempt + 1}/3 failed: ${errorMessage(err)}`);
+					if (attempt < 2) await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
 				}
 			}
 			throw lastErr;

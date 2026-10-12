@@ -2887,6 +2887,7 @@ pub async fn transcribe_audio(audio_b64: String, mime_type: String) -> Result<St
 /// tag; traversal outside the cache dir is rejected. Returns base64.
 #[tauri::command]
 pub async fn read_voice_clip(rel_path: String) -> Result<String, String> {
+	log_file(&format!("read_voice_clip: {}", rel_path));
 	let cache_dir = agent_dir()?.join("voice-cache");
 	let full = cache_dir.join(&rel_path);
 	let canonical = full

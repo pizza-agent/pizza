@@ -42,6 +42,7 @@ function mimeFor(file: string): string {
 
 export function VoiceClipChip({ clip }: { clip: VoiceClip }) {
 	const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
+	const [errDetail, setErrDetail] = useState<string | null>(null);
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const urlRef = useRef<string | null>(null);
 
@@ -72,11 +73,20 @@ export function VoiceClipChip({ clip }: { clip: VoiceClip }) {
 			urlRef.current = url;
 			const audio = new Audio(url);
 			audio.onended = () => setState("idle");
-			audio.onerror = () => setState("error");
+			audio.onerror = () => {
+				setErrDetail(audio.error ? `code ${audio.error.code}` : "decode failed");
+				setState("error");
+			};
 			audioRef.current = audio;
-			void audio.play();
-			setState("playing");
-		} catch {
+			try {
+				await audio.play();
+				setState("playing");
+			} catch (e) {
+				setErrDetail(e instanceof Error ? e.message : "play() rejected");
+				setState("error");
+			}
+		} catch (e) {
+			setErrDetail(e instanceof Error ? e.message : String(e));
 			setState("error");
 		}
 	};
@@ -93,7 +103,7 @@ export function VoiceClipChip({ clip }: { clip: VoiceClip }) {
 					state === "error" && "border-red-500/40 text-red-400",
 				)}
 				onClick={playable ? toggle : undefined}
-				title={playable ? "Play voice clip" : clip.file ? "Playback requires the desktop app" : "Clip not available"}
+				title={state === "error" && errDetail ? errDetail : playable ? "Play voice clip" : clip.file ? "Playback requires the desktop app" : "Clip not available"}
 			>
 				{state === "loading" ? (
 					<Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
@@ -103,7 +113,7 @@ export function VoiceClipChip({ clip }: { clip: VoiceClip }) {
 					<Play className={cn("h-3.5 w-3.5", playable ? "text-fg" : "text-muted")} />
 				)}
 				<AudioLines className="h-3.5 w-3.5 text-muted" />
-				<span className="text-muted">{duration ? `voice · ${duration}` : "voice"}</span>
+				<span className="text-muted">{state === "error" && errDetail ? `failed: ${errDetail.slice(0, 60)}` : duration ? `voice · ${duration}` : "voice"}</span>
 			</div>
 			{clip.transcript && <div className="whitespace-pre-wrap break-words">{clip.transcript}</div>}
 		</div>
