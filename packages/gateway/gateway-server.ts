@@ -884,6 +884,9 @@ function nextMessageId(): string {
 			case "test":
 				if (!request.channelId) throw new Error("test requires channelId");
 				return channelSupervisor.test(request.channelId);
+			case "tail":
+				if (!request.channelId) throw new Error("tail requires channelId");
+				return { tail: channelSupervisor.tail(request.channelId) };
 			default:
 				throw new Error(`Unknown channel_op action "${String(request.action)}"`);
 		}

@@ -375,6 +375,11 @@ export class ChannelSupervisor {
 		return this.toInfo(entry);
 	}
 
+	/** Rolling stdout/stderr tail of the adapter process — debug aid. */
+	tail(id: string): string {
+		return this.entries.get(id)?.tail ?? "";
+	}
+
 	/** Credential probe — the UI "Test" button. */
 	async test(id: string): Promise<{ ok: boolean; message: string }> {
 		const entry = this.entries.get(id);

@@ -311,7 +311,7 @@ export interface GatewayChannelOpRequest extends GatewayMessageBase {
 	type: "channel_op";
 	/** Correlation id echoed back in the result. */
 	id: string;
-	action: "list" | "save" | "delete" | "set_enabled" | "test";
+	action: "list" | "save" | "delete" | "set_enabled" | "test" | "tail";
 	/** `save`: the full channel config (without `id` → create). */
 	channel?: Record<string, unknown>;
 	/** `delete` / `set_enabled` / `test`: the target channel id. */
