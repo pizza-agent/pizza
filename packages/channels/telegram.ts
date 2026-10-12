@@ -10,7 +10,7 @@
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { chunk, errorMessage, failureReply, provenance, proxyFromEnv, redactProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
+import { cacheClipForPlayback, createVoicePipeline, voicePrompt } from "./voice.js";
 
 export default {
 	validate: (input) => (input.token?.trim() ? null : "Bot token is required"),
@@ -69,7 +69,7 @@ export default {
 					if (!res.ok) throw new Error(`Telegram file download failed (HTTP ${res.status})`);
 					const buf = Buffer.from(await res.arrayBuffer());
 					const format = file.file_path?.split(".").pop() ?? "oga";
-					const cached = cacheClip(runtime.dir, "telegram", fileKey, format, buf);
+					const cached = await cacheClipForPlayback(runtime.dir, "telegram", fileKey, format, buf);
 					const result = await voice.transcribe({ audio: buf, format, durationMs });
 					const reply = await runtime.deliver(
 						config.workspace,

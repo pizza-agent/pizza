@@ -12,7 +12,7 @@
 import type { Attachment, Message } from "discord.js";
 import { ANSWER_ALL, chunk, failureReply, errorMessage, provenance, proxyFromEnv, redactProxy, routeHttpsThroughProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
+import { cacheClipForPlayback, createVoicePipeline, voicePrompt } from "./voice.js";
 
 /** First audio-ish attachment on a message — voice messages and uploaded
  *  audio files alike. `duration_secs` is only present on real voice clips. */
@@ -86,7 +86,7 @@ export default {
 					if (!res.ok) throw new Error(`attachment download failed (HTTP ${res.status})`);
 					const buf = Buffer.from(await res.arrayBuffer());
 					const format = clip.name?.split(".").pop() ?? "ogg";
-					const cached = cacheClip(runtime.dir, "discord", clip.id, format, buf);
+					const cached = await cacheClipForPlayback(runtime.dir, "discord", clip.id, format, buf);
 					const result = await voice.transcribe({ audio: buf, format });
 					text =
 						voicePrompt({ key: clip.id, transcript: result?.text, file: cached }) + (text ? `\n${text}` : "");

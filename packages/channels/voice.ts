@@ -225,6 +225,30 @@ export function cacheClip(agentDir: string, channel: string, key: string, ext: s
 	return rel;
 }
 
+/** Desktop/WebKit can't decode ogg/opus — transcode a playback copy to
+ *  m4a/AAC when ffmpeg is present. Returns the rel path of the playable
+ *  file, or the original when conversion isn't possible. */
+export async function cacheClipForPlayback(
+	agentDir: string,
+	channel: string,
+	key: string,
+	ext: string,
+	audio: Buffer,
+): Promise<string> {
+	const rel = cacheClip(agentDir, channel, key, ext, audio);
+	if (["m4a", "mp3", "wav", "aac"].includes(ext)) return rel;
+	const safe = (s: string): string => s.replace(/[^\w.-]/g, "_");
+	const playRel = join("voice-cache", safe(channel), `${safe(key)}.m4a`);
+	const playAbs = join(agentDir, playRel);
+	const srcAbs = join(agentDir, rel);
+	try {
+		await execShell(`ffmpeg -y -v error -i "${srcAbs}" -c:a aac -b:a 64k "${playAbs}"`, 30_000);
+		return playRel;
+	} catch {
+		return rel; // no ffmpeg — ship the original; some webviews cope
+	}
+}
+
 /** Drop clips older than 7 days, then oldest-first beyond 200 files. */
 function pruneVoiceCache(agentDir: string): void {
 	const root = join(agentDir, "voice-cache");

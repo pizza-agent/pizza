@@ -27,7 +27,7 @@ import {
 	routeHttpsThroughProxy,
 } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
+import { cacheClipForPlayback, createVoicePipeline, voicePrompt } from "./voice.js";
 
 /** Slack file-share entry (subset). Audio uploads and recorded clips both
  *  land here — mimetype "audio/*" or duration_ms marks a voice clip. */
@@ -140,7 +140,7 @@ export default {
 					if (!res.ok) throw new Error(`file download failed (HTTP ${res.status})`);
 					const buf = Buffer.from(await res.arrayBuffer());
 					const format = clip.name?.split(".").pop() ?? clip.mimetype?.split("/").pop() ?? "mp4";
-					const cached = cacheClip(runtime.dir, "slack", clip.id, format, buf);
+					const cached = await cacheClipForPlayback(runtime.dir, "slack", clip.id, format, buf);
 					const result = await voice.transcribe({ audio: buf, format, durationMs: clip.duration_ms });
 					text =
 						voicePrompt({ key: clip.id, durationMs: clip.duration_ms, transcript: result?.text, file: cached }) +
