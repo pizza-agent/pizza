@@ -247,6 +247,77 @@ function pruneVoiceCache(agentDir: string): void {
 	} catch { /* best effort */ }
 }
 
+// ── outbound TTS ──────────────────────────────────────────────────────────
+
+/** Text inside <speak>…</speak> segments; undefined when none exist. */
+export function extractSpeakText(reply: string): string | undefined {
+	const parts = [...reply.matchAll(/<speak>([\s\S]*?)<\/speak>/g)].map((m) => m[1].trim()).filter(Boolean);
+	return parts.length ? parts.join("\n\n") : undefined;
+}
+
+/** Reply with <speak> wrappers removed (inner text kept) — used for the text
+ *  copy that accompanies / falls back from a voice reply. */
+export function stripSpeakTags(reply: string): string {
+	return reply.replace(/<\/?speak>/g, "");
+}
+
+export interface Synthesizer {
+	speak(text: string): Promise<Buffer>;
+}
+
+/** POST {baseUrl}/audio/speech — OpenAI-compatible TTS (OpenAI tts-1, Groq
+ *  playai-tts, DeepInfra…). Requests opus so Feishu gets a playable format
+ *  without a transcode. */
+function makeApiSynthesizer(
+	baseUrl: string,
+	apiKey: string,
+	settings: VoiceSettings,
+): Synthesizer {
+	return {
+		async speak(text) {
+			const res = await fetch(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+				body: JSON.stringify({
+					model: settings.outboundModel ?? "tts-1",
+					voice: settings.outboundVoice ?? "alloy",
+					input: text,
+					response_format: "opus",
+				}),
+				signal: AbortSignal.timeout(60_000),
+			});
+			if (!res.ok) {
+				const body = await res.text().catch(() => "");
+				throw new Error(`TTS failed: HTTP ${res.status} ${body.slice(0, 200)}`);
+			}
+			return Buffer.from(await res.arrayBuffer());
+		},
+	};
+}
+
+/** cli outbound — write the reply text to a temp file, run `sayCommand`,
+ *  read `{out}` back as audio bytes. */
+function makeCliSynthesizer(settings: VoiceSettings): Synthesizer {
+	return {
+		async speak(text) {
+			const template = settings.sayCommand?.trim();
+			if (!template) throw new Error('voice.sayCommand is required for the "cli" outbound provider');
+			const id = randomBytes(6).toString("hex");
+			const textFile = join(tmpdir(), `pizza-say-${id}.txt`);
+			const out = join(tmpdir(), `pizza-say-${id}.${settings.sayFormat ?? "opus"}`);
+			try {
+				await writeFile(textFile, text);
+				const cmd = template.replaceAll("{text}", textFile).replaceAll("{out}", out);
+				await execShell(cmd, 120_000);
+				return Buffer.from(await readFile(out));
+			} finally {
+				void unlink(textFile).catch(() => {});
+				void unlink(out).catch(() => {});
+			}
+		},
+	};
+}
+
 // ── the pipeline adapters call ────────────────────────────────────────────
 
 /**
@@ -273,6 +344,10 @@ export interface VoicePipeline {
 	readonly enabled: boolean;
 	/** Transcribe audio bytes; null when the clip was skipped (too short). */
 	transcribe(input: TranscribeInput): Promise<TranscribeResult | null>;
+	/** Whether replies should be spoken for this inbound message. */
+	shouldSpeak(input: { inboundWasVoice: boolean; replyContainsSpeakTag?: boolean }): boolean;
+	/** Synthesize reply text into audio bytes (opus). */
+	speak(text: string): Promise<Buffer>;
 }
 
 /**
@@ -283,8 +358,18 @@ export interface VoicePipeline {
 export function createVoicePipeline(agentDir: string): VoicePipeline {
 	const settings = loadVoiceSettings(agentDir);
 	const provider = settings.provider;
-	if (!provider) {
-		return { enabled: false, transcribe: async () => null };
+	const mode = settings.outboundMode ?? "off";
+	const shouldSpeak: VoicePipeline["shouldSpeak"] = ({ inboundWasVoice, replyContainsSpeakTag }) => {
+		if (mode === "always") return true;
+		if (mode === "mirror") return inboundWasVoice;
+		if (mode === "agent") return replyContainsSpeakTag === true;
+		return false;
+	};
+	const noSpeak: VoicePipeline["speak"] = async () => {
+		throw new Error("voice outbound is not configured");
+	};
+	if (!provider && !settings.outboundProvider) {
+		return { enabled: false, transcribe: async () => null, shouldSpeak, speak: noSpeak };
 	}
 	const withinDuration = (input: TranscribeInput): boolean => {
 		const d = input.durationMs;
@@ -293,36 +378,58 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 		if (d > (settings.maxDurationMs ?? 300_000)) return false;
 		return true;
 	};
-	if (provider === "cli") {
-		const cli = makeCliTranscriber(settings);
-		return {
-			enabled: true,
-			transcribe: (input) => (withinDuration(input) ? cli.transcribe(input) : Promise.resolve(null)),
-		};
-	}
-	if (provider === "groq" || provider === "openai-compatible") {
-		let cached: Promise<Transcriber> | undefined;
-		const getTranscriber = (): Promise<Transcriber> => {
-			cached ??= (async () => {
-				const apiKey = await resolveVoiceApiKey(settings, agentDir);
-				if (!apiKey) {
-					throw new Error(
-						`no API key for voice provider "${provider}" — set voice.apiKey, auth.json["${provider}"], or ${(PROVIDER_ENV_KEYS[provider] ?? []).join("/")}`,
-					);
-				}
-				const baseUrl = provider === "groq" ? GROQ_BASE_URL : settings.baseUrl;
-				if (!baseUrl) throw new Error(`voice.baseUrl is required for the "openai-compatible" provider`);
-				return makeApiTranscriber(provider, baseUrl, apiKey, settings);
-			})();
-			return cached;
-		};
-		return {
-			enabled: true,
-			transcribe: async (input) => {
-				if (!withinDuration(input)) return null;
-				return (await getTranscriber()).transcribe(input);
-			},
-		};
-	}
-	return { enabled: false, transcribe: async () => null };
+	const makeInbound = (): Pick<VoicePipeline, "transcribe"> => {
+		if (provider === "cli") {
+			const cli = makeCliTranscriber(settings);
+			return {
+				transcribe: (input) => (withinDuration(input) ? cli.transcribe(input) : Promise.resolve(null)),
+			};
+		}
+		if (provider === "groq" || provider === "openai-compatible") {
+			let cached: Promise<Transcriber> | undefined;
+			const getTranscriber = (): Promise<Transcriber> => {
+				cached ??= (async () => {
+					const apiKey = await resolveVoiceApiKey(settings, agentDir);
+					if (!apiKey) {
+						throw new Error(
+							`no API key for voice provider "${provider}" — set voice.apiKey, auth.json["${provider}"], or ${(PROVIDER_ENV_KEYS[provider] ?? []).join("/")}`,
+						);
+					}
+					const baseUrl = provider === "groq" ? GROQ_BASE_URL : settings.baseUrl;
+					if (!baseUrl) throw new Error(`voice.baseUrl is required for the "openai-compatible" provider`);
+					return makeApiTranscriber(provider, baseUrl, apiKey, settings);
+				})();
+				return cached;
+			};
+			return {
+				transcribe: async (input) => {
+					if (!withinDuration(input)) return null;
+					return (await getTranscriber()).transcribe(input);
+				},
+			};
+		}
+		return { transcribe: async () => null };
+	};
+
+	const outProvider = settings.outboundProvider ?? "cli";
+	let cachedSynthesizer: Promise<Synthesizer> | undefined;
+	const getSynthesizer = (): Promise<Synthesizer> => {
+		cachedSynthesizer ??= (async () => {
+			if (outProvider === "cli") return makeCliSynthesizer(settings);
+			const apiKey =
+				(settings.outboundApiKey ? resolveConfigValue(settings.outboundApiKey) : undefined) ??
+				(await resolveVoiceApiKey(settings, agentDir));
+			if (!apiKey) throw new Error(`no API key for outbound voice provider "${outProvider}"`);
+			const baseUrl = outProvider === "groq" ? GROQ_BASE_URL : settings.outboundBaseUrl;
+			if (!baseUrl) throw new Error(`voice.outboundBaseUrl is required for the "openai-compatible" provider`);
+			return makeApiSynthesizer(baseUrl, apiKey, settings);
+		})();
+		return cachedSynthesizer;
+	};
+	return {
+		enabled: provider !== undefined,
+		...makeInbound(),
+		shouldSpeak,
+		speak: async (text) => (await getSynthesizer()).speak(text),
+	};
 }

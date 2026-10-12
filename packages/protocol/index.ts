@@ -198,6 +198,26 @@ export interface VoiceSettings {
 	command?: string;
 	/** "cli" provider: audio format fed to the command (default "wav"). */
 	format?: string;
+	/** Outbound TTS — how agent replies become voice messages. "off" (default):
+	 *  text only. "mirror": reply by voice when the inbound message was voice.
+	 *  "always": voice every reply. "agent": only <speak>…</speak> segments. */
+	outboundMode?: "off" | "mirror" | "always" | "agent";
+	/** Outbound provider — same provider ids as inbound. */
+	outboundProvider?: "groq" | "openai-compatible" | "cli";
+	/** Outbound TTS baseUrl (openai-compatible; groq has a fixed default). */
+	outboundBaseUrl?: string;
+	/** Outbound TTS model (e.g. "tts-1", groq "playai-tts"). */
+	outboundModel?: string;
+	/** Outbound voice id (e.g. "alloy"). */
+	outboundVoice?: string;
+	/** Outbound key override — env name / "!command" / literal; falls back to
+	 *  voice.apiKey → auth.json[provider] → env. */
+	outboundApiKey?: string;
+	/** cli outbound: command template; `{text}` = file with the reply text,
+	 *  `{out}` = audio output path. */
+	sayCommand?: string;
+	/** cli outbound audio format produced by sayCommand (default "opus"). */
+	sayFormat?: string;
 }
 
 /** Lightweight status snapshot returned to UI when listing tasks. */

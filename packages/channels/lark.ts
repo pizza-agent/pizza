@@ -20,7 +20,7 @@ import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
 import type { Readable } from "node:stream";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
-import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
+import { cacheClip, createVoicePipeline, extractSpeakText, stripSpeakTags, voicePrompt } from "./voice.js";
 
 /**
  * Threaded replies stay readable in group chats, but in p2p DMs the Feishu
@@ -114,9 +114,32 @@ export default {
 
 			try {
 				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName));
-				// Reply in-thread so a busy group chat stays readable. The SDK chunks
-				// long markdown itself (outbound.textChunkLimit).
-				if (reply.trim()) await lark.send(chatId, { markdown: reply }, sendOpts(msg));
+				if (!reply.trim()) return;
+
+				// Outbound voice: <speak>…</speak> segments, or the whole reply when
+				// the configured mode says this turn should be spoken.
+				const spoken = extractSpeakText(reply);
+				const speakable = spoken ?? (voice.shouldSpeak({ inboundWasVoice: !!audio }) ? reply : undefined);
+				let spoke = false;
+				if (speakable) {
+					try {
+						console.log(`[lark] synthesizing voice reply (${speakable.length} chars)…`);
+						const audioBuf = await voice.speak(speakable);
+						await lark.send(chatId, { audio: { source: audioBuf } }, sendOpts(msg));
+						spoke = true;
+						console.log(`[lark] voice reply sent (${audioBuf.length} bytes)`);
+					} catch (err) {
+						console.error(`[lark] voice reply failed for ${chatId}:`, errorMessage(err));
+						await lark
+							.send(chatId, { text: `⚠️ Voice reply failed: ${errorMessage(err)}` }, sendOpts(msg))
+							.catch(() => {});
+					}
+				}
+				const cleaned = stripSpeakTags(reply).trim();
+				// Skip the text copy when it fully duplicates what was just spoken.
+				if (cleaned && (!spoke || cleaned !== speakable)) {
+					await lark.send(chatId, { markdown: cleaned }, sendOpts(msg));
+				}
 			} catch (err) {
 				console.error(`[lark] deliver failed for ${chatId}→${config.workspace}:`, errorMessage(err));
 				await lark.send(chatId, { text: failureReply(err) }, sendOpts(msg)).catch((sendErr) => {
