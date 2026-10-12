@@ -12,12 +12,28 @@
  *
  * Setup in the Feishu developer console: enable the bot capability, subscribe
  * to the `im.message.receive_v1` event with "long connection" as the delivery
- * mode, and grant the `im:message` / `im:message:send_as_bot` scopes.
+ * mode, and grant the `im:message` / `im:message:send_as_bot` scopes. Add
+ * `im:resource` too — voice-message transcription downloads the clip.
  */
 
-import type { NormalizedMessage } from "@larksuiteoapi/node-sdk";
+import type { NormalizedMessage, ResourceDescriptor } from "@larksuiteoapi/node-sdk";
 import { ANSWER_ALL, errorMessage, failureReply, provenance } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
+import { createVoicePipeline } from "./voice.js";
+
+/**
+ * Inbound text for a voice message. `transcript` set → the agent reads it as
+ * the user's words; absent → forward the platform's <audio> placeholder so
+ * the agent at least knows a voice message arrived.
+ */
+function voicePrompt(resource: ResourceDescriptor, transcript?: string): string {
+	const duration = resource.durationMs ? Math.round(resource.durationMs / 1000) : undefined;
+	const attrs = ` key="${resource.fileKey}"${duration !== undefined ? ` duration="${duration}s"` : ""}`;
+	// The hint line tells the agent a voice clip arrived but no transcript is
+	// available, so it should ask the user to type instead of trying to
+	// interpret the tag.
+	return transcript ? `<voice${attrs}>${transcript}</voice>` : `<audio${attrs}/>\n[voice message received but not transcribed]`;
+}
 
 /**
  * Threaded replies stay readable in group chats, but in p2p DMs the Feishu
@@ -58,9 +74,33 @@ export default {
 			policy: { requireMention: !ANSWER_ALL, dmMode: "open" },
 		});
 
+		// Voice pipeline — no-op unless settings.json has a `voice` section.
+		const voice = createVoicePipeline(runtime.dir);
+
 		lark.on("message", async (msg: NormalizedMessage) => {
 			const chatId = msg.chatId;
-			const text = msg.content.trim();
+			let text = msg.content.trim();
+
+			// Voice message: download the clip and transcribe it when a voice
+			// provider is configured; otherwise forward the <audio> tag as-is.
+			const audio = msg.resources?.find((r) => r.type === "audio");
+			if (audio && !voice.enabled) {
+				text = voicePrompt(audio) + (text ? `\n${text}` : "");
+			} else if (audio) {
+				void lark.addReaction(msg.messageId, "Get").catch(() => {});
+				try {
+					const buf = await lark.downloadResource(audio.fileKey, "file");
+					const result = await voice.transcribe({ audio: buf, format: "opus", durationMs: audio.durationMs });
+					text = voicePrompt(audio, result?.text) + (text ? `\n${text}` : "");
+				} catch (err) {
+					console.error(`[lark] voice transcription failed for ${chatId}:`, errorMessage(err));
+					await lark
+						.send(chatId, { text: `⚠️ Voice transcription failed: ${errorMessage(err)}` }, sendOpts(msg))
+						.catch(() => {});
+					text = voicePrompt(audio) + (text ? `\n${text}` : "");
+				}
+			}
+
 			if (!text) return;
 
 			// Instant read-receipt — a "收到" (Get) reaction says "received" without

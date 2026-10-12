@@ -17,7 +17,7 @@ import {
 
 /** File name of the plugin registry inside the agent dir. */
 export const EXTENSION_REGISTRY_FILE = "extensions.json";
-import type { NetworkSettings, SchedulerPolicy } from "@tomsun28/pizza-protocol";
+import type { NetworkSettings, SchedulerPolicy, VoiceSettings } from "@tomsun28/pizza-protocol";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -164,6 +164,7 @@ export interface Settings {
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	scheduler?: SchedulerPolicy; // Defaults applied to newly-created scheduled tasks
 	network?: NetworkSettings; // Outbound proxy for channel adapters etc. ("auto" | "off" | URL)
+	voice?: VoiceSettings; // Inbound voice-message transcription for channel adapters
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME

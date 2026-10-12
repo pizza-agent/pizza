@@ -171,6 +171,32 @@ export interface NetworkSettings {
 	proxy?: string;
 }
 
+/** Voice settings (settings.json `voice`) — inbound voice-message
+ *  transcription for channel adapters. API providers first, `cli` as the
+ *  local fallback. Secrets stay out of this file: `apiKey` accepts
+ *  "env:NAME" / "!command" indirections, and unset falls back to
+ *  auth.json[provider] then provider env vars. */
+export interface VoiceSettings {
+	/** "groq": Groq whisper endpoint. "openai-compatible": any
+	 *  /audio/transcriptions API (OpenAI, DeepInfra, …). "cli": a local
+	 *  command template like whisper.cpp. */
+	provider?: "groq" | "openai-compatible" | "cli";
+	/** STT model id; provider default when unset (groq → whisper-large-v3-turbo). */
+	model?: string;
+	/** Transcriptions endpoint base — required for "openai-compatible". */
+	baseUrl?: string;
+	/** Optional key override — env var name, "!command", or literal. */
+	apiKey?: string;
+	/** BCP-47 language hint for providers that accept one. */
+	language?: string;
+	/** Voice clips shorter than this are skipped (default 0). */
+	minDurationMs?: number;
+	/** "cli" provider: command template; `{file}` is the audio path. */
+	command?: string;
+	/** "cli" provider: audio format fed to the command (default "wav"). */
+	format?: string;
+}
+
 /** Lightweight status snapshot returned to UI when listing tasks. */
 export interface ScheduledTaskSummary extends ScheduledTask {
 	/** Next scheduled fire time, or null if disabled / past endAt. */

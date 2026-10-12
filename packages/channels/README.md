@@ -70,3 +70,41 @@ gateway's env) makes adapters reply to every group message, not only @mentions.
 2. Add the type to `ChannelType` in `types.ts` and to the registry in `index.ts`.
 3. `npm install <sdk>` at the repo root if it needs one.
 4. Add the field branch in the UI (`apps/web/src/lib/channels.ts` / ChannelDialog).
+
+## Voice messages
+
+Adapters that receive audio (Lark voice messages today) transcribe it in the
+adapter process and deliver the transcript to the agent wrapped in a
+`<voice duration="Ns">…</voice>` tag — the agent only ever sees text. Without
+a configured provider the platform's `<audio …/>` placeholder is forwarded
+unchanged, plus a `[not transcribed]` hint.
+
+Configure in `<agentDir>/settings.json`:
+
+```jsonc
+{
+  "voice": {
+    "provider": "groq",                    // groq | openai-compatible | cli
+    "model": "whisper-large-v3-turbo",     // provider default when unset
+    "language": "zh",                      // optional BCP-47 hint
+    "minDurationMs": 500                   // skip very short clips
+    // "baseUrl": "https://api.x.com/v1",  // required for openai-compatible
+    // "apiKey": "GROQ_API_KEY",           // env name / "!cmd" / literal —
+                                           // else auth.json[provider] → env
+    // "command": "whisper-cli -m m.bin -f {file} -nt"  // cli provider
+  }
+}
+```
+
+- **groq** — `POST {baseUrl}/audio/transcriptions` against Groq's whisper
+  endpoint. Key order: `voice.apiKey` → `auth.json["groq"]` → `GROQ_API_KEY`.
+- **openai-compatible** — same endpoint shape for OpenAI/DeepInfra/etc.
+  `baseUrl` required; key falls back to `auth.json["openai-compatible"]` →
+  `OPENAI_API_KEY`.
+- **cli** — local fallback (whisper.cpp etc.): the clip is written to a temp
+  file (converted with ffmpeg to `format`, default `wav`), `{file}` in
+  `command` is replaced, stdout becomes the transcript.
+
+Lark needs the `im:resource` scope (in addition to `im:message`) to download
+message attachments; voice transcripts ride the same `tell` provenance
+envelope as text, so the workspace agent treats them like any other message.

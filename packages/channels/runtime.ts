@@ -100,6 +100,11 @@ export class ChannelRuntime {
 		this.transport = new GatewayTransport({ socketPath: this.socketPath, connectTimeout });
 	}
 
+	/** Pizza agent dir — adapters read settings.json (voice config etc.) from here. */
+	get dir(): string {
+		return this.agentDir;
+	}
+
 	/** Ensure the gateway daemon is up, then connect both sockets. Call once at startup. */
 	async start(): Promise<void> {
 		if (this.connected) return;
