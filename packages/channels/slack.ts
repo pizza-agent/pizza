@@ -27,6 +27,17 @@ import {
 	routeHttpsThroughProxy,
 } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
+import { cacheClip, createVoicePipeline, voicePrompt } from "./voice.js";
+
+/** Slack file-share entry (subset). Audio uploads and recorded clips both
+ *  land here — mimetype "audio/*" or duration_ms marks a voice clip. */
+interface SlackFile {
+	id: string;
+	name?: string;
+	mimetype?: string;
+	url_private_download?: string;
+	duration_ms?: number;
+}
 
 export default {
 	validate(input) {
@@ -63,6 +74,9 @@ export default {
 			socketMode: true,
 			...(proxyAgent ? { agent: proxyAgent } : {}),
 		});
+
+		// Voice pipeline — no-op unless settings.json has a `voice` section.
+		const voice = createVoicePipeline(runtime.dir);
 
 		// auth.test doubles as the fast-fail credential check — a bad token exits
 		// here so the supervisor marks the channel "error" instead of "connected".
@@ -102,10 +116,42 @@ export default {
 			text: string;
 			ts: string;
 			threadTs?: string;
+			files?: SlackFile[];
 			say: (input: { text: string; thread_ts?: string }) => Promise<unknown>;
 		}): Promise<void> {
 			const name = input.dm ? "dm" : await channelName(input.channelId);
-			const text = input.text.replace(/<@[A-Z0-9]+>/g, "").trim(); // strip the @bot mention
+			let text = input.text.replace(/<@[A-Z0-9]+>/g, "").trim(); // strip the @bot mention
+
+			// Audio file shares (voice clips, mp3s): download via the bot token
+			// and transcribe when a voice provider is configured.
+			const clip = input.files?.find((f) => f.mimetype?.startsWith("audio/") || f.duration_ms);
+			const thread_ts0 = input.threadTs ?? input.ts;
+			if (clip && !voice.enabled) {
+				text =
+					voicePrompt({ key: clip.id, durationMs: clip.duration_ms }) + (text ? `\n${text}` : "");
+			} else if (clip?.url_private_download) {
+				try {
+					const res = await fetch(clip.url_private_download, {
+						headers: { authorization: `Bearer ${config.token}` },
+						signal: AbortSignal.timeout(60_000),
+					});
+					if (!res.ok) throw new Error(`file download failed (HTTP ${res.status})`);
+					const buf = Buffer.from(await res.arrayBuffer());
+					const format = clip.name?.split(".").pop() ?? clip.mimetype?.split("/").pop() ?? "mp4";
+					const cached = cacheClip(runtime.dir, "slack", clip.id, format, buf);
+					const result = await voice.transcribe({ audio: buf, format, durationMs: clip.duration_ms });
+					text =
+						voicePrompt({ key: clip.id, durationMs: clip.duration_ms, transcript: result?.text, file: cached }) +
+						(text ? `\n${text}` : "");
+				} catch (err) {
+					console.error(`[slack] voice transcription failed in ${name}:`, errorMessage(err));
+					await input
+						.say({ text: `⚠️ Voice transcription failed: ${errorMessage(err)}`, thread_ts: thread_ts0 })
+						.catch(() => {});
+					text = voicePrompt({ key: clip.id, durationMs: clip.duration_ms }) + (text ? `\n${text}` : "");
+				}
+			}
+
 			if (!text) return;
 
 			// Instant read-receipt — an 👀 reaction says "received" without waiting
@@ -132,6 +178,7 @@ export default {
 				dm: false,
 				userId: event.user,
 				text: event.text ?? "",
+				files: (event as { files?: SlackFile[] }).files,
 				ts: event.ts,
 				threadTs: "thread_ts" in event ? (event.thread_ts as string | undefined) : undefined,
 				say: (m) => say(m),
@@ -142,7 +189,7 @@ export default {
 		// too — they are already handled by app_mention, so skip them to avoid
 		// delivering twice).
 		app.message(async ({ event, say }) => {
-			const e = event as { channel_type?: string; user?: string; text?: string; ts: string; channel: string; thread_ts?: string };
+			const e = event as { channel_type?: string; user?: string; text?: string; ts: string; channel: string; thread_ts?: string; files?: SlackFile[] };
 			const isDm = e.channel_type === "im";
 			const isMention = !!e.text?.includes(`<@${botUserId}>`);
 			if (!isDm && (!ANSWER_ALL || isMention)) return;
@@ -151,6 +198,7 @@ export default {
 				dm: isDm,
 				userId: e.user,
 				text: e.text ?? "",
+				files: e.files,
 				ts: e.ts,
 				threadTs: e.thread_ts,
 				say: (m) => say(m),
