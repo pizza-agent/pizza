@@ -108,3 +108,22 @@ describe("splitVoiceSegments", () => {
 		expect(segs[0]).toMatchObject({ type: "voice", clip: { key: "k" } });
 	});
 });
+
+describe("liveAdapterPid / adapterPidPath", () => {
+	it("returns null when no pidfile exists", async () => {
+		const { liveAdapterPid } = await import("../packages/channels/index.js");
+		expect(liveAdapterPid(dir, "ch_nonexistent")).toBeNull();
+	});
+	it("detects a live adapter pid and cleans a stale one", async () => {
+		const { liveAdapterPid, adapterPidPath } = await import("../packages/channels/index.js");
+		const { mkdirSync, writeFileSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		mkdirSync(join(dir, "channels"), { recursive: true });
+		// Own pid is alive
+		writeFileSync(adapterPidPath(dir, "ch_live"), String(process.pid));
+		expect(liveAdapterPid(dir, "ch_live")).toBe(process.pid);
+		// Stale pid gets cleaned up
+		writeFileSync(adapterPidPath(dir, "ch_dead"), "999999");
+		expect(liveAdapterPid(dir, "ch_dead")).toBeNull();
+	});
+});

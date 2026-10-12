@@ -20,7 +20,7 @@ import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { ProxyAgent } from "undici";
-import { channelAdapter, type ChannelConfig } from "../channels/index.js";
+import { channelAdapter, liveAdapterPid, type ChannelConfig } from "../channels/index.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
 
 export type ManagedChannelStatus = "connected" | "disconnected" | "error" | "configuring";
@@ -252,6 +252,18 @@ export class ChannelSupervisor {
 		entry.lastError = undefined;
 		entry.tail = "";
 		entry.spawnedAt = Date.now();
+		// Reap an orphan adapter for this channel (e.g. a hand-run `pizza channel
+		// run` or a child lost track of) before spawning ours — two adapters on
+		// one channel split deliveries via the platform's websocket balancing.
+		const orphan = liveAdapterPid(this.agentDir, entry.config.id);
+		if (orphan && orphan !== entry.child?.pid) {
+			console.warn(`[channels] killing orphan adapter for ${entry.config.id} (pid ${orphan})`);
+			try {
+				process.kill(orphan, "SIGTERM");
+			} catch {
+				/* already dead — pidfile will be cleaned by liveAdapterPid() */
+			}
+		}
 		// Re-run the CLI we're running from: `node cli.js …` or the compiled binary.
 		const { cliPath, binary } = resolveCliSpawn();
 		const args = ["channel", "run", entry.config.id, "--agent-dir", this.agentDir];
