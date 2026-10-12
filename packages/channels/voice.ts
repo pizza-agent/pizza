@@ -363,6 +363,7 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 	const settings = loadVoiceSettings(agentDir);
 	const provider = settings.provider;
 	const mode = settings.outboundMode ?? "off";
+	console.log(`[voice] provider=${provider ?? "none"} outbound=${mode}${settings.command ? " cli-command" : ""}`);
 	const shouldSpeak: VoicePipeline["shouldSpeak"] = ({ inboundWasVoice, replyContainsSpeakTag }) => {
 		if (mode === "always") return true;
 		if (mode === "mirror") return inboundWasVoice;
