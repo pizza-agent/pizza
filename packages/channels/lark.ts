@@ -96,7 +96,11 @@ export default {
 					const buf = await downloadMessageResource(msg.messageId, audio.fileKey);
 					const file = cacheClip(runtime.dir, "lark", audio.fileKey, "opus", buf);
 					const result = await voice.transcribe({ audio: buf, format: "opus", durationMs: audio.durationMs });
-					text = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text, file }) + (text ? `\n${text}` : "");
+					let prompt = voicePrompt({ key: audio.fileKey, durationMs: audio.durationMs, transcript: result?.text, file });
+					if (voice.canSpeak && voice.outboundMode === "agent") {
+						prompt += "\n[voice replies enabled — wrap text in <speak>…</speak> to send it as a voice message]";
+					}
+					text = prompt + (text ? `\n${text}` : "");
 				} catch (err) {
 					console.error(`[lark] voice transcription failed for ${chatId}:`, errorMessage(err));
 					await lark

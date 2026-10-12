@@ -346,6 +346,10 @@ export interface VoicePipeline {
 	transcribe(input: TranscribeInput): Promise<TranscribeResult | null>;
 	/** Whether replies should be spoken for this inbound message. */
 	shouldSpeak(input: { inboundWasVoice: boolean; replyContainsSpeakTag?: boolean }): boolean;
+	/** Whether outbound voice is configured at all (mode != "off"). */
+	readonly canSpeak: boolean;
+	/** The configured outbound mode, for adapters that surface it to the agent. */
+	readonly outboundMode: "off" | "mirror" | "always" | "agent";
 	/** Synthesize reply text into audio bytes (opus). */
 	speak(text: string): Promise<Buffer>;
 }
@@ -369,7 +373,7 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 		throw new Error("voice outbound is not configured");
 	};
 	if (!provider && !settings.outboundProvider) {
-		return { enabled: false, transcribe: async () => null, shouldSpeak, speak: noSpeak };
+		return { enabled: false, transcribe: async () => null, shouldSpeak, canSpeak: false, outboundMode: "off", speak: noSpeak };
 	}
 	const withinDuration = (input: TranscribeInput): boolean => {
 		const d = input.durationMs;
@@ -430,6 +434,8 @@ export function createVoicePipeline(agentDir: string): VoicePipeline {
 		enabled: provider !== undefined,
 		...makeInbound(),
 		shouldSpeak,
+		canSpeak: mode !== "off",
+		outboundMode: mode,
 		speak: async (text) => (await getSynthesizer()).speak(text),
 	};
 }
