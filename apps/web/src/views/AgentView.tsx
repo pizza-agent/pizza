@@ -54,6 +54,9 @@ const CHAT_RENDER_EVENT_TYPES = new Set<string>([
 	"TOOL_EXECUTION_END",
 	"SESSION_BOUNDARY_INFERRED",
 	"SCHEDULED_TASK_FIRED",
+	"COMPACTION_START",
+	"COMPACTION_END",
+	"COMPACTION_ABORTED",
 ]);
 
 /** Extract image data URLs from a message payload (content blocks + images array). */
@@ -243,6 +246,19 @@ function buildTimelineFromMessages(
 				history.push(card);
 				if (call.id) toolCardById.set(call.id, card);
 			}
+		} else if (role === "compactionSummary") {
+			// Compaction boundary marker in replayed history — keeps the
+			// "context was compacted here" notice visible after reload.
+			const before = typeof msg.tokensBefore === "number" ? msg.tokensBefore : typeof msg.tokens_before === "number" ? msg.tokens_before : undefined;
+			const fmt = (n?: number): string => (n === undefined ? "?" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+			history.push({
+				id: `hist-${history.length}`,
+				role: "system",
+				title: t("slash.compactBoundary", { before: fmt(before) }),
+				text: typeof msg.summary === "string" ? msg.summary : "",
+				status: "",
+				timestamp: ts,
+			});
 		} else if (role === "toolResult" || role === "tool") {
 			const toolCallId = String(msg.toolCallId ?? msg.tool_call_id ?? "");
 			const resultText = toolResultText(msg.content);
@@ -949,6 +965,70 @@ export default function AgentView({
 							: it,
 					),
 				);
+				break;
+			}
+			case "COMPACTION_START": {
+				// In-flight chip: replaced by the END/ABORTED notice below.
+				if (!isForCurrent) break;
+				updateItems((prev) => [
+					...prev.filter((item) => item.id !== "__compacting"),
+					{
+						id: "__compacting",
+						role: "system",
+						title: tRef.current("slash.compacting"),
+						text: "",
+						status: "",
+						timestamp: (event as { timestamp?: number }).timestamp ?? Date.now(),
+					},
+				]);
+				break;
+			}
+			case "COMPACTION_END": {
+				if (!isForCurrent) break;
+				const payload = event.payload as {
+					mode?: string;
+					summary?: string;
+					masked_count?: number;
+					tokens_before?: number;
+					tokens_after?: number;
+				};
+				const fmt = (n?: number): string => (n === undefined ? "?" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+				const title =
+					payload.mode === "mask"
+						? tRef.current("slash.compactMasked", { count: payload.masked_count ?? 0 })
+						: tRef.current("slash.compactDone", {
+								before: fmt(payload.tokens_before),
+								after: fmt(payload.tokens_after),
+							});
+				updateItems((prev) => [
+					...prev.filter((item) => item.id !== "__compacting"),
+					{
+						id: event.event_id,
+						role: "system",
+						title,
+						text: "",
+						status: "",
+						timestamp: (event as { timestamp?: number }).timestamp ?? Date.now(),
+					},
+				]);
+				break;
+			}
+			case "COMPACTION_ABORTED": {
+				if (!isForCurrent) break;
+				const payload = event.payload as { message?: string; reason?: string };
+				updateItems((prev) => [
+					...prev.filter((item) => item.id !== "__compacting"),
+					{
+						id: event.event_id,
+						role: "system",
+						title: tRef.current("slash.compactAborted", {
+							message: payload.message ?? payload.reason ?? "",
+						}),
+						text: "",
+						status: "",
+						timestamp: (event as { timestamp?: number }).timestamp ?? Date.now(),
+					},
+				]);
 				break;
 			}
 			case "SESSION_BOUNDARY_INFERRED": {

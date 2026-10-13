@@ -156,7 +156,11 @@
     "exportDone": "会话已导出",
     "exportFailed": "导出失败",
     "compactFailed": "压缩失败",
-    "compacting": "正在压缩上下文…"
+    "compacting": "正在压缩上下文…",
+    "compactDone": "上下文已压缩：{{before}} → {{after}} tokens",
+    "compactMasked": "已清理 {{count}} 条旧工具结果",
+    "compactAborted": "压缩中止：{{message}}",
+    "compactBoundary": "上下文压缩点 · 压缩前约 {{before}} tokens"
   },
   "schedule": {
     "title": "定时任务",

@@ -156,7 +156,11 @@
     "exportDone": "Session exported",
     "exportFailed": "Export failed",
     "compactFailed": "Compaction failed",
-    "compacting": "Compacting context…"
+    "compacting": "Compacting context…",
+    "compactDone": "Context compacted: {{before}} → {{after}} tokens",
+    "compactMasked": "Cleared {{count}} old tool results",
+    "compactAborted": "Compaction aborted: {{message}}",
+    "compactBoundary": "Compaction point · ~{{before}} tokens before"
   },
   "schedule": {
     "title": "Scheduled tasks",
