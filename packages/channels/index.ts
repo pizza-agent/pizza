@@ -2,14 +2,20 @@
  * Channels — external message integrations (Discord / Lark / Slack / Telegram /
  * webhook). The registry below is the single place a platform is wired in;
  * platform SDKs are imported lazily inside each adapter's `start`, so loading
- * this module (e.g. in the gateway for validate/probe) stays cheap.
+ * this module (e.g. in the gateway for validate/probe) stays cheap. Adapters
+ * always run inside the gateway daemon via {@link runChannel} — the
+ * ChannelBridge carries deliveries/events as direct calls, no subprocesses
+ * and no socket round-trips.
  */
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import discord from "./discord.js";
 import lark from "./lark.js";
-import { ChannelRuntime } from "./runtime.js";
+import { ChannelRuntime, type ChannelBridge } from "./runtime.js";
+
+export type { ChannelBridge, ChannelRuntimeOptions, DeliverOptions } from "./runtime.js";
+export { routeFetchThroughProxy, routeHttpsThroughProxy } from "./runtime.js";
 import slack from "./slack.js";
 import telegram from "./telegram.js";
 import type { ChannelAdapter, ChannelConfig, ChannelType } from "./types.js";
@@ -53,8 +59,9 @@ export function liveAdapterPid(agentDir: string, channelId: string): number | nu
 	}
 }
 
-export async function runChannel(config: ChannelConfig, agentDir: string): Promise<void> {
-	const adapter = channelAdapter(config.type);
+/** Validate + claim the single-instance pidfile. Returns the release fn. */
+function claimAdapterSlot(config: ChannelConfig, agentDir: string, override?: ChannelAdapter): () => void {
+	const adapter = override ?? channelAdapter(config.type);
 	if (!adapter) throw new Error(`Unknown channel type "${String(config.type)}"`);
 	const error = adapter.validate(config);
 	if (error) throw new Error(error);
@@ -69,22 +76,41 @@ export async function runChannel(config: ChannelConfig, agentDir: string): Promi
 	}
 	mkdirSync(join(agentDir, "channels"), { recursive: true });
 	writeFileSync(pidPath, String(process.pid), { mode: 0o600 });
-	const release = (): void => {
+	return () => {
 		try { unlinkSync(pidPath); } catch { /* already gone */ }
 	};
+}
 
-	const runtime = new ChannelRuntime({ agentDir });
-	await runtime.start();
-	const stopAdapter = await adapter.start(config, runtime);
-
-	const shutdown = async (signal: string): Promise<void> => {
-		console.log(`[channel] ${signal} received, shutting down…`);
+/**
+ * Run one channel inside the calling process (the gateway daemon) until
+ * stopped: claim the single-instance slot, subscribe to the event bridge,
+ * and start the platform adapter.
+ *
+ * Returns a stop() for the adapter only. `onFatal` reports platform failures
+ * the adapter can't recover from (a dead polling loop) so the supervisor can
+ * schedule a respawn — adapters must NEVER process.exit inside the daemon.
+ */
+export async function runChannel(
+	config: ChannelConfig,
+	agentDir: string,
+	bridge: ChannelBridge,
+	onFatal: (error: unknown) => void,
+	adapterOverride?: ChannelAdapter,
+): Promise<() => Promise<void>> {
+	const release = claimAdapterSlot(config, agentDir, adapterOverride);
+	const adapter = adapterOverride ?? channelAdapter(config.type)!;
+	const runtime = new ChannelRuntime({ agentDir, bridge, onFatal });
+	try {
+		await runtime.start();
+		const stopAdapter = await adapter.start(config, runtime);
+		return async () => {
+			release();
+			await stopAdapter().catch(() => {});
+			await runtime.stop().catch(() => {});
+		};
+	} catch (err) {
 		release();
-		await stopAdapter().catch(() => {});
 		await runtime.stop().catch(() => {});
-		process.exit(0);
-	};
-	process.on("SIGINT", () => void shutdown("SIGINT"));
-	process.on("SIGTERM", () => void shutdown("SIGTERM"));
-	process.on("exit", release);
+		throw err;
+	}
 }

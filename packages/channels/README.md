@@ -38,7 +38,7 @@ Each adapter is one `ChannelAdapter` object:
 export default {
   validate(config) { … },          // save-time checks   (runs in the gateway)
   async probe(config, fetch) { … }, // UI "Test" button   (runs in the gateway)
-  async start(config, runtime) { … return stop; }, // the relay (adapter process)
+  async start(config, runtime) { … return stop; }, // the relay (in the gateway daemon)
 } satisfies ChannelAdapter;
 ```
 
@@ -48,20 +48,20 @@ loads them for validate/probe.
 ## How it runs
 
 The Channels tab saves configs to `<agentDir>/channels.json`. The gateway's
-channel supervisor (`packages/gateway/channel-supervisor.ts`) spawns one process
-per enabled channel by re-running its own CLI:
+channel supervisor (`packages/gateway/channel-supervisor.ts`) runs each enabled
+channel **inside the daemon** through `runChannel`: delivery, event fan-out and
+rpc go over an in-process `ChannelBridge` — no adapter subprocesses, no socket
+round-trips, and streaming replies via `deliver(..., { onPartial })`.
 
-```bash
-pizza channel run <id> [--agent-dir <dir>]
-```
-
-You can run the same command by hand to debug a channel in the foreground.
-Adapters stay out of process on purpose: some patch `https.request` for proxy
-support, and a crashing SDK must not take the gateway down.
+Adapters must never `process.exit` mid-run — report unrecoverable platform
+failures through `runtime.reportFatal()`, which marks the channel crashed and
+puts it through the supervisor's respawn budget. Process-wide mutations (e.g.
+patching `https.request` for proxy support) affect the whole daemon.
 
 Proxy: the supervisor resolves `settings.json` `network.proxy` → proxy env →
-macOS system proxy and passes it as `HTTPS_PROXY`. `PIZZA_ANSWER_ALL=1` (in the
-gateway's env) makes adapters reply to every group message, not only @mentions.
+macOS system proxy and injects it as `HTTPS_PROXY` into the daemon env.
+`PIZZA_ANSWER_ALL=1` makes adapters reply to every group message, not only
+@mentions.
 
 ## Add a new channel
 

@@ -1,6 +1,5 @@
 /**
- * Channel types shared by the gateway supervisor, the `pizza channel run`
- * entry and every platform adapter.
+ * Channel types shared by the gateway supervisor and every platform adapter.
  */
 
 import type { ChannelRuntime } from "./runtime.js";
@@ -41,8 +40,11 @@ export type ProxiedFetch = (url: string, init?: RequestInit) => Promise<Response
 
 /**
  * One platform integration. `validate` and `probe` run inside the gateway
- * (UI save / Test button), `start` runs in the adapter process spawned by the
- * supervisor — so platform SDKs must only be imported (dynamically) in `start`.
+ * (UI save / Test button). `start` runs inside the gateway daemon too —
+ * platform SDKs must only be imported (dynamically) in `start`, must never
+ * call `process.exit` mid-run (use `runtime.reportFatal`), and process-wide
+ * mutations (e.g. patching https.request for a proxy) affect the whole
+ * daemon.
  */
 export interface ChannelAdapter {
 	/** Platform-specific save validation. Returns an error string, or null. */

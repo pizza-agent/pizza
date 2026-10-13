@@ -3,25 +3,31 @@
  * (Discord / Lark / Slack / Telegram / webhook).
  *
  * The Channels tab in the desktop UI saves a config per integration; this
- * module persists those configs (`<agentDir>/channels.json`), spawns one
- * adapter process per ENABLED channel (`pizza channel run <id>` — the same
- * CLI/binary the gateway runs from), and reports live status back so the UI
- * badge means something real:
+ * module persists those configs (`<agentDir>/channels.json`) and runs one
+ * adapter per ENABLED channel inside the daemon. Delivery is a direct
+ * in-process call into the agent pool via the channel host — no socket
+ * round-trips, no extra processes, and live streaming replies.
  *
- *   UI ──channel_op──▶ gateway ──▶ supervisor ──spawn──▶ adapter process ──tell──▶ gateway (again)
+ *   UI ──channel_op──▶ gateway ──▶ supervisor ──▶ adapter ──deliver──▶ agent pool
  *
- * Adapters run out of process on purpose: some patch `https.request` for proxy
- * support, and a crashing platform SDK must not take the gateway down. The
- * platform-specific parts (validation, credential probe, the relay itself)
- * live in packages/channels/<type>.ts.
+ * Fault containment: adapters must surface unrecoverable platform failures
+ * through runtime.reportFatal() (marks the entry crashed → respawn budget).
+ * An adapter that crashes the process uncatchably still takes the gateway
+ * down — the accepted trade for in-process hosting, same as openclaw.
  */
 
-import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { execSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
-import { ProxyAgent } from "undici";
-import { channelAdapter, liveAdapterPid, type ChannelConfig } from "../channels/index.js";
-import { resolveCliSpawn } from "../rpc/cli-spawn.js";
+import { EnvHttpProxyAgent, ProxyAgent, setGlobalDispatcher } from "undici";
+import {
+	channelAdapter,
+	adapterPidPath,
+	runChannel,
+	type ChannelConfig,
+	type ChannelBridge,
+} from "../channels/index.js";
+import { routeFetchThroughProxy } from "../channels/runtime.js";
 
 export type ManagedChannelStatus = "connected" | "disconnected" | "error" | "configuring";
 
@@ -34,18 +40,18 @@ export interface ManagedChannelInfo extends ChannelConfig {
 
 interface RuntimeEntry {
 	config: ChannelConfig;
-	child?: ChildProcess;
-	/** Set when the adapter failed to spawn or exited. */
+	/** Stops the running adapter (returned by runChannel). */
+	stopAdapter?: () => Promise<void>;
+	/** Adapter finished start() and is live. */
+	running?: boolean;
+	/** Set when the adapter failed to start or crashed. */
 	lastError?: string;
-	/** Rolling stderr/stdout tail — surfaced as lastError context. */
-	tail: string;
 	/** Crash-respawn bookkeeping. */
 	restarts: number;
-	spawnedAt: number;
+	startedAt: number;
 	respawnTimer?: NodeJS.Timeout;
 }
 
-const TAIL_LIMIT = 8 * 1024;
 /** Give up respawning after this many rapid crashes; an adapter alive for
  *  longer than STABLE_MS resets the budget. */
 const RESPAWN_MAX = 5;
@@ -125,24 +131,21 @@ function systemProxy(agentDir: string): ProxyResolution {
 	return detectedProxy ?? undefined;
 }
 
-/** Proxy env var names — stripped from the child env when the user turns the
- *  proxy off, so a proxied shell that launched the gateway can't leak through. */
 const PROXY_ENV_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] as const;
 
-/** Env for an adapter process: the gateway's env plus the resolved proxy
- *  (adapters read HTTPS_PROXY). Exported for tests. */
-export function childEnv(agentDir: string): Record<string, string> {
-	const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+/** Proxy vars an adapter should see: the resolved proxy mirrored into all
+ *  common names. Empty when the proxy is unset or explicitly "off" — inline
+ *  adapters share the daemon env, so there is nothing to inject (and no way
+ *  to strip the daemon's own env). Exported for tests. */
+export function adapterProxyEnv(agentDir: string): Record<string, string> {
 	const proxy = systemProxy(agentDir);
-	if (proxy === false) {
-		for (const name of PROXY_ENV_VARS) delete env[name];
-	} else if (proxy) {
-		env.HTTPS_PROXY ??= proxy;
-		env.https_proxy ??= proxy;
-		env.HTTP_PROXY ??= proxy;
-		env.http_proxy ??= proxy;
-	}
-	return env;
+	if (!proxy) return {};
+	return {
+		HTTPS_PROXY: proxy,
+		https_proxy: proxy,
+		HTTP_PROXY: proxy,
+		http_proxy: proxy,
+	};
 }
 
 /** Validate a save input. Returns an error string, or null when valid.
@@ -169,6 +172,14 @@ async function probeCredentials(config: ChannelConfig, agentDir: string): Promis
 	}
 }
 
+export interface ChannelSupervisorOptions {
+	/** Lazily resolved in-process channel host (created by the gateway server
+	 *  after this supervisor is constructed). */
+	host: () => ChannelBridge;
+	/** Test seam: replace the adapter registry. */
+	adapterFor?: (type: string) => import("../channels/types.js").ChannelAdapter | undefined;
+}
+
 export class ChannelSupervisor {
 	private readonly agentDir: string;
 	private readonly configPath: string;
@@ -176,16 +187,18 @@ export class ChannelSupervisor {
 	private settingsWatcher?: FSWatcher;
 	private respawnTimer?: NodeJS.Timeout;
 	private shuttingDown = false;
+	private readonly options: ChannelSupervisorOptions;
 
-	constructor(agentDir: string) {
+	constructor(agentDir: string, options: ChannelSupervisorOptions) {
 		this.agentDir = agentDir;
 		this.configPath = join(agentDir, "channels.json");
+		this.options = options;
 	}
 
-	/** Load persisted configs and spawn every enabled channel. Call at gateway start. */
+	/** Load persisted configs and start every enabled channel. Call at gateway start. */
 	start(): void {
 		for (const config of loadChannelConfigs(this.agentDir)) {
-			this.entries.set(config.id, { config, tail: "", restarts: 0, spawnedAt: 0 });
+			this.entries.set(config.id, { config, restarts: 0, startedAt: 0 });
 		}
 		for (const entry of this.entries.values()) {
 			if (entry.config.enabled) this.spawn(entry);
@@ -232,7 +245,7 @@ export class ChannelSupervisor {
 	}
 
 	private toInfo(entry: RuntimeEntry): ManagedChannelInfo {
-		const alive = !!entry.child && entry.child.exitCode === null && !entry.child.killed;
+		const alive = entry.running === true;
 		const status: ManagedChannelStatus = !entry.config.enabled
 			? "disconnected"
 			: alive
@@ -250,64 +263,72 @@ export class ChannelSupervisor {
 	private spawn(entry: RuntimeEntry): void {
 		this.stop(entry);
 		entry.lastError = undefined;
-		entry.tail = "";
-		entry.spawnedAt = Date.now();
-		// Reap an orphan adapter for this channel (e.g. a hand-run `pizza channel
-		// run` or a child lost track of) before spawning ours — two adapters on
-		// one channel split deliveries via the platform's websocket balancing.
-		const orphan = liveAdapterPid(this.agentDir, entry.config.id);
-		if (orphan && orphan !== entry.child?.pid) {
-			console.warn(`[channels] killing orphan adapter for ${entry.config.id} (pid ${orphan})`);
-			try {
-				process.kill(orphan, "SIGTERM");
-			} catch {
-				/* already dead — pidfile will be cleaned by liveAdapterPid() */
-			}
-		}
-		// Re-run the CLI we're running from: `node cli.js …` or the compiled binary.
-		const { cliPath, binary } = resolveCliSpawn();
-		const args = ["channel", "run", entry.config.id, "--agent-dir", this.agentDir];
-		let child: ChildProcess;
+		entry.startedAt = Date.now();
+		// Stale pidfile from a dead gateway would make runChannel's slot claim
+		// throw — clean it up first (liveAdapterPid removes dead pids itself,
+		// so anything left here is ours or already invalid).
 		try {
-			child = spawn(binary ? cliPath : process.execPath, binary ? args : [cliPath, ...args], {
-				env: childEnv(this.agentDir),
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-		} catch (error) {
-			entry.lastError = error instanceof Error ? error.message : String(error);
-			return;
+			unlinkSync(adapterPidPath(this.agentDir, entry.config.id));
+		} catch {
+			/* absent or held by someone else — claim decides */
 		}
-		entry.child = child;
-		const append = (chunk: Buffer): void => {
-			entry.tail = (entry.tail + chunk.toString("utf8")).slice(-TAIL_LIMIT);
-		};
-		child.stdout?.on("data", append);
-		child.stderr?.on("data", append);
-		child.on("exit", (code, signal) => {
-			// An intentional stop() clears entry.child first, and a respawn
-			// replaces it — only a still-registered child exiting means a crash.
-			const crashed = entry.child === child;
-			if (crashed) entry.child = undefined;
-			const reason = signal ? `signal ${signal}` : `code ${code}`;
-			if (crashed && entry.config.enabled && code !== 0) {
-				entry.lastError = `adapter exited (${reason})${entry.tail.trim() ? `: ${entry.tail.trim().slice(-400)}` : ""}`;
-				this.scheduleRespawn(entry);
+		// Export the resolved proxy into the daemon env so adapters'
+		// proxyFromEnv() sees it. Only injects when set and absent —
+		// "off"/unset leave the gateway env untouched.
+		let injected = false;
+		for (const [name, value] of Object.entries(adapterProxyEnv(this.agentDir))) {
+			if (!process.env[name]) {
+				process.env[name] = value;
+				injected = true;
 			}
-		});
-		child.on("error", (error) => {
-			entry.lastError = error.message;
-		});
+		}
+		// EnvHttpProxyAgent snapshots env at CONSTRUCTION — the global
+		// dispatcher set at cli start never sees proxy vars injected here.
+		// Re-create it so undici fetches (platform REST APIs) actually route
+		// through the proxy. In-flight requests keep the old dispatcher.
+		if (injected) setGlobalDispatcher(new EnvHttpProxyAgent());
+		// Wrap fetch at adapter-start time too: bundled adapters may have their
+		// module bodies run before their start() executes, so a wrap inside
+		// the adapter can land too late (grammy's bot.init() hang). Bun's
+		// fetch honors init.proxy deterministically, undici ignores it.
+		{
+			const proxy = systemProxy(this.agentDir);
+			if (typeof proxy === "string") routeFetchThroughProxy(proxy);
+		}
+		entry.running = false;
+		const onFatal = (error: unknown): void => {
+			if (entry.stopAdapter === undefined) return; // already stopped/replaced
+			entry.running = false;
+			entry.stopAdapter = undefined;
+			entry.lastError = `adapter failed: ${describeError(error)}`;
+			this.scheduleRespawn(entry);
+		};
+		void runChannel(entry.config, this.agentDir, this.options.host(), onFatal, this.options.adapterFor?.(entry.config.type))
+			.then((stopAdapter) => {
+				if (this.shuttingDown || !entry.config.enabled) {
+					void stopAdapter().catch(() => {});
+					return;
+				}
+				entry.stopAdapter = stopAdapter;
+				entry.running = true;
+			})
+			.catch((error: unknown) => {
+				// Full cause chain + top stack frames — inline adapters' stderr
+				// goes to the daemon log, so lastError is the UI-visible record.
+				entry.lastError = `adapter failed to start: ${describeError(error)}`;
+				this.scheduleRespawn(entry);
+			});
 	}
 
-	/** Retry a crashed adapter — e.g. a port freed when a stale duplicate
-	 *  dies. An adapter that stayed up for STABLE_MS gets a fresh budget; a
-	 *  rapid crash loop gives up after RESPAWN_MAX attempts. */
+	/** Retry a crashed adapter — e.g. a platform SDK dropping its connection.
+	 *  An adapter that stayed up for STABLE_MS gets a fresh budget; a rapid
+	 *  crash loop gives up after RESPAWN_MAX attempts. */
 	private scheduleRespawn(entry: RuntimeEntry): void {
-		entry.restarts = Date.now() - entry.spawnedAt > STABLE_MS ? 1 : entry.restarts + 1;
+		entry.restarts = Date.now() - entry.startedAt > STABLE_MS ? 1 : entry.restarts + 1;
 		if (this.shuttingDown || entry.restarts > RESPAWN_MAX) return;
 		entry.respawnTimer = setTimeout(() => {
 			entry.respawnTimer = undefined;
-			if (this.shuttingDown || !entry.config.enabled || entry.child) return;
+			if (this.shuttingDown || !entry.config.enabled || entry.stopAdapter) return;
 			this.spawn(entry);
 		}, RESPAWN_DELAY_MS);
 	}
@@ -315,15 +336,10 @@ export class ChannelSupervisor {
 	private stop(entry: RuntimeEntry): void {
 		clearTimeout(entry.respawnTimer);
 		entry.respawnTimer = undefined;
-		const child = entry.child;
-		entry.child = undefined;
-		if (child && child.exitCode === null && !child.killed) {
-			try {
-				child.kill("SIGTERM");
-			} catch {
-				/* already gone */
-			}
-		}
+		const stopAdapter = entry.stopAdapter;
+		entry.stopAdapter = undefined;
+		entry.running = false;
+		if (stopAdapter) void stopAdapter().catch(() => {});
 	}
 
 	/** Create or update a config, persist, and (re)spawn when enabled. */
@@ -346,7 +362,7 @@ export class ChannelSupervisor {
 			webhookUrl: input.webhookUrl,
 			workspace: input.workspace!.trim(),
 		};
-		const entry: RuntimeEntry = existing ?? { config, tail: "", restarts: 0, spawnedAt: 0 };
+		const entry: RuntimeEntry = existing ?? { config, restarts: 0, startedAt: 0 };
 		entry.config = config;
 		this.entries.set(config.id, entry);
 		this.persist();
@@ -375,9 +391,9 @@ export class ChannelSupervisor {
 		return this.toInfo(entry);
 	}
 
-	/** Rolling stdout/stderr tail of the adapter process — debug aid. */
+	/** Last recorded adapter error — debug aid for the UI. */
 	tail(id: string): string {
-		return this.entries.get(id)?.tail ?? "";
+		return this.entries.get(id)?.lastError ?? "";
 	}
 
 	/** Credential probe — the UI "Test" button. */
@@ -388,4 +404,24 @@ export class ChannelSupervisor {
 		if (!probe.ok) entry.lastError = probe.message;
 		return probe;
 	}
+}
+
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/** message + cause chain + a couple of stack frames — enough to localize a
+ *  failure without digging through gateway.log. */
+function describeError(error: unknown): string {
+	let msg = errorMessage(error);
+	let cause = (error as { cause?: unknown } | null)?.cause;
+	let depth = 0;
+	while (cause !== undefined && depth++ < 4) {
+		msg += ` | cause: ${errorMessage(cause)}`;
+		cause = (cause as { cause?: unknown } | null)?.cause;
+	}
+	const frames = error instanceof Error ? error.stack?.split("\n").slice(1, 4).map((l) => l.trim()) : undefined;
+	if (frames?.length) msg += ` | at ${frames.join(" ← ")}`;
+	return msg;
 }

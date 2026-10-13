@@ -36,6 +36,18 @@ export interface CrashHandlerOptions {
 	fatalExitCode?: number;
 	/** Max time granted to `onFatal` before forcing exit. Default: 2000ms. */
 	fatalTimeoutMs?: number;
+	/**
+	 * What to do on uncaughtException. "exit" (default) shuts the process
+	 * down; "continue" logs and keeps running — intended for hosts that
+	 * embed third-party code (channel adapters) whose throws are routinely
+	 * survivable. A rate guard still exits after `maxUncaught` exceptions
+	 * within `uncaughtWindowMs` to bound a real corruption loop.
+	 */
+	uncaught?: "exit" | "continue";
+	/** "continue" mode: max tolerated exceptions per window. Default: 10. */
+	maxUncaught?: number;
+	/** "continue" mode: sliding window for maxUncaught. Default: 60_000ms. */
+	uncaughtWindowMs?: number;
 }
 
 /** Write a line to stderr, swallowing EPIPE and any secondary failure. */
@@ -46,6 +58,20 @@ function logStderr(line: string): void {
 		// stderr can be a closed pipe (EPIPE) — never let logging itself throw,
 		// or we would recurse straight back into the handler we are inside of.
 	}
+}
+
+/** Error codes where continuing is never safe — Node runtime itself is dead. */
+const FATAL_ERROR_CODES = new Set([
+	"ERR_OUT_OF_MEMORY",
+	"ERR_SCRIPT_EXECUTION_TIMEOUT",
+	"ERR_WORKER_OUT_OF_MEMORY",
+	"ERR_WORKER_UNCAUGHT_EXCEPTION",
+	"ERR_WORKER_INITIALIZATION_FAILED",
+]);
+
+function isFatalErrorCode(error: unknown): boolean {
+	const code = (error as { code?: unknown } | null)?.code;
+	return typeof code === "string" && FATAL_ERROR_CODES.has(code);
 }
 
 function describe(error: unknown): string {
@@ -73,8 +99,31 @@ export function installCrashHandlers(options: CrashHandlerOptions): () => void {
 		logStderr(`[${label}] Unhandled promise rejection (continuing): ${describe(reason)}`);
 	};
 
+	const uncaughtPolicy = options.uncaught ?? "exit";
+	const maxUncaught = options.maxUncaught ?? 10;
+	const uncaughtWindowMs = options.uncaughtWindowMs ?? 60_000;
+	const uncaughtAt: number[] = [];
+
 	let fatalInProgress = false;
 	const onUncaughtException = (error: unknown): void => {
+		if (uncaughtPolicy === "continue" && !fatalInProgress) {
+			// Genuinely fatal errors must exit even in "continue" mode — an OOM
+			// or a dead V8/VM means there is no healthy state left to run on.
+			if (!isFatalErrorCode(error)) {
+				const now = Date.now();
+				uncaughtAt.push(now);
+				while (uncaughtAt.length > 0 && now - uncaughtAt[0] > uncaughtWindowMs) uncaughtAt.shift();
+				if (uncaughtAt.length <= maxUncaught) {
+					logStderr(`[${label}] Uncaught exception (continuing, ${uncaughtAt.length}/${maxUncaught} in ${uncaughtWindowMs / 1000}s): ${describe(error)}`);
+					return;
+				}
+				logStderr(
+					`[${label}] Uncaught exception rate exceeded (${uncaughtAt.length} in ${uncaughtWindowMs / 1000}s) — state may be corrupt, shutting down.`,
+				);
+			} else {
+				logStderr(`[${label}] FATAL error — shutting down despite continue policy: ${describe(error)}`);
+			}
+		}
 		// A throw from inside onFatal must not restart this sequence.
 		if (fatalInProgress) {
 			logStderr(`[${label}] Fatal error during shutdown: ${describe(error)}`);

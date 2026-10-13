@@ -815,16 +815,31 @@ export default function AgentView({
 				const isError = reason === "error" || Boolean(errorMessage);
 				if (id) {
 					updateItems((prev) =>
-						prev.map((it) =>
-							it.id === id
-								? {
-										...it,
-										status: isError ? "ERROR" : "DONE",
-										streaming: false,
-										isError: isError || undefined,
-									}
-								: it,
-						),
+						prev.map((it) => {
+							if (it.id === id) {
+								return {
+									...it,
+									status: isError ? "ERROR" : "DONE",
+									streaming: false,
+									isError: isError || undefined,
+								};
+							}
+							// A tool card still RUNNING when the turn ends never got
+							// its TOOL_EXECUTION_END (aborted mid-exec, gateway stop,
+							// missed event). Settle it so the card doesn't spin
+							// forever; freeze the elapsed timer at turn end.
+							if (it.role === "tool" && it.streaming && !it.toolResult) {
+								return {
+									...it,
+									status: "INTERRUPTED",
+									streaming: false,
+									toolDurationMs:
+										it.toolDurationMs ??
+										(it.toolStartedAt !== undefined ? Date.now() - it.toolStartedAt : undefined),
+								};
+							}
+							return it;
+						}),
 					);
 					if (isForCurrent) {
 						activeAssistantRef.current = null;

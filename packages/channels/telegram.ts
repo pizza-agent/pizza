@@ -8,7 +8,7 @@
  */
 
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { chunk, errorMessage, failureReply, provenance, proxyFromEnv, redactProxy } from "./runtime.js";
+import { chunk, errorMessage, failureReply, provenance, proxyFromEnv, redactProxy, routeFetchThroughProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
 import { cacheClipForPlayback, createVoicePipeline, voicePrompt } from "./voice.js";
 
@@ -26,15 +26,31 @@ export default {
 	},
 
 	async start(config, runtime) {
-		const { Bot } = await import("grammy");
-		// grammy fetches via node-fetch, so a proxy agent rides in baseFetchConfig.
+		// Wrap fetch BEFORE importing grammy: module-level bindings capture the
+		// fetch reference at import time, so a wrap applied afterwards never
+		// reaches it (and a direct connection hangs bot.init() forever).
 		const proxy = proxyFromEnv();
+		if (proxy) routeFetchThroughProxy(proxy);
+		const { Bot } = await import("grammy");
+		// grammy defaults to node-fetch, which hangs inside the bundled binary
+		// (its agent handling breaks under bunfs). Inject the global fetch —
+		// routeFetchThroughProxy already carries proxy credentials on it — and
+		// keep the HttpsProxyAgent for non-bundled runtimes.
 		const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
-		const bot = new Bot(config.token!, agent ? { client: { baseFetchConfig: { agent } as never } } : undefined);
+		const bot = new Bot(config.token!, {
+			client: {
+				...(agent ? { baseFetchConfig: { agent } as never } : {}),
+				fetch: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => globalThis.fetch(input, init)) as never,
+			},
+		});
 		if (proxy) console.log(`[telegram] routing API via proxy ${redactProxy(proxy)}`);
 
 		// Voice pipeline — no-op unless settings.json has a `voice` section.
 		const voice = createVoicePipeline(runtime.dir);
+
+		// Inside the daemon an unhandled middleware error is an uncaughtException
+		// — consume it here so a bad update can't kill the gateway.
+		bot.catch((err) => console.error("[telegram] handler error:", errorMessage(err)));
 
 		bot.command("start", (ctx) => ctx.reply("I'm a Pizza agent bridge. Send me a message."));
 
@@ -100,24 +116,83 @@ export default {
 				await ctx.react("👀").catch(() => {});
 				// Telegram lets us show "typing…" while the agent works.
 				await ctx.replyWithChatAction("typing");
-				const reply = await runtime.deliver(config.workspace, ctx.message.text, provenance("telegram", chatId, sender));
+				// Stream the reply: edit one preview message as text_delta chunks
+				// arrive. Throttled — Telegram rate-limits edits (~1/s per chat is
+				// the safe floor); a failed edit just drops that partial.
+				let previewId: number | undefined;
+				let lastEdit = 0;
+				let queued: ReturnType<typeof setTimeout> | undefined;
+				const onPartial = (text: string): void => {
+					const apply = (): void => {
+						lastEdit = Date.now();
+						const body = text.slice(0, 4000) || "…";
+						const done = (async () => {
+							if (previewId === undefined) {
+								const sent = await ctx.reply(body);
+								previewId = sent.message_id;
+							} else {
+								await ctx.api.editMessageText(chatId, previewId, body);
+							}
+						})();
+						void done.catch(() => {});
+					};
+					const wait = 1500 - (Date.now() - lastEdit);
+					if (wait <= 0) {
+						clearTimeout(queued);
+						queued = undefined;
+						apply();
+					} else if (!queued) {
+						queued = setTimeout(() => {
+							queued = undefined;
+							apply();
+						}, wait);
+					}
+				};
+				const reply = await runtime.deliver(
+					config.workspace,
+					ctx.message.text,
+					provenance("telegram", chatId, sender),
+					{ onPartial },
+				);
+				clearTimeout(queued);
 				// Telegram caps messages at 4096 chars.
-				for (const part of chunk(reply, 4000)) await ctx.reply(part);
+				if (previewId !== undefined && reply.length <= 4000) {
+					// Reuse the preview message — final markdown/text replaces it.
+					await ctx.api.editMessageText(chatId, previewId, reply).catch(async () => {
+						for (const part of chunk(reply, 4000)) await ctx.reply(part);
+					});
+				} else {
+					// Long reply (or streaming never produced a preview): drop the
+					// partial preview and send the chunked final text.
+					if (previewId !== undefined) {
+						await ctx.api.deleteMessage(chatId, previewId).catch(() => {});
+					}
+					for (const part of chunk(reply, 4000)) await ctx.reply(part);
+				}
 			} catch (err) {
 				console.error(`[telegram] deliver failed for chat ${chatId}:`, errorMessage(err));
 				await ctx.reply(failureReply(err)).catch(() => {});
 			}
 		});
 
-		// getMe up front — fails fast on a bad token / unreachable API.
-		await bot.init();
+		// getMe up front — fails fast on a bad token / unreachable API. Bound
+		// it: a hung transport would otherwise leave the adapter configuring
+		// forever instead of erroring into the respawn budget.
+		await Promise.race([
+			bot.init(),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("bot.init() timed out after 60s")), 60_000),
+			),
+		]);
 		console.log(`[telegram] logged in as @${bot.botInfo.username}`);
 
 		// bot.start() blocks on the polling loop, so it must NOT be awaited here:
 		// the caller only installs signal handlers after start() returns.
 		bot.start().catch((err) => {
 			console.error("[telegram] polling stopped:", errorMessage(err));
-			process.exit(1);
+			// Standalone adapter exits (supervisor respawns); inline adapters
+			// must not kill the daemon — reportFatal marks the channel crashed.
+			runtime.reportFatal(err);
 		});
 
 		return async () => {
