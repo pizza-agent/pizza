@@ -223,8 +223,8 @@ be enabled explicitly (or via `/settings`).
 Adjacent surfaces that are configured, not extended:
 
 - **Channels**: Discord/Lark/Slack/Telegram/webhook adapters are compiled in.
-  Adding one is a `channels.json` entry (Channels tab or
-  `pizza channel run <id>` to debug by hand); adding a *new platform* means
+  Adding one is a `channels.json` entry (Channels tab); adding a *new
+  platform* means
   shipping a new adapter in `packages/channels/`, not writing a plugin.
 - **Marketplace skills**: installed in-app via the Skills tab (or
   `install_skill` in RPC) into `~/.agents/skills/` — they're just skills.

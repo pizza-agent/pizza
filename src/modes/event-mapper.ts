@@ -24,6 +24,7 @@ export type ModeEvent =
 			result: unknown;
 			details?: unknown;
 			isError: boolean;
+			durationMs?: number;
 	  }
 	| { type: "turn_started"; eventId: string; messageCount: number }
 	| { type: "turn_completed"; eventId: string; reason: string; errorMessage?: string }
@@ -109,6 +110,7 @@ export function mapTypedEventToModeEvents(event: EventBase): ModeEvent[] {
 				result: unknown;
 				details?: unknown;
 				is_error: boolean;
+				duration_ms?: number;
 			};
 			actions.push({
 				type: "tool_finished",
@@ -118,6 +120,7 @@ export function mapTypedEventToModeEvents(event: EventBase): ModeEvent[] {
 				result: payload.result,
 				details: payload.details,
 				isError: payload.is_error,
+				durationMs: payload.duration_ms,
 			});
 			appendMessageCommit(actions, event);
 			break;

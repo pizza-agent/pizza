@@ -226,8 +226,8 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	const startTime = Date.now();
 	const { cliPath, binary } = resolveCliSpawn();
 	/** Owns the UI-managed message channels (Discord/Lark/…): persists their
-	 *  configs and runs one adapter process per enabled channel. */
-	const channelSupervisor = new ChannelSupervisor(agentDir);
+	 *  configs and hosts one adapter per channel inside this process. */
+	const channelSupervisor = new ChannelSupervisor(agentDir, { host: () => channelHost });
 	/** Active client sockets — destroyed on shutdown so connected clients
 	 * get EOF immediately instead of waiting for the process to exit. */
 	const activeSockets = new Set<Socket>();
@@ -239,16 +239,27 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	type ConnWriter = (obj: GatewayResponse) => void;
 	/** workspace cwd → set of connection writers currently subscribed. */
 	const subscribers = new Map<string, Set<ConnWriter>>();
+	/** workspace cwd → in-process listeners (inline channel adapters). */
+	const internalListeners = new Map<string, Set<(event: unknown) => void>>();
 	/** workspace cwd → unsubscribe fn for the agent onEvent forwarder (attached once). */
 	const eventForwarders = new Map<string, () => void>();
 
-	/** Fan an agent event out to every channel subscribed to `cwd`. */
+	/** Fan an agent event out to every channel subscribed to `cwd` —
+	 *  socket connections get the Layer-1 envelope, inline listeners the raw
+	 *  event. */
 	function broadcastEvent(cwd: string, frame: GatewayRpcFrame): void {
 		const subs = subscribers.get(cwd);
-		if (!subs || subs.size === 0) return;
-		const envelope: GatewayResponse = { type: "rpc", workspace: cwd, frame };
-		for (const writer of subs) {
-			writer(envelope);
+		if (subs && subs.size > 0) {
+			const envelope: GatewayResponse = { type: "rpc", workspace: cwd, frame };
+			for (const writer of subs) {
+				writer(envelope);
+			}
+		}
+		const internal = internalListeners.get(cwd);
+		if (internal) {
+			for (const listener of internal) {
+				listener(frame);
+			}
 		}
 	}
 
@@ -597,6 +608,49 @@ function nextMessageId(): string {
 			};
 		}
 
+		// The ack is "accepted for delivery" — not "turn finished". When the
+		// agent is mid-turn, waiting for the queue to drain here would hold the
+		// ack hostage for the whole running turn (the old 120s channel-timeout
+		// failure). Reply correlation is messageId-based and the follow-up path
+		// emits the same USER_MESSAGE, so we can ack immediately and let the
+		// delivery land in the background.
+		const messageId = nextMessageId();
+		if (entry.busy) {
+			void deliverTell(request, cwd, entry, messageId, startedAt)
+				.then((error) => {
+					if (error) emitter.emit("tell", cwd, false, Date.now() - startedAt);
+				})
+				.catch(() => {});
+			return { type: "tell_result", id: request.id, ok: true, delivered: true, messageId };
+		}
+		const error = await deliverTell(request, cwd, entry, messageId, startedAt);
+		if (error) return { type: "tell_result", id: request.id, ok: false, error };
+		return { type: "tell_result", id: request.id, ok: true, delivered: true, messageId };
+	}
+
+	/**
+	 * Deliver one tell to `entry`: wait out a busy agent, prompt (or queue as a
+	 * follow-up), then release the turn slot when the turn settles. Returns an
+	 * error string on failure, null on acceptance — the caller decides whether
+	 * the wire response (foreground) or just the metrics event (background)
+	 * carries it. Failures are ALSO broadcast as TELL_DELIVERY_FAILED so
+	 * adapters correlating on messageId can fail fast instead of hanging on a
+	 * USER_MESSAGE that will never arrive.
+	 */
+	async function deliverTell(
+		request: GatewayTellRequest,
+		cwd: string,
+		entry: PoolEntry,
+		messageId: string,
+		startedAt: number,
+	): Promise<string | null> {
+		const fail = (error: string): string => {
+			broadcastEvent(cwd, {
+				type: "TELL_DELIVERY_FAILED",
+				payload: { messageId, error },
+			} as unknown as GatewayRpcFrame);
+			return error;
+		};
 		// Serialize: if the agent is busy, wait for it to drain.
 		if (entry.busy) {
 			try {
@@ -605,18 +659,11 @@ function nextMessageId(): string {
 				});
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				emitter.emit("tell", cwd, false, Date.now() - startedAt);
-				return { type: "tell_result", id: request.id, ok: false, error: message };
+				return fail(message);
 			}
 			// If the entry was torn down while waiting, bail.
 			if (pool.get(cwd) !== entry) {
-				emitter.emit("tell", cwd, false, Date.now() - startedAt);
-				return {
-					type: "tell_result",
-					id: request.id,
-					ok: false,
-					error: `agent for ${cwd} was torn down before the message was delivered`,
-				};
+				return fail(`agent for ${cwd} was torn down before the message was delivered`);
 			}
 		}
 
@@ -627,7 +674,6 @@ function nextMessageId(): string {
 		const senderCwd =
 			request.from?.kind === "agent" ? resolveDestination(request.from.id) : null;
 		const willRelay = !request.relay && senderCwd !== null && senderCwd !== cwd;
-		const messageId = nextMessageId();
 		const delivered = renderInboundMessage(request.from, request.message, messageId, {
 			autoRelay: willRelay,
 		});
@@ -659,16 +705,10 @@ function nextMessageId(): string {
 			try {
 				await entry.client.followUp(delivered);
 				emitter.emit("tell", cwd, true, Date.now() - startedAt);
-				return { type: "tell_result", id: request.id, ok: true, delivered: true, messageId };
+				return null;
 			} catch (followUpError) {
 				const fm = followUpError instanceof Error ? followUpError.message : String(followUpError);
-				emitter.emit("tell", cwd, false, Date.now() - startedAt);
-				return {
-					type: "tell_result",
-					id: request.id,
-					ok: false,
-					error: `tell to ${cwd} was not accepted: ${m}; follow-up queue also refused: ${fm}`,
-				};
+				return fail(`tell to ${cwd} was not accepted: ${m}; follow-up queue also refused: ${fm}`);
 			}
 		}
 
@@ -696,12 +736,12 @@ function nextMessageId(): string {
 			}).catch(() => {});
 		}
 
-		// Ack the delivery now; the turn plays out in the background.
+		// The turn plays out in the background; release the slot when it settles.
 		void settled.then(
 			() => emitter.emit("tell", cwd, true, Date.now() - startedAt),
 			() => emitter.emit("tell", cwd, false, Date.now() - startedAt),
 		).finally(() => releaseTurnSlot(entry)).catch(() => {});
-		return { type: "tell_result", id: request.id, ok: true, delivered: true, messageId };
+		return null;
 	}
 
 	/**
@@ -716,7 +756,139 @@ function nextMessageId(): string {
 		entry.queue.shift()?.resolve();
 	}
 
+	// ── in-process channel host ───────────────────────────────────────────
+	// The supervisor runs channel adapters inside this daemon; ChannelBridge
+	// gives them the socket protocol's semantics as direct calls —
+	// tell/attach/detach/rpc reuse the same code paths a socket connection
+	// would hit, so serialization and reply capture are identical.
+
+	function extractMessageId(result: GatewayResponse): string {
+		if (result.type !== "tell_result") throw new Error(`unexpected tell response: ${result.type}`);
+		if (!result.ok) throw new Error(result.error ?? "tell failed");
+		if (typeof (result as { messageId?: string }).messageId !== "string") {
+			throw new Error("tell ack carried no messageId");
+		}
+		return (result as { messageId: string }).messageId;
+	}
+
+	const channelHost: import("../channels/index.js").ChannelBridge = {
+		/** Same wire path as the socket `tell` case — handleTell owns
+		 *  destination resolution, queueing, the provenance envelope and the
+		 *  delivery ack. */
+		async tell(to, message, from) {
+			const result = await handleTell({ type: "tell", id: `ch_t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, to, message, from });
+			return { messageId: extractMessageId(result) };
+		},
+		/** Ensure a (headless) agent + event forwarder exist and resolve the
+		 *  canonical cwd. Unlike the socket attach there is no per-connection
+		 *  subscription state — events reach adapters via onEvent. */
+		async attach(workspace, opts) {
+			const cwd = resolveDestination(workspace);
+			if (!cwd) throw new Error(`Unknown workspace "${workspace}".`);
+			if (opts?.headless === false) {
+				await ensureInteractiveAgent(cwd);
+			} else {
+				await getOrCreateAgent(cwd);
+			}
+			return cwd;
+		},
+		async detach() {
+			/* no per-workspace state for internal listeners */
+		},
+		onEvent(listener) {
+			// Subscribe to ALL workspaces: adapters don't know cwds ahead of
+			// time and a respawned agent must re-fan automatically. The runtime
+			// filters by cwd itself (same as the socket transport does).
+			const wrap = (cwd: string) => (event: unknown) => listener(event as never, cwd);
+			const unsubs = new Map<string, () => void>();
+			const subscribe = (cwd: string): void => {
+				if (unsubs.has(cwd)) return;
+				const fn = wrap(cwd);
+				let set = internalListeners.get(cwd);
+				if (!set) {
+					set = new Set();
+					internalListeners.set(cwd, set);
+				}
+				set.add(fn);
+				unsubs.set(cwd, () => {
+					set!.delete(fn);
+					if (set!.size === 0) internalListeners.delete(cwd);
+				});
+			};
+			for (const cwd of pool.keys()) subscribe(cwd);
+			// Lazy: workspaces spawn later — hook into the spawn signal.
+			const onSpawn = (cwd: unknown): void => subscribe(cwd as string);
+			emitter.on("agentSpawned", onSpawn);
+			return () => {
+				emitter.off("agentSpawned", onSpawn);
+				for (const unsub of unsubs.values()) unsub();
+				unsubs.clear();
+			};
+		},
+		async sendToWorkspace(workspace, frame, opts) {
+			const { frame: response } = await routeChannelRpc(workspace, frame, opts?.headless !== false ? true : undefined);
+			return response as unknown as Record<string, unknown>;
+		},
+	};
+
 	// ── channel request handling ─────────────────────────────────────────
+
+	/**
+	 * Route a Layer-0 command frame to a workspace's agent and return its
+	 * response frame. Shared by the socket `rpc` case and the in-process
+	 * channel host (inline adapters).
+	 */
+	async function routeChannelRpc(
+		workspace: string,
+		frame: unknown,
+		headless?: boolean,
+	): Promise<{ workspace: string; frame: GatewayRpcFrame }> {
+		const cwd = resolveDestination(workspace);
+		const frameId = (frame as { id?: string } | undefined)?.id;
+		const command = (frame as { type?: string } | undefined)?.type;
+		const fail = (error: string): { workspace: string; frame: GatewayRpcFrame } => ({
+			workspace: cwd ?? workspace,
+			// Failures must come back as an id-carrying frame: a bare
+			// { type: "error" } matches no pending request and the caller would
+			// hang until its own timeout.
+			frame: {
+				id: frameId,
+				type: "response",
+				command,
+				success: false,
+				error,
+			} as unknown as GatewayRpcFrame,
+		});
+		if (!cwd) return fail(`Unknown workspace "${workspace}".`);
+
+		let entry: PoolEntry;
+		try {
+			// Channel rpc comes from a desktop window (or another
+			// human-facing client): approvals must be answerable —
+			// unless the channel marked itself headless (bot relays),
+			// in which case the agent stays headless and gated calls
+			// auto-reject.
+			entry = headless ? await getOrCreateAgent(cwd) : await ensureInteractiveAgent(cwd);
+		} catch (error) {
+			return fail(`Failed to start agent for ${cwd}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		// Refresh activity on dispatch: sendCommand acks instantly for
+		// prompt/steer (the turn then streams as events, which also refresh
+		// lastActivity via the forwarder), so this closes the brief gap
+		// before the first streamed event. We deliberately do NOT toggle
+		// `busy` here — the authoritative liveness signal is the event
+		// stream, and toggling busy around an instant ack would be wrong.
+		entry.lastActivity = Date.now();
+		try {
+			// Local STT (cli voice provider) can spend a minute loading a
+			// model on first use — give dictation room beyond the 30s default.
+			const cmdTimeout = command === "transcribe_audio" ? 150_000 : undefined;
+			const response = await entry.client.sendCommand(frame as RpcCommand, cmdTimeout);
+			return { workspace: cwd, frame: response as GatewayRpcFrame };
+		} catch (error) {
+			return fail(error instanceof Error ? error.message : String(error));
+		}
+	}
 
 	/**
 	 * Handle a Layer-1 channel request from a connection. `write` is that
@@ -773,72 +945,8 @@ function nextMessageId(): string {
 				return;
 			}
 			case "rpc": {
-				const cwd = resolveDestination(request.workspace);
-				if (!cwd) {
-					write({ type: "error", message: `Unknown workspace "${request.workspace}".` });
-					return;
-				}
-				// Spawn failures must ALSO come back as an id-carrying frame: a bare
-				// { type: "error" } matches no pending request and the client would
-				// hang until its own timeout (same failure family as sendCommand
-				// errors below).
-				let entry: PoolEntry;
-				try {
-					// Channel rpc comes from a desktop window (or another
-					// human-facing client): approvals must be answerable —
-					// unless the channel marked itself headless (bot relays),
-					// in which case the agent stays headless and gated calls
-					// auto-reject.
-					entry = request.headless
-						? await getOrCreateAgent(cwd)
-						: await ensureInteractiveAgent(cwd);
-				} catch (error) {
-					const frameId = (request.frame as { id?: string })?.id;
-					write({
-						type: "rpc",
-						workspace: cwd,
-						frame: {
-							id: frameId,
-							type: "response",
-							command: (request.frame as { type?: string })?.type,
-							success: false,
-							error: `Failed to start agent for ${cwd}: ${error instanceof Error ? error.message : String(error)}`,
-						} as unknown as GatewayRpcFrame,
-					});
-					return;
-				}
-				// Refresh activity on dispatch: sendCommand acks instantly for
-				// prompt/steer (the turn then streams as events, which also refresh
-				// lastActivity via the forwarder), so this closes the brief gap
-				// before the first streamed event. We deliberately do NOT toggle
-				// `busy` here — the authoritative liveness signal is the event
-				// stream, and toggling busy around an instant ack would be wrong.
-				entry.lastActivity = Date.now();
-				try {
-					// Local STT (cli voice provider) can spend a minute loading a
-					// model on first use — give dictation room beyond the 30s default.
-					const cmdTimeout =
-						(request.frame as { type?: string })?.type === "transcribe_audio" ? 150_000 : undefined;
-					const response = await entry.client.sendCommand(request.frame as RpcCommand, cmdTimeout);
-					// Route the response back to THIS channel only (events fan out separately).
-					write({ type: "rpc", workspace: cwd, frame: response as GatewayRpcFrame });
-				} catch (error) {
-					// Keep the original frame id so the client resolves its pending
-					// request instead of spinning until its own timeout — a bare
-					// { type: "error" } frame has no id and matches nothing.
-					const frameId = (request.frame as { id?: string })?.id;
-					write({
-						type: "rpc",
-						workspace: cwd,
-						frame: {
-							id: frameId,
-							type: "response",
-							command: (request.frame as { type?: string })?.type,
-							success: false,
-							error: error instanceof Error ? error.message : String(error),
-						} as unknown as GatewayRpcFrame,
-					});
-				}
+				const response = await routeChannelRpc(request.workspace, request.frame, request.headless);
+				write({ type: "rpc", workspace: response.workspace, frame: response.frame });
 				return;
 			}
 			case "list": {

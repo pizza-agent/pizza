@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { childEnv, loadChannelConfigs, validate } from "../packages/gateway/channel-supervisor.js";
+import { adapterProxyEnv, loadChannelConfigs, validate } from "../packages/gateway/channel-supervisor.js";
 import type { ChannelConfig } from "../packages/channels/index.js";
 
 const dirs: string[] = [];
@@ -23,31 +23,19 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("channel supervisor childEnv", () => {
-	it("injects the configured proxy from settings.json", () => {
+describe("channel supervisor adapterProxyEnv", () => {
+	it("mirrors the configured proxy from settings.json into all common names", () => {
 		const dir = agentDir();
 		writeFileSync(join(dir, "settings.json"), JSON.stringify({ network: { proxy: "http://proxy.local:8080" } }));
-		const saved = { ...process.env };
-		for (const k of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) delete process.env[k];
-		try {
-			const env = childEnv(dir);
-			expect(env.HTTPS_PROXY).toBe("http://proxy.local:8080");
-			expect(env.http_proxy).toBe("http://proxy.local:8080");
-		} finally {
-			process.env = saved;
-		}
+		const env = adapterProxyEnv(dir);
+		expect(env.HTTPS_PROXY).toBe("http://proxy.local:8080");
+		expect(env.http_proxy).toBe("http://proxy.local:8080");
 	});
 
-	it('strips inherited proxy vars when the proxy is "off"', () => {
+	it('returns nothing to inject when the proxy is "off" or unset', () => {
 		const dir = agentDir();
 		writeFileSync(join(dir, "settings.json"), JSON.stringify({ network: { proxy: "off" } }));
-		const saved = { ...process.env };
-		process.env.HTTPS_PROXY = "http://leak:1";
-		try {
-			expect(childEnv(dir).HTTPS_PROXY).toBeUndefined();
-		} finally {
-			process.env = saved;
-		}
+		expect(adapterProxyEnv(dir)).toEqual({});
 	});
 });
 

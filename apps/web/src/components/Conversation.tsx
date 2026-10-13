@@ -57,6 +57,10 @@ export interface TimelineItem {
 	};
 	/** Unix ms timestamp when the message was emitted. */
 	timestamp?: number;
+	/** Unix ms when the tool started executing (TOOL_EXECUTION_START / upsert). */
+	toolStartedAt?: number;
+	/** Final execution time from TOOL_EXECUTION_END (`duration_ms`). */
+	toolDurationMs?: number;
 	/** Parsed cross-workspace agent message (rendered as a dedicated card). */
 	agentMessage?: AgentMessageInfo;
 }
@@ -324,6 +328,24 @@ function ToolImage({ src, index, count }: { src: string; index: number; count: n
 	);
 }
 
+/** Compact duration: "1.2s" under a minute, "1m 23s" above it. */
+function formatDuration(ms: number): string {
+	if (ms < 1000) return `${Math.round(ms)}ms`;
+	const total = Math.round(ms / 100) / 10;
+	if (total < 60) return `${total}s`;
+	return `${Math.floor(total / 60)}m ${Math.round(total % 60)}s`;
+}
+
+/** Ticking elapsed-time badge for a running tool (re-renders every 500ms). */
+const Elapsed = memo(function Elapsed({ since }: { since: number }) {
+	const [, tick] = useState(0);
+	useEffect(() => {
+		const t = setInterval(() => tick((n) => n + 1), 500);
+		return () => clearInterval(t);
+	}, []);
+	return <>{formatDuration(Math.max(0, Date.now() - since))}</>;
+});
+
 const ToolCard = memo(function ToolCard({
 	item,
 	onResolveApproval,
@@ -412,6 +434,13 @@ const ToolCard = memo(function ToolCard({
 							{running && <Loader2 className="h-3 w-3 animate-spin" />}
 							{item.isError && <AlertCircle className="h-3 w-3" />}
 							{item.status}
+							{item.toolDurationMs !== undefined ? (
+								<span className="text-muted/60 tabular-nums">· {formatDuration(item.toolDurationMs)}</span>
+							) : running && item.toolStartedAt !== undefined ? (
+								<span className="text-muted/60 tabular-nums">
+									· <Elapsed since={item.toolStartedAt} />
+								</span>
+							) : null}
 						</span>
 						{(command || item.toolResult) && (
 							<button

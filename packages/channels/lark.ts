@@ -132,8 +132,51 @@ export default {
 			void lark.addReaction(msg.messageId, "Get").catch(() => {});
 
 			try {
-				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName));
-				if (!reply.trim()) return;
+				// Stream the reply: post a preview message and edit it as
+				// text_delta chunks arrive (im.v1.message.update is text-only,
+				// so the preview is plain text and gets replaced by the final
+				// markdown/audio send). Throttled to stay under edit limits.
+				let previewId: string | undefined;
+				let lastEdit = 0;
+				let queued: ReturnType<typeof setTimeout> | undefined;
+				const onPartial = (partial: string): void => {
+					const apply = (): void => {
+						lastEdit = Date.now();
+						const body = partial.slice(0, 3800) || "…";
+						const done = (async () => {
+							if (previewId === undefined) {
+								const sent = await lark.send(chatId, { text: body }, sendOpts(msg));
+								previewId = sent.messageId;
+							} else {
+								await lark.editMessage(previewId, body);
+							}
+						})();
+						void done.catch(() => {});
+					};
+					const wait = 900 - (Date.now() - lastEdit);
+					if (wait <= 0) {
+						clearTimeout(queued);
+						queued = undefined;
+						apply();
+					} else if (!queued) {
+						queued = setTimeout(() => {
+							queued = undefined;
+							apply();
+						}, wait);
+					}
+				};
+				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName), { onPartial });
+				clearTimeout(queued);
+				// The preview is plain text — the final send carries markdown /
+				// audio, so drop the preview once the real reply is out.
+				const dropPreview = (): void => {
+					if (previewId) void lark.recallMessage(previewId).catch(() => {});
+					previewId = undefined;
+				};
+				if (!reply.trim()) {
+					dropPreview();
+					return;
+				}
 
 				// Outbound voice: <speak>…</speak> segments, or the whole reply when
 				// the configured mode says this turn should be spoken.
@@ -146,6 +189,7 @@ export default {
 						const audioBuf = await voice.speak(speakable);
 						await lark.send(chatId, { audio: { source: audioBuf } }, sendOpts(msg));
 						spoke = true;
+						if (!stripSpeakTags(reply).trim()) dropPreview();
 						console.log(`[lark] voice reply sent (${audioBuf.length} bytes)`);
 					} catch (err) {
 						console.error(`[lark] voice reply failed for ${chatId}:`, errorMessage(err));
@@ -159,6 +203,7 @@ export default {
 				if (cleaned && (!spoke || cleaned !== speakable)) {
 					await lark.send(chatId, { markdown: cleaned }, sendOpts(msg));
 				}
+				dropPreview();
 			} catch (err) {
 				console.error(`[lark] deliver failed for ${chatId}→${config.workspace}:`, errorMessage(err));
 				await lark.send(chatId, { text: failureReply(err) }, sendOpts(msg)).catch((sendErr) => {

@@ -31,6 +31,11 @@ export class ToolExecutionComponent extends Container {
 	private ui: TUI;
 	private cwd: string;
 	private executionStarted = false;
+	/** Wall-clock start / finish for the duration suffix in the header. */
+	private startedAt?: number;
+	private durationMs?: number;
+	/** Turn ended before TOOL_EXECUTION_END arrived — settle as interrupted. */
+	private interrupted = false;
 	private argsComplete = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -185,6 +190,7 @@ export class ToolExecutionComponent extends Container {
 
 	markExecutionStarted(): void {
 		this.executionStarted = true;
+		this.startedAt ??= Date.now();
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -205,8 +211,32 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		if (!isPartial && this.startedAt !== undefined) {
+			this.durationMs = Date.now() - this.startedAt;
+		}
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
+	}
+
+	/** Set explicit duration (event payload wins over the wall clock). */
+	setDurationMs(ms: number): void {
+		this.durationMs = ms;
+		this.updateDisplay();
+	}
+
+	/**
+	 * Settle a tool whose turn ended without a result (abort, shutdown, lost
+	 * event): freeze the timer and mark it interrupted so the card stops
+	 * showing "Running..." forever.
+	 */
+	markInterrupted(): void {
+		if (this.result !== undefined || this.interrupted) return;
+		this.interrupted = true;
+		if (this.startedAt !== undefined && this.durationMs === undefined) {
+			this.durationMs = Date.now() - this.startedAt;
+		}
+		this.updateDisplay();
+		this.ui.requestRender();
 	}
 
 	private maybeConvertImagesForKitty(): void {
@@ -397,6 +427,12 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		let text = theme.fg("toolTitle", theme.bold(this.toolName));
+		if (this.interrupted) {
+			text += theme.fg("warning", " · interrupted");
+		}
+		if (this.durationMs !== undefined) {
+			text += theme.fg("muted", ` · ${formatDuration(this.durationMs)}`);
+		}
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;
@@ -407,4 +443,12 @@ export class ToolExecutionComponent extends Container {
 		}
 		return text;
 	}
+}
+
+/** Compact duration: "1.2s" under a minute, "1m 23s" above it. */
+function formatDuration(ms: number): string {
+	if (ms < 1000) return `${Math.round(ms)}ms`;
+	const total = Math.round(ms / 100) / 10;
+	if (total < 60) return `${total}s`;
+	return `${Math.floor(total / 60)}m ${Math.round(total % 60)}s`;
 }

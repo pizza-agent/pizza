@@ -3134,6 +3134,12 @@ export class InteractiveMode {
           this.streamingComponent = undefined;
           this.streamingMessage = undefined;
         }
+        // Tools left RUNNING when the turn ends never get a tool_finished
+        // (abort, gateway stop, lost event) — settle them as interrupted so
+        // their cards stop spinning.
+        for (const [, component] of this.pendingTools.entries()) {
+          component.markInterrupted();
+        }
         this.pendingTools.clear();
         // Surface loop detection to the user so they know why the agent stopped.
         if (event.reason === "loop_detected") {
@@ -3312,6 +3318,9 @@ export class InteractiveMode {
             details: event.details,
             isError: event.isError,
           });
+          if (typeof event.durationMs === "number") {
+            toolComponent.setDurationMs(event.durationMs);
+          }
           this.pendingTools.delete(event.toolCallId);
           this.ui.requestRender();
         }

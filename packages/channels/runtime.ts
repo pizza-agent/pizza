@@ -21,14 +21,7 @@
 
 import https from "node:https";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import {
-	GatewayClient,
-	GatewayTransport,
-	ensureGateway,
-	gatewaySocketPath,
-	type ChannelEvent,
-	type MessageSource,
-} from "../gateway/index.js";
+import { type ChannelEvent, type ChannelFrame, type MessageSource } from "../gateway/index.js";
 import type { ChannelType } from "./types.js";
 
 export type { MessageSource } from "../gateway/index.js";
@@ -44,12 +37,56 @@ export function provenance(type: ChannelType, id: string, name?: string): Messag
 export interface ChannelRuntimeOptions {
 	/** Pizza agent dir (where the gateway keeps its state). */
 	agentDir: string;
-	/** Gateway socket path (default gatewaySocketPath()). */
-	socketPath?: string;
-	/** Connect timeout ms (default 5000). */
-	connectTimeout?: number;
+	/**
+	 * In-process gateway bridge — required. Channel adapters always run
+	 * inside the gateway daemon; the bridge is the direct-call equivalent of
+	 * the old socket transport.
+	 */
+	bridge: ChannelBridge;
 	/** Per-deliver tell timeout ms. 0 (default) disables the timeout so long turns still get a reply. */
 	tellTimeoutMs?: number;
+	/**
+	 * Called when the adapter hits a fatal platform failure mid-run (e.g. a
+	 * dead polling loop). The gateway's supervisor passes a handler that marks
+	 * the adapter crashed and schedules a respawn — adapters must NEVER
+	 * process.exit inside the daemon.
+	 */
+	onFatal: (error: unknown) => void;
+}
+
+/** Options for {@link ChannelRuntime.deliver}. */
+export interface DeliverOptions {
+	/**
+	 * Called with the accumulated reply text as the agent streams it
+	 * (AGENT_MESSAGE_CHUNK text deltas). Adapters use it for live message
+	 * edits; it fires only between OUR user message and the turn's idle event,
+	 * so partials can't bleed across delivers. Errors thrown here are ignored
+	 * (a failed edit must not break delivery).
+	 */
+	onPartial?: (text: string) => void;
+}
+
+/**
+ * The slice of the gateway a channel adapter needs, in-process. Implemented
+ * by the gateway's channel host (see gateway-server.ts channelHost) so the
+ * SAME deliver/reply logic works whether the adapter is a subprocess talking
+ * over the socket or code running inside the daemon.
+ *
+ * Mirrors the socket protocol exactly: `tell` returns a delivery ack
+ * ({messageId}), events stream via onEvent after `attach`, and
+ * `sendToWorkspace` forwards a Layer-0 command and returns its response.
+ */
+export interface ChannelBridge {
+	tell(to: string, message: string, from: MessageSource): Promise<{ messageId: string }>;
+	attach(workspace: string, opts?: { headless?: boolean }): Promise<string>;
+	detach(workspace: string): Promise<void>;
+	onEvent(listener: (event: ChannelEvent, workspace: string) => void): () => void;
+	sendToWorkspace(
+		workspace: string,
+		frame: ChannelFrame,
+		opts?: { headless?: boolean },
+	): Promise<Record<string, unknown>>;
+	close?(): Promise<void>;
 }
 
 /** Events that mark the true end of an agent turn. AGENT_TURN_COMPLETED is terminal; AGENT_TURN_END fires after every tool-call round and must NOT count. */
@@ -59,12 +96,12 @@ function isIdleEvent(event: ChannelEvent): boolean {
 }
 
 /**
- * Two long-lived gateway connections shared by every inbound message:
+ * One in-process {@link ChannelBridge} shared by every inbound message:
  *
- *   - a `GatewayClient` carrying `tell` (provenance envelope + per-agent
- *     serialization, acknowledged with a `messageId`), and
- *   - a `GatewayTransport` attached to each target workspace, streaming the
- *     agent's events and answering `get_last_assistant_text` rpc calls.
+ *   - `tell` delivers the prompt (provenance envelope + per-agent
+ *     serialization, acknowledged with a `messageId`),
+ *   - `attach`/`onEvent` stream the agent's events, and `sendToWorkspace`
+ *     answers `get_last_assistant_text` rpc calls.
  *
  * `tell` is a delivery ack, not a synchronous reply — the agent's reply is
  * captured by watching the event stream: our prompt lands as a USER_MESSAGE
@@ -77,13 +114,15 @@ function isIdleEvent(event: ChannelEvent): boolean {
  * (queued — the agent processes one prompt at a time); delivers to DIFFERENT
  * workspaces run in parallel.
  */
+
 export class ChannelRuntime {
-	private readonly client: GatewayClient;
-	private readonly transport: GatewayTransport;
+	private readonly bridge: ChannelBridge;
+	private readonly onFatal: (error: unknown) => void;
 	private readonly agentDir: string;
-	private readonly socketPath: string;
 	private readonly tellTimeoutMs: number;
 	private connected = false;
+	/** Drop the bridge's event subscription on stop(). */
+	private unsubEvents?: () => void;
 	/** workspace input → in-flight attach (resolves to the canonical cwd). */
 	private readonly attached = new Map<string, Promise<string>>();
 	/** cwd → recent events, so a turn that beats the tell ack is still matched. */
@@ -94,10 +133,17 @@ export class ChannelRuntime {
 	constructor(options: ChannelRuntimeOptions) {
 		this.agentDir = options.agentDir;
 		this.tellTimeoutMs = options.tellTimeoutMs ?? 0;
-		this.socketPath = options.socketPath ?? gatewaySocketPath();
-		const connectTimeout = options.connectTimeout ?? 5_000;
-		this.client = new GatewayClient({ socketPath: this.socketPath, connectTimeout });
-		this.transport = new GatewayTransport({ socketPath: this.socketPath, connectTimeout });
+		this.bridge = options.bridge;
+		this.onFatal = options.onFatal;
+	}
+
+	/**
+	 * Report a fatal adapter failure — surfaces to the supervisor which marks
+	 * the channel crashed and schedules a respawn. Never let one channel take
+	 * the gateway down.
+	 */
+	reportFatal(error: unknown): void {
+		this.onFatal(error);
 	}
 
 	/** Pizza agent dir — adapters read settings.json (voice config etc.) from here. */
@@ -105,13 +151,10 @@ export class ChannelRuntime {
 		return this.agentDir;
 	}
 
-	/** Ensure the gateway daemon is up, then connect both sockets. Call once at startup. */
+	/** Subscribe to the workspace event stream. Call once at startup. */
 	async start(): Promise<void> {
 		if (this.connected) return;
-		await ensureGateway(this.agentDir, this.socketPath);
-		await this.client.connect();
-		await this.transport.connect();
-		this.transport.onEvent((event, workspace) => {
+		this.unsubEvents = this.bridge.onEvent((event, workspace) => {
 			const buf = this.recentEvents.get(workspace) ?? [];
 			buf.push(event);
 			if (buf.length > 128) buf.shift();
@@ -125,7 +168,7 @@ export class ChannelRuntime {
 	private attachWorkspace(workspace: string): Promise<string> {
 		let pending = this.attached.get(workspace);
 		if (!pending) {
-			pending = this.transport.attach(workspace, { headless: true });
+			pending = this.bridge.attach(workspace, { headless: true });
 			pending.catch(() => this.attached.delete(workspace));
 			this.attached.set(workspace, pending);
 		}
@@ -133,17 +176,15 @@ export class ChannelRuntime {
 	}
 
 	/** Deliver `text` to a workspace agent and await its reply. */
-	async deliver(workspace: string, text: string, source: MessageSource): Promise<string> {
+	async deliver(workspace: string, text: string, source: MessageSource, opts?: DeliverOptions): Promise<string> {
 		if (!this.connected) throw new Error("ChannelRuntime not started — call start() first");
 		const cwd = await this.attachWorkspace(workspace);
-		const waiter = this.expectReply(cwd);
+		const waiter = this.expectReply(cwd, opts?.onPartial);
 		try {
-			const ack = await this.client.tell(workspace, text, source);
-			// Legacy gateway that still answers synchronously with the reply text.
-			if ("reply" in ack && typeof ack.reply === "string") return ack.reply;
+			const ack = await this.bridge.tell(workspace, text, source);
 			waiter.setMessageId(ack.messageId);
 			await waiter.done;
-			const response = await this.transport.sendToWorkspace(
+			const response = await this.bridge.sendToWorkspace(
 				cwd,
 				{ id: `ch_${++this.rpcSeq}`, type: "get_last_assistant_text" },
 				{ headless: true },
@@ -164,7 +205,10 @@ export class ChannelRuntime {
 	 * idle event — i.e. the turn our message started (or was queued into via
 	 * follow-up) has settled. Rejects on tellTimeoutMs.
 	 */
-	private expectReply(cwd: string): {
+	private expectReply(
+		cwd: string,
+		onPartial?: (text: string) => void,
+	): {
 		done: Promise<void>;
 		setMessageId: (id: string) => void;
 		dispose: () => void;
@@ -178,6 +222,49 @@ export class ChannelRuntime {
 			resolveDone = resolve;
 			rejectDone = reject;
 		});
+		// Events already processed — the buffered-event replay below passes
+		// object-identical events the live listener may have seen, and text
+		// deltas are additive so double-counting corrupts the partial buffer.
+		const seen = new Set<ChannelEvent>();
+		/** text-delta accumulation per contentIndex (a turn can hold several
+		 *  text blocks; a new AGENT_MESSAGE_START resets the buffer). */
+		let partial = "";
+		const emitPartial = (event: ChannelEvent): void => {
+			if (!onPartial) return;
+			if (event.type === "AGENT_MESSAGE_START") {
+				partial = "";
+				return;
+			}
+			if (event.type !== "AGENT_MESSAGE_CHUNK") return;
+			const chunk = (event.payload as { chunk?: { kind?: string; delta?: string } } | undefined)?.chunk;
+			if (chunk?.kind !== "text_delta" || typeof chunk.delta !== "string") return;
+			partial += chunk.delta;
+			try {
+				onPartial(partial);
+			} catch {
+				/* a failed live-edit must not break delivery */
+			}
+		};
+		const process = (event: ChannelEvent): void => {
+			if (seen.has(event) || settled) return;
+			seen.add(event);
+			// The gateway broadcasts this when a queued tell could not be
+			// delivered — without it we'd hang forever waiting for a
+			// USER_MESSAGE that never comes.
+			if (event.type === "TELL_DELIVERY_FAILED") {
+				const payload = event.payload as { messageId?: string; error?: string } | undefined;
+				if (payload?.messageId === messageId) {
+					finish(new Error(payload.error ?? "tell delivery failed"));
+				}
+				return;
+			}
+			if (!sawOwnMessage) {
+				if (event.type === "USER_MESSAGE" && containsId(event)) sawOwnMessage = true;
+				return;
+			}
+			emitPartial(event);
+			if (isIdleEvent(event)) finish();
+		};
 		const containsId = (event: ChannelEvent): boolean =>
 			messageId !== null && JSON.stringify(event).includes(messageId);
 		const finish = (err?: Error): void => {
@@ -189,12 +276,8 @@ export class ChannelRuntime {
 			else resolveDone();
 		};
 		const listener = (event: ChannelEvent, ws: string): void => {
-			if (ws !== cwd || settled) return;
-			if (!sawOwnMessage) {
-				if (event.type === "USER_MESSAGE" && containsId(event)) sawOwnMessage = true;
-				return;
-			}
-			if (isIdleEvent(event)) finish();
+			if (ws !== cwd) return;
+			process(event);
 		};
 		const timer =
 			this.tellTimeoutMs > 0
@@ -212,14 +295,8 @@ export class ChannelRuntime {
 				// too — may have been broadcast before the tell ack arrived on the
 				// other socket. Replay the buffered events to catch up.
 				for (const event of this.recentEvents.get(cwd) ?? []) {
-					if (!sawOwnMessage) {
-						if (event.type === "USER_MESSAGE" && containsId(event)) sawOwnMessage = true;
-						continue;
-					}
-					if (isIdleEvent(event)) {
-						finish();
-						return;
-					}
+					process(event);
+					if (settled) return;
 				}
 			},
 			dispose: () => {
@@ -229,10 +306,11 @@ export class ChannelRuntime {
 		};
 	}
 
-	/** Drop both gateway connections. */
+	/** Drop the event subscription. */
 	async stop(): Promise<void> {
 		if (!this.connected) return;
-		await Promise.all([this.client.disconnect(), this.transport.close()]);
+		this.unsubEvents?.();
+		this.unsubEvents = undefined;
 		this.attached.clear();
 		this.connected = false;
 	}
@@ -254,6 +332,30 @@ export function proxyFromEnv(): string | undefined {
 /** Hide credentials embedded in a proxy URL before logging it. */
 export function redactProxy(url: string): string {
 	return url.replace(/\/\/[^/@]*@/, "//***@");
+}
+
+/** Guard so a second adapter can't double-wrap fetch. */
+let fetchWrappedForProxy: string | undefined;
+
+/**
+ * Route `fetch()` through the proxy by injecting Bun's explicit `proxy`
+ * request option. Under Bun, proxy env vars are snapshot at process start —
+ * an env var injected later by the supervisor never reaches fetch — and
+ * platform SDKs use the global fetch, which undici's global dispatcher does
+ * not drive under Bun either. Wrapping fetch is deterministic in every
+ * runtime: Bun honors `init.proxy`, undici fetch ignores unknown init keys
+ * (Node mode keeps working via the refreshed EnvHttpProxyAgent).
+ *
+ * Idempotent per proxy URL; returns true if the patch is (now) active.
+ */
+export function routeFetchThroughProxy(proxyUrl: string): boolean {
+	if (fetchWrappedForProxy === proxyUrl) return true;
+	const realFetch = globalThis.fetch.bind(globalThis);
+	const wrapped = ((input: Parameters<typeof fetch>[0], init?: RequestInit & { proxy?: string }) =>
+		realFetch(input, { ...init, proxy: proxyUrl } as RequestInit)) as typeof fetch;
+	globalThis.fetch = wrapped;
+	fetchWrappedForProxy = proxyUrl;
+	return true;
 }
 
 /**

@@ -45,7 +45,6 @@ import { handleBuiltinCommand } from "./builtin-cli.js";
 import { handleUpdateCommand } from "./update-cli.js";
 import { checkForUpdate, formatUpdateNotice } from "./core/ops/update-checker.js";
 import { handleGatewayCommand } from "./gateway-cli.js";
-import { handleChannelCommand } from "./channel-cli.js";
 import { handleAuthCommand } from "./auth-cli.js";
 import { isLocalPath } from "./utils/paths.js";
 
@@ -457,10 +456,6 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
-	if (await handleChannelCommand(args)) {
-		return;
-	}
-
 	if (await handleAuthCommand(args)) {
 		return;
 	}
@@ -486,6 +481,36 @@ export async function main(args: string[], options?: MainOptions) {
 	if (appMode === "gateway") {
 		const { createGatewayServer, gatewaySocketPath } = await import("../packages/gateway/index.js");
 		const agentDir = getAgentDir();
+		// The daemon is spawned detached with stdio ignored — mirror stderr to a
+		// logfile so adapter/console diagnostics (inline channels log here) are
+		// reachable. Errors writing to the log must never break the daemon.
+		{
+			const { appendFileSync } = await import("node:fs");
+			const { join } = await import("node:path");
+			const { inspect } = await import("node:util");
+			const logPath = join(agentDir, "gateway.log");
+			const append = (line: string): void => {
+				try {
+					appendFileSync(logPath, line.endsWith("\n") ? line : line + "\n");
+				} catch { /* log sink must never throw */ }
+			};
+			// stderr.write — crash handlers and direct writes go through this.
+			const realStderrWrite = process.stderr.write.bind(process.stderr);
+			process.stderr.write = ((chunk: unknown, ...rest: unknown[]) => {
+				append(typeof chunk === "string" ? chunk : String(chunk));
+				return (realStderrWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+			}) as typeof process.stderr.write;
+			// console.log writes to stdout — under Bun it bypasses
+			// process.stdout.write entirely (native fd), so wrap the console
+			// methods themselves for adapter diagnostics.
+			for (const method of ["log", "info", "warn", "error", "debug"] as const) {
+				const real = console[method].bind(console);
+				console[method] = ((...args: unknown[]) => {
+					append(args.map((a) => (typeof a === "string" ? a : inspect(a))).join(" "));
+					return real(...args);
+				}) as typeof console.log;
+			}
+		}
 		// The socket path is set by ensureGateway() via PIZZA_GATEWAY_SOCKET, or
 		// falls back to the standard location.
 		const socketPath = process.env.PIZZA_GATEWAY_SOCKET ?? gatewaySocketPath();
@@ -532,6 +557,9 @@ export async function main(args: string[], options?: MainOptions) {
 		// silently take the whole pool down with it.
 		installCrashHandlers({
 			label: "gateway",
+			// Channel adapters run third-party SDKs inside this process — an
+			// uncaught throw from a chat SDK must not kill the agent pool.
+			uncaught: "continue",
 			onFatal: () => server.stop(),
 		});
 		try {

@@ -144,7 +144,14 @@ export default {
 			defaultWorkspace: config.workspace,
 			deliver: (workspace, message, source) => runtime.deliver(workspace, message, source),
 		});
-		await new Promise<void>((resolve) => server.listen(port, host, resolve));
+		// 'error' without a listener is an uncaughtException — inside the
+		// daemon that kills the whole gateway. Report it so the supervisor
+		// can respawn (EADDRINUSE → port may free on next attempt).
+		server.on("error", (err) => runtime.reportFatal(err));
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(port, host, resolve);
+		});
 		console.log(`[webhook] listening on http://${host}:${port} → workspace "${config.workspace}"`);
 		return async () => await new Promise<void>((resolve) => server.close(() => resolve()));
 	},

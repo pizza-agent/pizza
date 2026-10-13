@@ -10,7 +10,8 @@
  */
 
 import type { Attachment, Message } from "discord.js";
-import { ANSWER_ALL, chunk, failureReply, errorMessage, provenance, proxyFromEnv, redactProxy, routeHttpsThroughProxy } from "./runtime.js";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { ANSWER_ALL, chunk, failureReply, errorMessage, provenance, proxyFromEnv, redactProxy, routeFetchThroughProxy, routeHttpsThroughProxy } from "./runtime.js";
 import type { ChannelAdapter } from "./types.js";
 import { cacheClipForPlayback, createVoicePipeline, voicePrompt } from "./voice.js";
 
@@ -42,7 +43,25 @@ export default {
 		const proxy = proxyFromEnv();
 		if (proxy) {
 			routeHttpsThroughProxy(proxy);
+			routeFetchThroughProxy(proxy);
 			console.log(`[discord] routing API+gateway via proxy ${redactProxy(proxy)}`);
+			// Under Bun, discord.js switches to globalThis.WebSocket — which
+			// honors NEITHER proxy env vars nor the https.request patch (the
+			// socket then dies on networks that can't reach Discord directly).
+			// Swap in the `ws` package with an injected proxy agent before the
+			// SDK loads so the shard connects through the proxy.
+			if ((process.versions as Record<string, string | undefined>).bun) {
+				const wsModule = await import("ws");
+				const WsCtor = (wsModule as unknown as { WebSocket?: typeof import("ws").WebSocket }).WebSocket ??
+					(wsModule.default as unknown as typeof import("ws").WebSocket);
+				const agent = new HttpsProxyAgent(proxy);
+				class ProxiedWebSocket extends WsCtor {
+					constructor(url: string | URL, protocols?: string | string[], options?: Record<string, unknown>) {
+						super(url, protocols as string[], { ...(options as object), agent } as import("ws").ClientOptions);
+					}
+				}
+				globalThis.WebSocket = ProxiedWebSocket as unknown as typeof WebSocket;
+			}
 		}
 
 		const { Client, GatewayIntentBits } = await import("discord.js");
@@ -56,6 +75,11 @@ export default {
 		});
 
 		discord.once("ready", () => console.log(`[discord] logged in as ${discord.user?.tag}`));
+		// The adapter runs inside the gateway daemon: an 'error' event with no
+		// listener becomes an uncaughtException and takes the whole process —
+		// and every pooled agent — down. Log and let the shard manager retry.
+		discord.on("error", (err) => console.error("[discord] client error:", errorMessage(err)));
+		discord.on("shardError", (err) => console.error("[discord] shard error:", errorMessage(err)));
 
 		// Voice pipeline — no-op unless settings.json has a `voice` section.
 		const voice = createVoicePipeline(runtime.dir);
@@ -124,7 +148,20 @@ export default {
 			}
 		});
 
-		await discord.login(config.token);
+		try {
+			await discord.login(config.token);
+		} catch (err) {
+			// Surface the full failure chain to gateway.log — a bare
+			// "socket connection closed" tells us nothing about which leg
+			// (REST vs WS) failed or how.
+			const cause = (err as { cause?: unknown } | null)?.cause;
+			console.error(
+				`[discord] login failed: ${errorMessage(err)}`,
+				cause ? `| cause: ${errorMessage(cause)}` : "",
+				(err as Error)?.stack ? `| ${(err as Error).stack!.split("\n").slice(1, 4).join(" ← ").trim()}` : "",
+			);
+			throw err;
+		}
 		return async () => {
 			discord.removeAllListeners();
 			await discord.destroy();

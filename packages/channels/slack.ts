@@ -75,6 +75,34 @@ export default {
 			...(proxyAgent ? { agent: proxyAgent } : {}),
 		});
 
+		// Inside the daemon an unhandled adapter error is an uncaughtException —
+		// bolt's app.error consumes listener/receiver errors so they can't
+		// kill the gateway (and every pooled agent with it).
+		app.error(async (err) => {
+			console.error("[slack] app error:", errorMessage(err));
+		});
+		// @slack/socket-mode drives a finity state machine that THROWS
+		// synchronously on unhandled events (e.g. a 'server explicit
+		// disconnect' arriving mid-'connecting' during proxy reconnects).
+		// That throw escapes through the ws callback → uncaughtException →
+		// dead gateway. Wrap handle() so the SDK's own transition bug can't
+		// crash the daemon; the client recovers via its reconnect timers.
+		{
+			type SM = { handle?: (event: string, payload?: unknown) => unknown };
+			const sm = (app as unknown as { receiver?: { client?: { stateMachine?: SM } } }).receiver?.client?.stateMachine;
+			if (sm && typeof sm.handle === "function") {
+				const orig = sm.handle.bind(sm);
+				sm.handle = (event: string, payload?: unknown) => {
+					try {
+						return orig(event, payload);
+					} catch (err) {
+						console.error(`[slack] ignored unhandled state-machine event '${event}':`, errorMessage(err));
+						return undefined;
+					}
+				};
+			}
+		}
+
 		// Voice pipeline — no-op unless settings.json has a `voice` section.
 		const voice = createVoicePipeline(runtime.dir);
 

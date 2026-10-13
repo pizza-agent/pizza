@@ -271,8 +271,10 @@ describe("gateway tell provenance", () => {
 		expect(JSON.parse(await first).ok).toBe(true);
 		expect(fake.received).toHaveLength(1);
 
-		// The second tell must wait for the slot rather than racing the turn
-		// (an overlapping prompt is refused by the agent and would be lost).
+		// The second tell is ACKED immediately (the ack means "accepted for
+		// delivery", not "turn started") — but the agent must not see the
+		// prompt until the held turn finishes (an overlapping prompt is
+		// refused by the agent and would be lost).
 		let secondSettled = false;
 		const second = sendAndWait(server!.socketPath, {
 			type: "tell",
@@ -286,14 +288,17 @@ describe("gateway tell provenance", () => {
 			return r;
 		});
 		await new Promise((r) => setTimeout(r, 50));
-		expect(secondSettled).toBe(false);
+		expect(secondSettled).toBe(true);
 		expect(fake.received).toHaveLength(1);
 
-		// Once the first turn settles, the queued tell is delivered.
+		// Once the first turn settles, the queued tell is delivered — the ack
+		// already resolved; wait for the background delivery to reach the agent.
 		fake.holdTurn = false;
 		fake.finishTurn();
 		expect(JSON.parse(await second).ok).toBe(true);
-		expect(fake.received).toHaveLength(2);
+		await expect
+			.poll(() => fake.received.length, { timeout: 2000 })
+			.toBe(2);
 		expect(fake.received[1]).toContain("second");
 	});
 
