@@ -183,9 +183,9 @@ function PetFloat() {
 					{noPet ? "no pet · /pet adopt" : `${effectiveMeta?.name ?? "pet"} · Lv.${effectiveMeta?.level ?? 1}`}
 				</div>
 				{showChat && !noPet && (
-					<ChatPill input={input} setInput={setInput} onSend={sendPrompt} busy={busy} />
+					<ChatPill input={input} setInput={setInput} onSend={sendPrompt} />
 				)}
-				{!meta && lines && lines.length > 0 && (
+				{!effectiveMeta && lines && lines.length > 0 && (
 					<pre style={asciiStyle}>{lines.join("\n")}</pre>
 				)}
 			</div>
@@ -200,12 +200,10 @@ function ChatPill({
 	input,
 	setInput,
 	onSend,
-	busy,
 }: {
 	input: string;
 	setInput: (v: string) => void;
 	onSend: () => void;
-	busy: boolean;
 }) {
 	const [recording, setRecording] = useState(false);
 	const [transcribing, setTranscribing] = useState(false);

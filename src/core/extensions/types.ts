@@ -1229,6 +1229,13 @@ export interface ExtensionAPI {
 	 */
 	registerSettingsItem(item: ExtensionSettingsItem): void;
 
+	/**
+	 * Register a menu contribution for rich frontends (desktop GUI). The menu
+	 * descriptor must be serializable — items trigger slash commands or
+	 * frontend commands rather than holding component callbacks.
+	 */
+	registerMenu(menu: ExtensionMenu): void;
+
 	// =========================================================================
 	// Actions
 	// =========================================================================
@@ -1626,6 +1633,7 @@ export interface Extension {
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	settingsItems: Map<string, RegisteredExtensionSettingsItem>;
+	menus: Map<string, RegisteredExtensionMenu>;
 }
 
 /**
@@ -1653,6 +1661,51 @@ export interface ExtensionSettingsItem {
 		done: (selectedValue?: string, options?: { navigateTo?: string }) => void,
 		ctx: ExtensionContext,
 	) => Component;
+}
+
+/**
+ * A menu an extension contributes to rich frontends (the desktop GUI renders
+ * these as menu entries in the app chrome; ignored by the TUI). Everything
+ * here must serialize over RPC — actions are referenced, not embedded.
+ */
+export interface ExtensionMenu {
+	/** Unique id within this extension. */
+	id: string;
+	/** Row label shown in the menu (e.g. "Pet"). */
+	label: string;
+	/** Secondary line under the label. */
+	description?: string;
+	items: ExtensionMenuItem[];
+}
+
+export interface ExtensionMenuItem {
+	/** Unique id within the menu. */
+	id: string;
+	/** Row label. */
+	label: string;
+	/** Secondary line under the label. */
+	description?: string;
+	/** Right-side value text, evaluated when the menu is fetched (e.g. "Lv.11"). */
+	getValue?(): string;
+	/** Hide the row when this returns false (evaluated per fetch). */
+	visible?(): boolean;
+	/**
+	 * Slash-command text executed when the item is picked (e.g. "/pet feed").
+	 * Steered through the session — resolves to a registered command or,
+	 * failing that, is sent to the agent as a prompt.
+	 */
+	command?: string;
+	/**
+	 * Frontend-level command to invoke instead of `command` — a Tauri command
+	 * name on the desktop (e.g. "toggle_pet_window"). For actions that live
+	 * in app chrome rather than in the agent session.
+	 */
+	uiCommand?: string;
+}
+
+/** ExtensionMenu annotated with its source extension. */
+export interface RegisteredExtensionMenu extends ExtensionMenu {
+	sourceInfo: SourceInfo;
 }
 
 /** ExtensionSettingsItem annotated with its source extension. */

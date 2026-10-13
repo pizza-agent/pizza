@@ -1483,7 +1483,11 @@ pub async fn rpc_command(
 	// the pet lands in the primary session.
 	let cwd = {
 		let active = lock_ok(&state.active);
-		let label = if window_label == PET_WINDOW_LABEL { "main" } else { window_label };
+		let label = if window_label == PET_WINDOW_LABEL {
+			"main"
+		} else {
+			window_label
+		};
 		active.get(label).cloned()
 	};
 	let cwd = cwd.ok_or("No active workspace for this window")?;
@@ -1657,10 +1661,10 @@ fn emit_frame_to_windows(app: &AppHandle, cwd: &str, mut parsed: Value) {
 	// `win.emit` is synchronous cross-process IPC — holding `active` across it
 	// serializes every other command that needs the map and can deadlock with
 	// a busy webview (observed on Windows as an eternal "starting…" splash).
-	let mut labels: Vec<String> = lock_ok(&state.active).keys().cloned().collect();
-	if !labels.iter().any(|l| l == PET_WINDOW_LABEL) {
-		labels.push(PET_WINDOW_LABEL.to_string());
-	}
+	// The pet window is intentionally NOT included — extension_ui_request
+	// frames reach it through emit_to_pet_window above; adding it here would
+	// deliver every frame twice.
+	let labels: Vec<String> = lock_ok(&state.active).keys().cloned().collect();
 	for label in &labels {
 		if let Some(win) = app.get_webview_window(label) {
 			match etype.as_str() {
@@ -1849,7 +1853,6 @@ async fn init_sidecar_via_gateway(
 	Ok(serde_json::json!({}).to_string())
 }
 
-
 /// Window label for the detached floating pet webview.
 pub const PET_WINDOW_LABEL: &str = "pet";
 
@@ -1875,7 +1878,11 @@ fn emit_to_pet_window(app: &AppHandle, frame: &Value) {
 		// Pet released/reset: the extension clears the widget — close the
 		// floating window with it (the save file was already updated, so no
 		// need to touch the floating flag).
-		if frame.get("widgetLines").map(|l| l.is_null()).unwrap_or(true) {
+		if frame
+			.get("widgetLines")
+			.map(|l| l.is_null())
+			.unwrap_or(true)
+		{
 			log_file("emit_to_pet_window: pet widget cleared, auto-closing pet window");
 			close_pet_window_keep_flag(app);
 			return;
@@ -1925,10 +1932,16 @@ pub async fn new_workspace(app: AppHandle) -> Result<String, String> {
 	Ok(label)
 }
 
+/// Serialize open/close of the pet window: maybe_reopen_pet_window and the
+/// auto-open path in emit_to_pet_window can race the first frame — without a
+/// guard both can observe "no window" and double-toggle.
+static PET_WINDOW_TOGGLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Toggle the detached floating pet window (codex-style desktop pet).
 /// Returns "open" or "closed".
 #[tauri::command]
 pub async fn toggle_pet_window(app: AppHandle) -> Result<String, String> {
+	let _guard = lock_ok(&PET_WINDOW_TOGGLE);
 	log_file("toggle_pet_window called");
 	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
 		log_file("toggle_pet_window: closing existing pet window");
@@ -1995,11 +2008,18 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<String, String> {
 fn set_pet_floating_flag(floating: bool) {
 	let Some(home) = home_dir() else { return };
 	let path = home.join(".pizza").join("agent").join("pet.json");
-	let Ok(raw) = std::fs::read_to_string(&path) else { return };
-	let Ok(mut save) = serde_json::from_str::<Value>(&raw) else { return };
+	let Ok(raw) = std::fs::read_to_string(&path) else {
+		return;
+	};
+	let Ok(mut save) = serde_json::from_str::<Value>(&raw) else {
+		return;
+	};
 	if let Some(obj) = save.as_object_mut() {
 		obj.insert("floating".to_string(), Value::Bool(floating));
-		let _ = std::fs::write(&path, serde_json::to_string_pretty(&save).unwrap_or_default());
+		let _ = std::fs::write(
+			&path,
+			serde_json::to_string_pretty(&save).unwrap_or_default(),
+		);
 	}
 }
 
@@ -2009,8 +2029,12 @@ fn set_pet_floating_flag(floating: bool) {
 pub fn maybe_reopen_pet_window(app: &AppHandle) {
 	let Some(home) = home_dir() else { return };
 	let path = home.join(".pizza").join("agent").join("pet.json");
-	let Ok(raw) = std::fs::read_to_string(&path) else { return };
-	let Ok(save) = serde_json::from_str::<Value>(&raw) else { return };
+	let Ok(raw) = std::fs::read_to_string(&path) else {
+		return;
+	};
+	let Ok(save) = serde_json::from_str::<Value>(&raw) else {
+		return;
+	};
 	if save.get("floating").and_then(|v| v.as_bool()) == Some(false) {
 		return;
 	}
@@ -2049,7 +2073,9 @@ pub async fn close_pet_window(app: AppHandle) -> Result<(), String> {
 /// when no workspace session has pushed a frame yet this run.
 #[tauri::command]
 pub fn get_pet_state() -> Result<Value, String> {
-	let Some(home) = home_dir() else { return Ok(Value::Null) };
+	let Some(home) = home_dir() else {
+		return Ok(Value::Null);
+	};
 	let path = home.join(".pizza").join("agent").join("pet.json");
 	match std::fs::read_to_string(&path) {
 		Ok(raw) => serde_json::from_str::<Value>(&raw).map_err(|e| e.to_string()),

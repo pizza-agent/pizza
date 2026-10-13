@@ -550,6 +550,35 @@ export async function getExtensions(): Promise<ExtensionInfo[]> {
 	}
 }
 
+/** A menu item contributed by an extension (see get_extension_menus). */
+export interface ExtensionMenuItemWire {
+	id: string;
+	label: string;
+	description?: string;
+	value?: string;
+	/** Slash command steered into the session when picked (e.g. "/pet feed"). */
+	command?: string;
+	/** Desktop command invoked instead (Tauri command name, e.g. "toggle_pet_window"). */
+	uiCommand?: string;
+}
+
+export interface ExtensionMenuWire {
+	id: string;
+	label: string;
+	description?: string;
+	items: ExtensionMenuItemWire[];
+}
+
+/** Extension-contributed menus for app chrome (sidebar / menus). */
+export async function getExtensionMenus(): Promise<ExtensionMenuWire[]> {
+	try {
+		const r = await sendCommandAwait<{ menus: ExtensionMenuWire[] }>({ type: "get_extension_menus" }, 10000);
+		return r.data?.menus ?? [];
+	} catch {
+		return [];
+	}
+}
+
 /** A theme known to the agent (user dir, project dir, or extension-contributed), as returned by get_themes. */
 export interface WebThemeInfo {
 	name: string;

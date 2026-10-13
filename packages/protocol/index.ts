@@ -357,6 +357,7 @@ export type RpcCommand =
 	| { id?: string; type: "delete_skill"; skillName: string }
 	| { id?: string; type: "install_skill"; source: string; slug: string }
 	| { id?: string; type: "get_extensions" }
+	| { id?: string; type: "get_extension_menus" }
 	| { id?: string; type: "get_themes" }
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
 	| { id?: string; type: "install_extension"; extensionId: string }
@@ -448,6 +449,26 @@ export interface RpcSkillInfo {
 	path: string;
 	/** Where the skill comes from (e.g. "builtin", "local", a package name). */
 	source: string;
+}
+
+/** A menu contributed by an extension, as returned by get_extension_menus. */
+export interface RpcExtensionMenu {
+	id: string;
+	label: string;
+	description?: string;
+	items: RpcExtensionMenuItem[];
+}
+
+export interface RpcExtensionMenuItem {
+	id: string;
+	label: string;
+	description?: string;
+	/** Right-side value text (e.g. "Lv.11"). */
+	value?: string;
+	/** Slash-command text to steer when picked (e.g. "/pet feed"). */
+	command?: string;
+	/** Frontend command to invoke instead (Tauri command name on desktop). */
+	uiCommand?: string;
 }
 
 /** An extension loaded by the agent, as returned by get_extensions. */
@@ -675,6 +696,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
 	| { id?: string; type: "response"; command: "install_skill"; success: true; data: { name: string; path: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
+	| { id?: string; type: "response"; command: "get_extension_menus"; success: true; data: { menus: RpcExtensionMenu[] } }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }

@@ -43,6 +43,7 @@ import type {
 	ProviderConfig,
 	RegisteredBuiltinCommand,
 	RegisteredCommand,
+	RegisteredExtensionMenu,
 	RegisteredExtensionSettingsItem,
 	RegisteredTool,
 	ReplacedSessionContext,
@@ -753,6 +754,17 @@ export class ExtensionRunner {
 			}
 		}
 		return items;
+	}
+
+	/** All extension-contributed menus, in load order. */
+	getMenus(): RegisteredExtensionMenu[] {
+		const menus: RegisteredExtensionMenu[] = [];
+		for (const ext of this.extensions) {
+			for (const menu of ext.menus.values()) {
+				menus.push(menu);
+			}
+		}
+		return menus;
 	}
 
 	getCommand(name: string): ResolvedCommand | undefined {

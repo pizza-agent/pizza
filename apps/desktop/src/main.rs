@@ -89,7 +89,8 @@ fn main() {
 				if label == bridge::PET_WINDOW_LABEL {
 					for l in window.app_handle().webview_windows().keys() {
 						if let Some(w) = window.app_handle().get_webview_window(l) {
-							let _ = w.emit("pet_window_state", serde_json::json!({ "open": false }));
+							let _ =
+								w.emit("pet_window_state", serde_json::json!({ "open": false }));
 						}
 					}
 					return;

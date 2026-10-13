@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { StatusDot, ThemeToggle, Button, MoreMenu, type ContextMenuItem } from "./ui";
+import { ExtensionMenus } from "./ExtensionMenus";
 import { confirmDialog, alertDialog } from "@/lib/confirm";
 import { BrandIcon } from "./BrandIcon";
 import WorkspacePane from "./WorkspacePane";
@@ -409,6 +410,9 @@ export default function Layout({
 						<Button tone="neutral" size="sm" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => onNewWorkspace?.()} className="w-full">{t("layout.newWorkspace")}</Button>
 					</div>
 				)}
+
+				{/* Extension-contributed menus (e.g. the pet companion) */}
+				<ExtensionMenus />
 
 				{/* Plugins nav */}
 				<div className="border-t border-border px-3 pt-2 pb-1">

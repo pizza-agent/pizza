@@ -16,7 +16,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { respondExtensionUi, subscribeExtensionUi } from "@/lib/transport";
-import { isTauri } from "@/lib/utils";
 import { prefillComposer } from "@/lib/composer-prefill";
 import { Button, Modal } from "@/components/ui";
 
@@ -44,7 +43,6 @@ let toastCounter = 0;
 const PET_WIDGET_KEY = "pet-widget";
 
 export function ExtensionUiHost({ workspace }: { workspace: string }) {
-	const [petFloating, setPetFloating] = useState(false);
 	const [dialog, setDialog] = useState<PendingDialog | null>(null);
 	const queueRef = useRef<PendingDialog[]>([]);
 	const [widgets, setWidgets] = useState<Map<string, { lines: string[]; below: boolean }>>(new Map());
@@ -68,19 +66,6 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 		setTimeout(() => setToasts((cur) => cur.filter((t) => t.id !== id)), 4000);
 	};
 
-	// Track the detached desktop pet window (Tauri only) — when open, the
-	// inline pet card hides and the floating window renders the frames.
-	useEffect(() => {
-		if (!isTauri()) return;
-		let un: (() => void) | undefined;
-		void import("@tauri-apps/api/event").then(({ listen }) =>
-			listen<{ open: boolean }>("pet_window_state", (ev) => setPetFloating(ev.payload.open)).then((f) => {
-				un = f;
-			}),
-		);
-		return () => un?.();
-	}, []);
-
 	useEffect(() => {
 		let disposed = false;
 		let un: (() => void) | undefined;
@@ -101,7 +86,6 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 
 	const handleRequest = (req: RawRequest) => {
 		const method = req.method as string;
-		const id = req.id as string;
 		switch (method) {
 			case "notify":
 				pushToast(String(req.message ?? ""), req.notifyType as string | undefined);
@@ -272,19 +256,12 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 		}
 	};
 
-	// The pet widget is never rendered inline — it lives in the floating
-	// desktop window only. The `pet` status entry doubles as its toggle.
+	// The pet widget and its status are never rendered inline — the pet lives
+	// in the floating desktop window and the sidebar menu only.
 	const widgetEntries = [...widgets.entries()].filter(
 		([key, w]) => w.lines.length > 0 && key !== PET_WIDGET_KEY,
 	);
-	const statusEntries = [...statuses.entries()];
-
-	const togglePetWindow = () => {
-		if (!isTauri()) return;
-		void import("@tauri-apps/api/core").then(({ invoke }) => {
-			void invoke("toggle_pet_window");
-		});
-	};
+	const statusEntries = [...statuses.entries()].filter(([key]) => key !== "pet");
 
 	return (
 		<>
@@ -300,21 +277,7 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 					))}
 					{statusEntries.length > 0 && (
 						<div className="flex flex-wrap gap-3 text-xs text-muted">
-							{statusEntries.map(([key, s], i) =>
-								key === "pet" && isTauri() ? (
-									<button
-										key={i}
-										type="button"
-										onClick={togglePetWindow}
-										title={petFloating ? "Dock pet into the app" : "Float pet on the desktop"}
-										className="cursor-pointer text-muted hover:text-fg"
-									>
-										{s}
-									</button>
-								) : (
-									<span key={i}>{s}</span>
-								),
-							)}
+							{statusEntries.map(([, s], i) => <span key={i}>{s}</span>)}
 						</div>
 					)}
 				</div>

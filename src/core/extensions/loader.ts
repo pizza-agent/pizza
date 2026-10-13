@@ -31,6 +31,7 @@ import type {
 	ExtensionAPI,
 	ExtensionFactory,
 	ExtensionRuntime,
+	ExtensionMenu,
 	ExtensionSettingsItem,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -314,6 +315,11 @@ function createExtensionAPI(
 			extension.settingsItems.set(item.id, { ...item, sourceInfo: extension.sourceInfo });
 		},
 
+		registerMenu(menu: ExtensionMenu): void {
+			runtime.assertActive();
+			extension.menus.set(menu.id, { ...menu, sourceInfo: extension.sourceInfo });
+		},
+
 		// Flag access - checks extension registered it, reads from runtime
 		getFlag(name: string): boolean | string | undefined {
 			runtime.assertActive();
@@ -446,6 +452,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		flags: new Map(),
 		shortcuts: new Map(),
 		settingsItems: new Map(),
+		menus: new Map(),
 	};
 }
 

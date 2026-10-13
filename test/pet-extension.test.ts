@@ -109,17 +109,20 @@ describe("pet extension factory", () => {
 		const builtins: string[] = [];
 		const events: string[] = [];
 		const settings: string[] = [];
+		const menus: string[] = [];
 		const fakeApi = {
 			on: (name: string) => events.push(name),
 			registerCommand: (name: string) => commands.push(name),
 			registerBuiltinCommand: (def: { name: string }) => builtins.push(def.name),
 			registerSettingsItem: (item: { id: string }) => settings.push(item.id),
+			registerMenu: (menu: { id: string }) => menus.push(menu.id),
 		} as unknown as ExtensionAPI;
 
 		createPetExtension(fakeApi);
 		expect(commands).toContain("pet");
 		expect(builtins).toContain("_pet");
 		expect(settings).toEqual(expect.arrayContaining(["pet", "pet-visible"]));
+		expect(menus).toContain("pet");
 		expect(events).toEqual(
 			expect.arrayContaining(["session_start", "turn_start", "turn_end", "agent_end", "tool_execution_end", "session_compact", "session_shutdown"]),
 		);

@@ -412,6 +412,39 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 		open: (_currentValue, done, ctx) => buildPetSettingsPage(done, ctx),
 	});
 
+	// GUI menu contribution: the desktop renders this as an app menu; items
+	// steer slash commands into the session or invoke desktop commands.
+	const menuHasPet = () => {
+		ensurePetLoaded();
+		return Boolean(runtime.save);
+	};
+	pizza.registerMenu({
+		id: "pet",
+		label: "Pet",
+		description: "Your terminal companion",
+		items: [
+			{
+				id: "float",
+				label: "Float / dock on desktop",
+				description: "Toggle the floating pet window",
+				uiCommand: "toggle_pet_window",
+				visible: menuHasPet,
+			},
+			{ id: "adopt", label: "Adopt a pet…", command: "/pet adopt", visible: () => !menuHasPet() },
+			{
+				id: "status",
+				label: "Status",
+				getValue: () => `Lv.${runtime.state.level}`,
+				command: "/pet status",
+				visible: menuHasPet,
+			},
+			{ id: "feed", label: "Feed", command: "/pet feed", visible: menuHasPet },
+			{ id: "play", label: "Play", command: "/pet play", visible: menuHasPet },
+			{ id: "rename", label: "Rename…", command: "/pet rename", visible: menuHasPet },
+			{ id: "release", label: "Release…", command: "/pet release", visible: menuHasPet },
+		],
+	});
+
 	pizza.registerSettingsItem({
 		id: "pet-visible",
 		label: "Pet widget",
