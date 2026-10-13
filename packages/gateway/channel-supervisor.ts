@@ -148,6 +148,23 @@ export function adapterProxyEnv(agentDir: string): Record<string, string> {
 	};
 }
 
+/** Stable identity for the platform-side connection a channel binds to.
+ *  Returns undefined when the type carries no comparable credential. */
+function credentialKey(config: ChannelConfig): string | undefined {
+	switch (config.type) {
+		case "lark":
+			return config.appId ? `lark:${config.appId}` : undefined;
+		case "slack":
+		case "discord":
+		case "telegram":
+			return config.token ? `${config.type}:${config.token}` : undefined;
+		case "webhook":
+			return config.webhookUrl ? `webhook:${config.webhookUrl}` : undefined;
+		default:
+			return undefined;
+	}
+}
+
 /** Validate a save input. Returns an error string, or null when valid.
  *  Exported for tests. */
 export function validate(input: Partial<ChannelConfig>): string | null {
@@ -362,6 +379,16 @@ export class ChannelSupervisor {
 			webhookUrl: input.webhookUrl,
 			workspace: input.workspace!.trim(),
 		};
+		// Same-credential guard: platform websockets load-balance events
+		// across every live connection, so two enabled channels bound to the
+		// same bot/app would split deliveries between them. The pidfile only
+		// dedupes by config.id — this catches duplicate credentials.
+		if (config.enabled) {
+			const conflict = this.findCredentialConflict(config);
+			if (conflict) {
+				throw new Error(`Same credentials as channel "${conflict.config.name}" — disable or delete it first`);
+			}
+		}
 		const entry: RuntimeEntry = existing ?? { config, restarts: 0, startedAt: 0 };
 		entry.config = config;
 		this.entries.set(config.id, entry);
@@ -380,9 +407,28 @@ export class ChannelSupervisor {
 		this.persist();
 	}
 
+	/** Another enabled channel bound to the same platform credentials, or
+	 *  null. Identity per type: the credential that identifies the upstream
+	 *  connection (bot token / appId / webhook listen address). */
+	private findCredentialConflict(config: ChannelConfig): RuntimeEntry | undefined {
+		const mine = credentialKey(config);
+		if (!mine) return undefined;
+		for (const entry of this.entries.values()) {
+			if (entry.config.id === config.id || !entry.config.enabled) continue;
+			if (credentialKey(entry.config) === mine) return entry;
+		}
+		return undefined;
+	}
+
 	setEnabled(id: string, enabled: boolean): ManagedChannelInfo {
 		const entry = this.entries.get(id);
 		if (!entry) throw new Error(`Channel "${id}" not found`);
+		if (enabled) {
+			const conflict = this.findCredentialConflict({ ...entry.config, enabled });
+			if (conflict) {
+				throw new Error(`Same credentials as channel "${conflict.config.name}" — disable or delete it first`);
+			}
+		}
 		entry.config = { ...entry.config, enabled };
 		this.persist();
 		entry.restarts = 0;

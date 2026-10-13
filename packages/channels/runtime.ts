@@ -337,6 +337,10 @@ export function redactProxy(url: string): string {
 /** Guard so a second adapter can't double-wrap fetch. */
 let fetchWrappedForProxy: string | undefined;
 
+/** Guard so a second adapter (or a respawn) can't stack another
+ *  https.request patch — each wrapper would add a ProxyAgent hop and leak. */
+let httpsPatchedForProxy: string | undefined;
+
 /**
  * Route `fetch()` through the proxy by injecting Bun's explicit `proxy`
  * request option. Under Bun, proxy env vars are snapshot at process start —
@@ -367,6 +371,8 @@ export function routeFetchThroughProxy(proxyUrl: string): boolean {
  */
 export function routeHttpsThroughProxy(proxy: string): HttpsProxyAgent<string> {
 	const agent = new HttpsProxyAgent(proxy);
+	if (httpsPatchedForProxy === proxy) return agent;
+	httpsPatchedForProxy = proxy;
 	const origRequest = https.request.bind(https);
 	const patched: typeof https.request = ((opts: unknown, ...rest: unknown[]) => {
 		if (opts && typeof opts === "object" && !Array.isArray(opts) && !(opts instanceof URL)) {

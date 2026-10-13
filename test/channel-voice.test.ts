@@ -51,7 +51,14 @@ describe("createVoicePipeline", () => {
 	});
 
 	it("cli provider runs the command template and returns stdout", async () => {
-		writeSettings({ provider: "cli", command: "echo transcribed {file} >/dev/null && echo hello-voice", format: "opus" });
+		// node -e keeps the template portable — POSIX sh and Windows cmd both
+		// parse it, unlike >/dev/null. The existsSync check also proves {file}
+		// was substituted with a real temp path.
+		writeSettings({
+			provider: "cli",
+			command: `node -e "process.stdout.write(require('node:fs').existsSync(process.argv[1]) ? 'hello-voice' : 'missing')" "{file}"`,
+			format: "opus",
+		});
 		const p = createVoicePipeline(dir);
 		const r = await p.transcribe({ audio: Buffer.from("x"), format: "opus" });
 		expect(r?.text).toBe("hello-voice");
