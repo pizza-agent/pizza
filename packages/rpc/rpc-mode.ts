@@ -840,7 +840,7 @@ export async function runRpcModeWithFacade(
 			const timer = setTimeout(() => {
 				unsub();
 				reject(new Error("Compaction timed out"));
-			}, 30000);
+			}, 120000);
 			const unsub = facade.subscribe((event) => {
 				if (event.type === "COMPACTION_END") {
 					clearTimeout(timer);

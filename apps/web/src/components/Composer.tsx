@@ -332,6 +332,7 @@ export function Composer({
 
 	// /export result dialog — shows the written HTML path + reveal button.
 	const [exportResult, setExportResult] = useState<{ path: string } | null>(null);
+	const [compacting, setCompacting] = useState(false);
 
 	// --- @ mention state --------------------------------------------------
 	// When the user types `@` in the textarea we show a popup listing files,
@@ -862,14 +863,19 @@ ${insert}`;
 					return;
 				}
 				case "compact": {
+					// The agent waits for COMPACTION_END internally (120s cap) —
+					// summarizing a large context is a full LLM call and routinely
+					// runs past 30s. Show a working hint while it does.
+					setCompacting(true);
 					try {
-						// The agent waits for COMPACTION_END internally (30s cap).
-						await sendCommandAwait({ type: "compact" }, 35000);
+						await sendCommandAwait({ type: "compact" }, 125000);
 					} catch (e) {
 						void alertDialog({
 							title: t("slash.compactFailed"),
 							message: e instanceof Error ? e.message : String(e),
 						});
+					} finally {
+						setCompacting(false);
 					}
 					return;
 				}
@@ -1634,6 +1640,12 @@ ${insert}`;
 									</li>
 								))}
 							</ul>
+						</div>
+					)}
+					{compacting && (
+						<div className="mb-2 flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-accent">
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							<span>{t("slash.compacting")}</span>
 						</div>
 					)}
 					{voiceError && (

@@ -155,7 +155,8 @@
     "bashTruncated": "输出已截断",
     "exportDone": "会话已导出",
     "exportFailed": "导出失败",
-    "compactFailed": "压缩失败"
+    "compactFailed": "压缩失败",
+    "compacting": "正在压缩上下文…"
   },
   "schedule": {
     "title": "定时任务",

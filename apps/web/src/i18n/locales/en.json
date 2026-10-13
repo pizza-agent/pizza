@@ -155,7 +155,8 @@
     "bashTruncated": "Output truncated",
     "exportDone": "Session exported",
     "exportFailed": "Export failed",
-    "compactFailed": "Compaction failed"
+    "compactFailed": "Compaction failed",
+    "compacting": "Compacting context…"
   },
   "schedule": {
     "title": "Scheduled tasks",
