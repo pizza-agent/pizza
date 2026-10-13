@@ -81,16 +81,29 @@ export default {
 		app.error(async (err) => {
 			console.error("[slack] app error:", errorMessage(err));
 		});
-		// @slack/socket-mode drives a finity state machine that THROWS
-		// synchronously on unhandled events (e.g. a 'server explicit
-		// disconnect' arriving mid-'connecting' during proxy reconnects).
-		// That throw escapes through the ws callback → uncaughtException →
-		// dead gateway. Wrap handle() so the SDK's own transition bug can't
-		// crash the daemon; the client recovers via its reconnect timers.
+		// @slack/socket-mode drives a finity state machine that THROWS on
+		// unhandled events (e.g. a 'server explicit disconnect' arriving
+		// mid-'connecting' during proxy reconnects). The throw escapes
+		// through the ws callback → uncaughtException → dead gateway. finity
+		// only throws when global.unhandledEventHooks is empty, so push a
+		// hook — that covers both the synchronous handle() path AND events
+		// handled inside finity's async task queue, where a try/catch
+		// wrapper could never reach. The client recovers via reconnect timers.
 		{
-			type SM = { handle?: (event: string, payload?: unknown) => unknown };
+			type SM = {
+				handle?: (event: string, payload?: unknown) => unknown;
+				/** finity internals: global config carries unhandledEventHooks. */
+				config?: { global?: { unhandledEventHooks?: ((event: string, state: string, ctx: unknown) => void)[] } };
+			};
 			const sm = (app as unknown as { receiver?: { client?: { stateMachine?: SM } } }).receiver?.client?.stateMachine;
-			if (sm && typeof sm.handle === "function") {
+			const hooks = sm?.config?.global?.unhandledEventHooks;
+			if (Array.isArray(hooks)) {
+				hooks.push((event: string, state: string) =>
+					console.error(`[slack] ignored unhandled state-machine event '${event}' in state '${state}'`),
+				);
+			} else if (sm && typeof sm.handle === "function") {
+				// Fallback for a finity without the hook array — still guard
+				// the synchronous handle() path.
 				const orig = sm.handle.bind(sm);
 				sm.handle = (event: string, payload?: unknown) => {
 					try {
