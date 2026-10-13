@@ -424,7 +424,7 @@ const ToolCard = memo(function ToolCard({
 							</>
 						)}
 					</span>
-					<span className="flex shrink-0 items-center gap-1">
+					<span className="flex shrink-0 items-center gap-0.5">
 						<span
 							className={cn(
 								"flex items-center gap-1 text-[11px]",
@@ -443,9 +443,9 @@ const ToolCard = memo(function ToolCard({
 								</span>
 							)}
 							{item.toolDurationMs !== undefined ? (
-								<span className="text-muted/60 tabular-nums">· {formatDuration(item.toolDurationMs)}</span>
+								<span className="min-w-12 text-right text-muted/60 tabular-nums">· {formatDuration(item.toolDurationMs)}</span>
 							) : running && item.toolStartedAt !== undefined ? (
-								<span className="text-muted/60 tabular-nums">
+								<span className="min-w-12 text-right text-muted/60 tabular-nums">
 									· <Elapsed since={item.toolStartedAt} />
 								</span>
 							) : null}
