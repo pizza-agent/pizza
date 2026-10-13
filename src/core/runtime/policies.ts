@@ -38,7 +38,7 @@ export class DefaultRetryPolicy implements RetryPolicy {
 
 	isRetryable(error: { message: string; statusCode?: number }): boolean {
 		if (error.statusCode && [429, 500, 502, 503, 504].includes(error.statusCode)) return true;
-		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|5\d{2}|service.?unavailable|server.?error|internal.?error|network.?error|connection.?(error|refused|lost)|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|timed? out|timeout|terminated|retry delay/i.test(
+		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|5\d{2}|service.?unavailable|server.?error|internal.?error|network.?error|connection.?(error|refused|lost)|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|socket connection was closed|closed unexpectedly|timed? out|timeout|terminated|retry delay/i.test(
 			error.message,
 		);
 	}
