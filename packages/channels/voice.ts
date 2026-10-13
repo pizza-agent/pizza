@@ -23,7 +23,7 @@
  * ("env:NAME" / "!command"), and the default lookup reuses auth.json.
  */
 
-import { execFile } from "node:child_process";
+import { exec } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
@@ -198,9 +198,12 @@ async function ensureFormat(audio: Buffer, from: string, want: string): Promise<
 	}
 }
 
+/** Run a user-configured command template. `exec` picks the platform shell
+ *  (/bin/sh on POSIX, ComSpec/cmd.exe on Windows) — a hardcoded /bin/sh
+ *  makes the whole "cli" provider ENOENT on Windows. */
 function execShell(cmd: string, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
 	return new Promise((resolve, reject) => {
-		execFile("/bin/sh", ["-c", cmd], { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+		exec(cmd, { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
 			if (err) reject(new Error(`command failed: ${err.message}${stderr ? ` — ${stderr.slice(0, 200)}` : ""}`));
 			else resolve({ stdout: String(stdout), stderr: String(stderr) });
 		});
