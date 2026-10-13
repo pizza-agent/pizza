@@ -22,7 +22,7 @@ import type { NetworkSettings, SchedulerPolicy, VoiceSettings } from "@tomsun28/
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
-	keepRecentTokens?: number; // default: 20000
+	keepRecentTokens?: number; // default: 10000
 }
 
 export interface BranchSummarySettings {
@@ -832,7 +832,7 @@ export class SettingsManager {
 	}
 
 	getCompactionKeepRecentTokens(): number {
-		return this.settings.compaction?.keepRecentTokens ?? 20000;
+		return this.settings.compaction?.keepRecentTokens ?? 10000;
 	}
 
 	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
