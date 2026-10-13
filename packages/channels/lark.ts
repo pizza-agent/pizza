@@ -138,8 +138,14 @@ export default {
 				// markdown/audio send). Throttled to stay under edit limits.
 				let previewId: string | undefined;
 				let lastEdit = 0;
+				let firstPartialAt: number | undefined;
 				let queued: ReturnType<typeof setTimeout> | undefined;
+				// Don't create the preview until the stream has been going for a
+				// beat — a fast one-word reply would otherwise flash a preview
+				// message that gets recalled a second later.
+				const PREVIEW_DELAY_MS = 1500;
 				const onPartial = (partial: string): void => {
+					firstPartialAt ??= Date.now();
 					const apply = (): void => {
 						lastEdit = Date.now();
 						const body = partial.slice(0, 3800) || "…";
@@ -153,7 +159,11 @@ export default {
 						})();
 						void done.catch(() => {});
 					};
-					const wait = 900 - (Date.now() - lastEdit);
+					const now = Date.now();
+					const wait =
+						previewId === undefined
+							? PREVIEW_DELAY_MS - (now - firstPartialAt!)
+							: 900 - (now - lastEdit);
 					if (wait <= 0) {
 						clearTimeout(queued);
 						queued = undefined;

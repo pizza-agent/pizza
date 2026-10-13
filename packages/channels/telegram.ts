@@ -121,8 +121,14 @@ export default {
 				// the safe floor); a failed edit just drops that partial.
 				let previewId: number | undefined;
 				let lastEdit = 0;
+				let firstPartialAt: number | undefined;
 				let queued: ReturnType<typeof setTimeout> | undefined;
+				// Don't create the preview until the stream has been going for a
+				// beat — a fast reply would otherwise flash a one-word message
+				// that gets replaced a second later.
+				const PREVIEW_DELAY_MS = 1500;
 				const onPartial = (text: string): void => {
+					firstPartialAt ??= Date.now();
 					const apply = (): void => {
 						lastEdit = Date.now();
 						const body = text.slice(0, 4000) || "…";
@@ -136,7 +142,11 @@ export default {
 						})();
 						void done.catch(() => {});
 					};
-					const wait = 1500 - (Date.now() - lastEdit);
+					const now = Date.now();
+					const wait =
+						previewId === undefined
+							? PREVIEW_DELAY_MS - (now - firstPartialAt!)
+							: 1500 - (now - lastEdit);
 					if (wait <= 0) {
 						clearTimeout(queued);
 						queued = undefined;
