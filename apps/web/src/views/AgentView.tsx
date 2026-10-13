@@ -879,12 +879,15 @@ export default function AgentView({
 			case "TOOL_EXECUTION_START": {
 				const payload = event.payload as Record<string, unknown>;
 				const toolCallId = payload.tool_call_id as string;
+				// The store timestamp is the real start instant — accurate even
+				// when replaying history (Date.now() would say "just now").
+				const startedAt = typeof event.timestamp === "number" ? event.timestamp : Date.now();
 				// Execution started -> the tool was approved (or did not need approval).
 				// Transition the card out of pending-approval into running.
 				updateItems((prev) =>
 					prev.map((it) =>
 						it.id === toolCallId && it.role === "tool"
-							? { ...it, pendingApproval: undefined, status: "RUNNING", streaming: true }
+							? { ...it, pendingApproval: undefined, status: "RUNNING", streaming: true, toolStartedAt: startedAt }
 							: it,
 					),
 				);
@@ -930,11 +933,13 @@ export default function AgentView({
 					: "";
 				const resultImages = result ? result.flatMap((r) => (r.type === "image" ? messageImages({ content: [r] }) : [])) : [];
 				const isError = payload.is_error === true;
+				const durationMs = typeof payload.duration_ms === "number" ? payload.duration_ms : undefined;
 				updateItems((prev) =>
 					prev.map((it) =>
 						it.id === toolCallId && it.role === "tool"
 							? {
 									...it,
+									...(durationMs !== undefined ? { toolDurationMs: durationMs } : {}),
 									status: isError ? "ERROR" : "DONE",
 									streaming: false,
 									toolResult: resultText || it.toolResult,

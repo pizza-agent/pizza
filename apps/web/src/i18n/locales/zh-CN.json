@@ -749,5 +749,8 @@
   "language": {
     "en": "English",
     "zh-CN": "中文"
+  },
+  "tools": {
+    "startedAt": "开始于 {{time}}"
   }
 }

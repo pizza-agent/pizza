@@ -434,6 +434,14 @@ const ToolCard = memo(function ToolCard({
 							{running && <Loader2 className="h-3 w-3 animate-spin" />}
 							{item.isError && <AlertCircle className="h-3 w-3" />}
 							{item.status}
+							{item.toolStartedAt !== undefined && (
+								<span
+									className="text-muted/50 tabular-nums"
+									title={t("tools.startedAt", { time: new Date(item.toolStartedAt).toLocaleString() })}
+								>
+									· {formatMessageTime(item.toolStartedAt)}
+								</span>
+							)}
 							{item.toolDurationMs !== undefined ? (
 								<span className="text-muted/60 tabular-nums">· {formatDuration(item.toolDurationMs)}</span>
 							) : running && item.toolStartedAt !== undefined ? (

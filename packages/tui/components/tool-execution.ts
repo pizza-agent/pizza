@@ -430,6 +430,13 @@ export class ToolExecutionComponent extends Container {
 		if (this.interrupted) {
 			text += theme.fg("warning", " · interrupted");
 		}
+		if (this.startedAt !== undefined) {
+			const d = new Date(this.startedAt);
+			const hh = String(d.getHours()).padStart(2, "0");
+			const mm = String(d.getMinutes()).padStart(2, "0");
+			const ss = String(d.getSeconds()).padStart(2, "0");
+			text += theme.fg("muted", ` · ${hh}:${mm}:${ss}`);
+		}
 		if (this.durationMs !== undefined) {
 			text += theme.fg("muted", ` · ${formatDuration(this.durationMs)}`);
 		}
