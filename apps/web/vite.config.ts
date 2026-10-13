@@ -24,6 +24,10 @@ export default defineConfig({
 		outDir: "dist",
 		emptyOutDir: true,
 		rollupOptions: {
+			input: {
+				main: path.resolve(__dirname, "index.html"),
+				pet: path.resolve(__dirname, "pet.html"),
+			},
 			output: {
 				manualChunks: {
 					react: ["react", "react-dom", "react-router-dom", "react-i18next", "i18next"],

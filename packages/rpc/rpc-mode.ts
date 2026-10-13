@@ -19,6 +19,8 @@ import { computeMessageStats, type SessionStats } from "../../src/core/session/s
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionPageOptions,
+	ExtensionPageResult,
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../src/core/extensions/index.js";
@@ -820,6 +822,129 @@ export async function runRpcModeWithFacade(
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
+
+	// ---------------------------------------------------------------------
+	// Extension UI bridge: forward ctx.ui.* calls to the RPC client as
+	// extension_ui_request frames; resolve them on extension_ui_response.
+	// Fire-and-forget methods (notify/setWidget/...) get no waiter.
+	// ---------------------------------------------------------------------
+	type UiWaiter = { resolve: (response: RpcExtensionUIResponse) => void };
+	const extensionUiWaiters = new Map<string, UiWaiter>();
+	let extensionUiCounter = 0;
+
+	const emitUiRequest = (request: Record<string, unknown> & { method: string }): string => {
+		const id = `ui_${++extensionUiCounter}`;
+		output({ type: "extension_ui_request", id, ...request });
+		return id;
+	};
+
+	const UI_REQUEST_TIMEOUT_MS = 5 * 60_000;
+	const requestUi = (
+		request: Parameters<typeof emitUiRequest>[0],
+		timeoutMs?: number,
+	): Promise<RpcExtensionUIResponse> => {
+		return new Promise((resolve) => {
+			const id = emitUiRequest(request);
+			const timer = setTimeout(() => {
+				extensionUiWaiters.delete(id);
+				resolve({ type: "extension_ui_response", id, cancelled: true });
+			}, timeoutMs ?? UI_REQUEST_TIMEOUT_MS);
+			extensionUiWaiters.set(id, {
+				resolve: (response) => {
+					clearTimeout(timer);
+					resolve(response);
+				},
+			});
+		});
+	};
+
+	const resolveExtensionUiResponse = (response: RpcExtensionUIResponse): void => {
+		const waiter = extensionUiWaiters.get(response.id);
+		if (!waiter) return;
+		extensionUiWaiters.delete(response.id);
+		waiter.resolve(response);
+	};
+
+	const rpcUiContext: ExtensionUIContext = {
+		select: async (title, options, opts) => {
+			const res = await requestUi({ method: "select", title, options, timeout: opts?.timeout }, opts?.timeout ? opts.timeout + 5000 : undefined);
+			return "value" in res ? res.value : undefined;
+		},
+		confirm: async (title, message, opts) => {
+			const res = await requestUi({ method: "confirm", title, message, timeout: opts?.timeout }, opts?.timeout ? opts.timeout + 5000 : undefined);
+			return "confirmed" in res ? res.confirmed : false;
+		},
+		input: async (title, placeholder, opts) => {
+			const res = await requestUi({ method: "input", title, placeholder, timeout: opts?.timeout }, opts?.timeout ? opts.timeout + 5000 : undefined);
+			return "value" in res ? res.value : undefined;
+		},
+		editor: async (title, prefill) => {
+			const res = await requestUi({ method: "editor", title, prefill });
+			return "value" in res ? res.value : undefined;
+		},
+		page: async (title, options: ExtensionPageOptions): Promise<ExtensionPageResult> => {
+			const res = await requestUi({
+				method: "page",
+				title,
+				items: options.items.map((item) => ({
+					id: item.id,
+					label: item.label,
+					description: item.description,
+					// Component previews are TUI-only; only static lines cross the wire.
+					preview: Array.isArray(item.preview) ? item.preview : undefined,
+				})),
+				actions: options.actions,
+				initialSelection: options.initialSelection,
+			});
+			if ("page" in res) {
+				const p = res.page;
+				if (p.kind === "cancel") return { kind: "cancel" };
+				const item = options.items.find((i) => i.id === ("itemId" in p ? p.itemId : undefined));
+				if (p.kind === "select") return item ? { kind: "select", item } : { kind: "cancel" };
+				return { kind: "action", action: p.action, item };
+			}
+			return { kind: "cancel" };
+		},
+		notify: (message, notifyType) => {
+			emitUiRequest({ method: "notify", message, notifyType });
+		},
+		setStatus: (statusKey, statusText) => {
+			emitUiRequest({ method: "setStatus", statusKey, statusText });
+		},
+		setWidget: (widgetKey, widgetLines, options) => {
+			if (typeof widgetLines === "function") return; // component factories are TUI-only
+			emitUiRequest({ method: "setWidget", widgetKey, widgetLines, widgetPlacement: options?.placement, widgetMeta: options?.meta });
+		},
+		setTitle: (title) => {
+			emitUiRequest({ method: "setTitle", title });
+		},
+		setEditorText: (text) => {
+			emitUiRequest({ method: "set_editor_text", text });
+		},
+		pasteToEditor: (text) => {
+			emitUiRequest({ method: "set_editor_text", text });
+		},
+		// No GUI equivalents — inert stubs.
+		onTerminalInput: () => () => {},
+		setWorkingMessage: () => {},
+		setWorkingIndicator: () => {},
+		setHiddenThinkingLabel: () => {},
+		setFooter: () => {},
+		setHeader: () => {},
+		custom: async () => undefined as never,
+		getEditorText: () => "",
+		setEditorComponent: () => {},
+		get theme() {
+			return theme;
+		},
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "Theme switching is handled by the GUI" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: () => {},
+	};
+
+	facade.extensionRunner?.setUIContext(rpcUiContext);
 
 	const success = <T extends RpcCommand["type"]>(
 		id: string | undefined,
@@ -1723,6 +1848,7 @@ export async function runRpcModeWithFacade(
 			"type" in parsed &&
 			parsed.type === "extension_ui_response"
 		) {
+			resolveExtensionUiResponse(parsed as RpcExtensionUIResponse);
 			return;
 		}
 

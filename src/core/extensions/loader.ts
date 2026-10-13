@@ -31,6 +31,7 @@ import type {
 	ExtensionAPI,
 	ExtensionFactory,
 	ExtensionRuntime,
+	ExtensionSettingsItem,
 	LoadExtensionsResult,
 	MessageRenderer,
 	ProviderConfig,
@@ -308,6 +309,11 @@ function createExtensionAPI(
 			extension.messageRenderers.set(customType, renderer as MessageRenderer);
 		},
 
+		registerSettingsItem(item: ExtensionSettingsItem): void {
+			runtime.assertActive();
+			extension.settingsItems.set(item.id, { ...item, sourceInfo: extension.sourceInfo });
+		},
+
 		// Flag access - checks extension registered it, reads from runtime
 		getFlag(name: string): boolean | string | undefined {
 			runtime.assertActive();
@@ -439,6 +445,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
+		settingsItems: new Map(),
 	};
 }
 

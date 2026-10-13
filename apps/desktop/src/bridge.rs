@@ -279,6 +279,10 @@ pub struct BridgeState {
 	/// kept for the session — spawning the CLI for every Settings open takes
 	/// >1s and made the "Sign in with an account" section visibly delayed.
 	auth_options_cache: Mutex<Option<Vec<AuthLoginOption>>>,
+	/// Last `setWidget` frame for the pet widget — replayed into the floating
+	/// pet window when it (re)opens so it doesn't sit on the placeholder until
+	/// the next turn boundary.
+	pet_widget_frame: Mutex<Option<Value>>,
 }
 
 /// A running `pizza auth login --mode jsonl` child plus its stdin writer.
@@ -296,6 +300,7 @@ impl Default for BridgeState {
 			restarting: Mutex::new(HashSet::new()),
 			oauth_login: Mutex::new(None),
 			auth_options_cache: Mutex::new(None),
+			pet_widget_frame: Mutex::new(None),
 		}
 	}
 }
@@ -928,6 +933,7 @@ fn spawn_background_sidecar(
 						.and_then(|t| t.as_str())
 						.unwrap_or("")
 						.to_string();
+					emit_to_pet_window(app_ref, &parsed);
 					if etype == "response" {
 						if let Some(obj) = parsed.as_object_mut() {
 							obj.insert("_cwd".to_string(), Value::String(reader_cwd.clone()));
@@ -1301,6 +1307,7 @@ pub async fn init_sidecar(
 						.and_then(|t| t.as_str())
 						.unwrap_or("")
 						.to_string();
+					emit_to_pet_window(app_ref, &parsed);
 					if etype == "response" {
 						// Add _cwd to response for frontend routing.
 						if let Some(obj) = parsed.as_object_mut() {
@@ -1471,10 +1478,13 @@ pub async fn rpc_command(
 	let line = serde_json::to_string(&Value::Object(obj.clone())).map_err(|e| e.to_string())?;
 	log_file(&format!("rpc_command [{}] sending: {}", window_label, line));
 
-	// Route to the active sidecar for this window.
+	// Route to the active sidecar for this window. The floating pet window
+	// owns no workspace — it proxies through "main" so voice/text typed on
+	// the pet lands in the primary session.
 	let cwd = {
 		let active = lock_ok(&state.active);
-		active.get(window_label).cloned()
+		let label = if window_label == PET_WINDOW_LABEL { "main" } else { window_label };
+		active.get(label).cloned()
 	};
 	let cwd = cwd.ok_or("No active workspace for this window")?;
 
@@ -1641,12 +1651,16 @@ fn emit_frame_to_windows(app: &AppHandle, cwd: &str, mut parsed: Value) {
 			obj.insert("_cwd".to_string(), Value::String(cwd.to_string()));
 		}
 	}
+	emit_to_pet_window(app, &parsed);
 	let state = app.state::<BridgeState>();
 	// Snapshot the window labels and drop the lock BEFORE any webview emit:
 	// `win.emit` is synchronous cross-process IPC — holding `active` across it
 	// serializes every other command that needs the map and can deadlock with
 	// a busy webview (observed on Windows as an eternal "starting…" splash).
-	let labels: Vec<String> = lock_ok(&state.active).keys().cloned().collect();
+	let mut labels: Vec<String> = lock_ok(&state.active).keys().cloned().collect();
+	if !labels.iter().any(|l| l == PET_WINDOW_LABEL) {
+		labels.push(PET_WINDOW_LABEL.to_string());
+	}
 	for label in &labels {
 		if let Some(win) = app.get_webview_window(label) {
 			match etype.as_str() {
@@ -1835,6 +1849,56 @@ async fn init_sidecar_via_gateway(
 	Ok(serde_json::json!({}).to_string())
 }
 
+
+/// Window label for the detached floating pet webview.
+pub const PET_WINDOW_LABEL: &str = "pet";
+
+/// Forward an `extension_ui_request` frame to the floating pet window, if open.
+/// `setWidget` frames for the pet widget are cached in BridgeState so a
+/// freshly (re)opened pet window can be repainted immediately.
+fn emit_to_pet_window(app: &AppHandle, frame: &Value) {
+	if frame.get("type").and_then(|t| t.as_str()) != Some("extension_ui_request") {
+		return;
+	}
+	if frame.get("method").and_then(|m| m.as_str()) == Some("setWidget")
+		&& frame.get("widgetKey").and_then(|k| k.as_str()) == Some("pet-widget")
+	{
+		if let Some(state) = app.try_state::<BridgeState>() {
+			if let Ok(mut slot) = state.pet_widget_frame.lock() {
+				*slot = Some(frame.clone());
+			}
+		}
+		log_file(&format!(
+			"emit_to_pet_window: pet frame meta={:?}",
+			frame.get("widgetMeta")
+		));
+		// Pet released/reset: the extension clears the widget — close the
+		// floating window with it (the save file was already updated, so no
+		// need to touch the floating flag).
+		if frame.get("widgetLines").map(|l| l.is_null()).unwrap_or(true) {
+			log_file("emit_to_pet_window: pet widget cleared, auto-closing pet window");
+			close_pet_window_keep_flag(app);
+			return;
+		}
+		// Auto-open the desktop pet on the first frame unless the user
+		// explicitly docked it (widgetMeta.floating === false).
+		let docked = frame
+			.get("widgetMeta")
+			.and_then(|m| m.get("floating"))
+			.and_then(|f| f.as_bool())
+			== Some(false);
+		if !docked && app.get_webview_window(PET_WINDOW_LABEL).is_none() {
+			let app2 = app.clone();
+			tauri::async_runtime::spawn(async move {
+				let _ = toggle_pet_window(app2).await;
+			});
+		}
+	}
+	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+		let _ = win.emit("extension_ui_request", frame.clone());
+	}
+}
+
 /// Create a new workspace window with its own independent sidecar.
 #[tauri::command]
 pub async fn new_workspace(app: AppHandle) -> Result<String, String> {
@@ -1859,6 +1923,148 @@ pub async fn new_workspace(app: AppHandle) -> Result<String, String> {
 			.map_err(|e| format!("Failed to create window: {e}"))?
 	};
 	Ok(label)
+}
+
+/// Toggle the detached floating pet window (codex-style desktop pet).
+/// Returns "open" or "closed".
+#[tauri::command]
+pub async fn toggle_pet_window(app: AppHandle) -> Result<String, String> {
+	log_file("toggle_pet_window called");
+	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+		log_file("toggle_pet_window: closing existing pet window");
+		win.close().map_err(|e| format!("close pet window: {e}"))?;
+		notify_pet_window_state(&app, false);
+		set_pet_floating_flag(false);
+		return Ok("closed".to_string());
+	}
+	let builder = tauri::WebviewWindowBuilder::new(
+		&app,
+		PET_WINDOW_LABEL,
+		tauri::WebviewUrl::App("pet.html".into()),
+	)
+	.title("Pizza Pet")
+	.inner_size(220.0, 210.0)
+	.max_inner_size(220.0, 210.0)
+	.resizable(false)
+	.maximizable(false)
+	.minimizable(false)
+	.decorations(false)
+	.always_on_top(true)
+	.skip_taskbar(true)
+	// Transparent windows must not draw the standard macOS drop shadow —
+	// with it on, the shadow region paints an opaque black rectangle.
+	.shadow(false)
+	.visible(true);
+	// Fully transparent window background (macOS). Alpha=0 keeps the webview
+	// compositing pass-through; without it the window paints opaque black.
+	let builder = builder.background_color(tauri::webview::Color(0, 0, 0, 0));
+	#[cfg(target_os = "macos")]
+	let builder = builder.transparent(true).visible_on_all_workspaces(true);
+	let win = builder
+		.build()
+		.map_err(|e| format!("Failed to create pet window: {e}"))?;
+	// Park the window at the bottom-right corner of the primary screen.
+	if let Ok(Some(monitor)) = win.primary_monitor() {
+		let scale = monitor.scale_factor();
+		let lw = monitor.size().width as f64 / scale;
+		let lh = monitor.size().height as f64 / scale;
+		let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+			lw - 260.0,
+			lh - 260.0,
+		)));
+	}
+	log_file(&format!("pet window created label={:?}", win.label()));
+	// Replay the last pet widget frame once the page has mounted.
+	if let Some(state) = app.try_state::<BridgeState>() {
+		let cached = state.pet_widget_frame.lock().ok().and_then(|s| s.clone());
+		if let Some(frame) = cached {
+			let app2 = app.clone();
+			tauri::async_runtime::spawn(async move {
+				tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+				emit_to_pet_window(&app2, &frame);
+			});
+		}
+	}
+	notify_pet_window_state(&app, true);
+	set_pet_floating_flag(true);
+	Ok("open".to_string())
+}
+
+/// Persist the floating flag into ~/.pizza/agent/pet.json so the window
+/// comes back on the next app start.
+fn set_pet_floating_flag(floating: bool) {
+	let Some(home) = home_dir() else { return };
+	let path = home.join(".pizza").join("agent").join("pet.json");
+	let Ok(raw) = std::fs::read_to_string(&path) else { return };
+	let Ok(mut save) = serde_json::from_str::<Value>(&raw) else { return };
+	if let Some(obj) = save.as_object_mut() {
+		obj.insert("floating".to_string(), Value::Bool(floating));
+		let _ = std::fs::write(&path, serde_json::to_string_pretty(&save).unwrap_or_default());
+	}
+}
+
+/// Reopen the floating pet window on startup if a pet save exists and it was
+/// floating when the app last closed (persisted as `floating: true` in
+/// ~/.pizza/agent/pet.json).
+pub fn maybe_reopen_pet_window(app: &AppHandle) {
+	let Some(home) = home_dir() else { return };
+	let path = home.join(".pizza").join("agent").join("pet.json");
+	let Ok(raw) = std::fs::read_to_string(&path) else { return };
+	let Ok(save) = serde_json::from_str::<Value>(&raw) else { return };
+	if save.get("floating").and_then(|v| v.as_bool()) == Some(false) {
+		return;
+	}
+	let app = app.clone();
+	log_file("maybe_reopen_pet_window: floating pet found, reopening window");
+	// Defer until the event loop is running.
+	tauri::async_runtime::spawn(async move {
+		let _ = toggle_pet_window(app).await;
+	});
+}
+
+/// Close the floating pet window without touching the persisted floating
+/// flag. Called when the pet save is released or reset mid-session.
+pub fn close_pet_window_keep_flag(app: &AppHandle) {
+	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+		log_file("close_pet_window_keep_flag: closing");
+		let _ = win.close();
+	}
+	notify_pet_window_state(app, false);
+}
+
+/// Close the floating pet window (from its own close button).
+#[tauri::command]
+pub async fn close_pet_window(app: AppHandle) -> Result<(), String> {
+	log_file("close_pet_window command called");
+	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+		win.close().map_err(|e| format!("close pet window: {e}"))?;
+	}
+	notify_pet_window_state(&app, false);
+	set_pet_floating_flag(false);
+	Ok(())
+}
+
+/// Read ~/.pizza/agent/pet.json so the floating pet window can render the
+/// real pet (species/name/level) before any widget frame arrives — e.g.
+/// when no workspace session has pushed a frame yet this run.
+#[tauri::command]
+pub fn get_pet_state() -> Result<Value, String> {
+	let Some(home) = home_dir() else { return Ok(Value::Null) };
+	let path = home.join(".pizza").join("agent").join("pet.json");
+	match std::fs::read_to_string(&path) {
+		Ok(raw) => serde_json::from_str::<Value>(&raw).map_err(|e| e.to_string()),
+		Err(_) => Ok(Value::Null),
+	}
+}
+
+/// Tell every window whether the floating pet window is open, so the
+/// in-app widget card can hide/show accordingly.
+fn notify_pet_window_state(app: &AppHandle, open: bool) {
+	for label in app.webview_windows().keys() {
+		if let Some(win) = app.get_webview_window(label) {
+			let _ = win.emit("pet_window_state", serde_json::json!({ "open": open }));
+		}
+	}
 }
 
 /// List all workspaces from ~/.pizza/agent/workspaces/*/meta.json

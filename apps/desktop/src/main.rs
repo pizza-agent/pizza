@@ -22,6 +22,9 @@ fn main() {
 			bridge::rpc_command,
 			bridge::channel_op,
 			bridge::new_workspace,
+			bridge::toggle_pet_window,
+			bridge::close_pet_window,
+			bridge::get_pet_state,
 			bridge::list_workspaces,
 			bridge::delete_workspace,
 			bridge::reveal_workspace,
@@ -69,11 +72,28 @@ fn main() {
 					window.open_devtools();
 				}
 			}
+			// Restore the floating pet window if a pet exists from a previous run.
+			bridge::maybe_reopen_pet_window(&app.handle());
 			Ok(())
 		})
 		.on_window_event(|window, event| match event {
+			WindowEvent::Destroyed => {
+				if window.label() == bridge::PET_WINDOW_LABEL {
+					bridge::log_file("pet window destroyed");
+				}
+			}
 			WindowEvent::CloseRequested { .. } => {
 				let label = window.label().to_string();
+				// The floating pet window owns no sidecar — just tell the other
+				// windows it closed so the in-app widget can reappear.
+				if label == bridge::PET_WINDOW_LABEL {
+					for l in window.app_handle().webview_windows().keys() {
+						if let Some(w) = window.app_handle().get_webview_window(l) {
+							let _ = w.emit("pet_window_state", serde_json::json!({ "open": false }));
+						}
+					}
+					return;
+				}
 				log::info!("window {} closed, stopping its sidecar", label);
 				let state = window.app_handle().state::<bridge::BridgeState>();
 				bridge::kill_sidecar_for_window(state.inner(), &label);

@@ -174,6 +174,28 @@ export async function subscribeEvents(handler: EventHandler): Promise<() => void
 	return subscribeSse(handler);
 }
 
+/** Subscribe to extension_ui_request frames emitted by the sidecar. */
+export async function subscribeExtensionUi(
+	handler: (request: Record<string, unknown> & { _cwd?: string }) => void,
+): Promise<() => void> {
+	if (isTauri()) {
+		const { listen } = await import("@tauri-apps/api/event");
+		const unlisten = await listen("extension_ui_request", (event) =>
+			handler(event.payload as Record<string, unknown> & { _cwd?: string }),
+		).catch(() => null);
+		return () => { try { unlisten?.(); } catch { /* registry gone (reload) */ } };
+	}
+	// Browser mode: requests ride the same SSE stream as events.
+	return subscribeSse((line) => {
+		if (line?.type === "extension_ui_request") handler(line);
+	});
+}
+
+/** Respond to an extension_ui_request (answers pending ctx.ui.* calls). */
+export function respondExtensionUi(response: Record<string, unknown> & { id: string }): void {
+	void sendCommandRaw({ ...response, type: "extension_ui_response" }).catch(() => {});
+}
+
 export async function subscribeSidecarExit(handler: ExitHandler): Promise<() => void> {
 	if (isTauri()) {
 		const { listen } = await import("@tauri-apps/api/event");

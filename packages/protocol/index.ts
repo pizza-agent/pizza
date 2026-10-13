@@ -772,7 +772,8 @@ export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
 	| { type: "extension_ui_request"; id: string; method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
 	| { type: "extension_ui_request"; id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
-	| { type: "extension_ui_request"; id: string; method: "setWidget"; widgetKey: string; widgetLines: string[] | undefined; widgetPlacement?: "aboveEditor" | "belowEditor" }
+	| { type: "extension_ui_request"; id: string; method: "setWidget"; widgetKey: string; widgetLines: string[] | undefined; widgetPlacement?: "aboveEditor" | "belowEditor"; widgetMeta?: Record<string, unknown> }
+	| { type: "extension_ui_request"; id: string; method: "page"; title: string; items: RpcExtensionPageItem[]; actions?: Array<{ key: string; label: string }>; initialSelection?: string }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
@@ -784,7 +785,17 @@ export type RpcExtensionUIRequest =
 export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
-	| { type: "extension_ui_response"; id: string; cancelled: true };
+	| { type: "extension_ui_response"; id: string; cancelled: true }
+	| { type: "extension_ui_response"; id: string; page: { kind: "select"; itemId: string } | { kind: "action"; action: string; itemId?: string } | { kind: "cancel" } };
+
+/** Serializable form of an ExtensionPageItem for the `page` UI request. */
+export interface RpcExtensionPageItem {
+	id: string;
+	label: string;
+	description?: string;
+	/** Static preview lines (component-factory previews are TUI-only). */
+	preview?: string[];
+}
 
 // ============================================================================
 // Typed events (stdout, raw EventBase forwarded by the bridge)

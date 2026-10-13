@@ -28,6 +28,7 @@ import type {
   OverlayHandle,
   OverlayOptions,
   SlashCommand,
+  SettingItem,
 } from "@earendil-works/pi-tui";
 import {
   CombinedAutocompleteProvider,
@@ -81,6 +82,8 @@ import type {
   ExtensionUIContext,
   ExtensionUIDialogOptions,
   ExtensionWidgetOptions,
+  ExtensionPageOptions,
+  ExtensionPageResult,
 } from "../../src/core/extensions/index.js";
 import {
   FooterDataProvider,
@@ -158,6 +161,7 @@ import { DynamicBorder } from "./components/dynamic-border.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
+import { ExtensionPageComponent } from "./components/extension-page.js";
 import { FooterComponent } from "./components/footer.js";
 import { keyHint, keyText } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
@@ -2331,6 +2335,7 @@ export class InteractiveMode {
       setHeader: (factory) => this.setExtensionHeader(factory),
       setTitle: (title) => this.ui.terminal.setTitle(title),
       custom: (factory, options) => this.showExtensionCustom(factory, options),
+      page: (title, options) => this.showExtensionPage(title, options),
       pasteToEditor: (text) =>
         this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
       setEditorText: (text) => this.editor.setText(text),
@@ -2404,6 +2409,20 @@ export class InteractiveMode {
       this.ui.setFocus(this.extensionSelector);
       this.ui.requestRender();
     });
+  }
+
+  /**
+   * Show a declarative list page for extensions (ui.page).
+   */
+  private async showExtensionPage(
+    title: string,
+    options: ExtensionPageOptions,
+  ): Promise<ExtensionPageResult> {
+    return this.showExtensionCustom<ExtensionPageResult>(
+      (tui, _theme, _keybindings, done) =>
+        new ExtensionPageComponent(title, options, done, tui),
+      { signal: options.signal, abortValue: { kind: "cancel" } },
+    );
   }
 
   /**
@@ -2708,6 +2727,10 @@ export class InteractiveMode {
       overlay?: boolean;
       overlayOptions?: OverlayOptions | (() => OverlayOptions);
       onHandle?: (handle: OverlayHandle) => void;
+      /** AbortSignal to dismiss the component, resolving with abortValue. */
+      signal?: AbortSignal;
+      /** Value resolved when dismissed via signal. */
+      abortValue?: T;
     },
   ): Promise<T> {
     const savedText = this.editor.getText();
@@ -2730,6 +2753,7 @@ export class InteractiveMode {
         closed = true;
         if (isOverlay) this.ui.hideOverlay();
         else restoreEditor();
+        options?.signal?.removeEventListener("abort", onAbort);
         // Note: both branches above already call requestRender
         resolve(result);
         try {
@@ -2738,6 +2762,16 @@ export class InteractiveMode {
           /* ignore dispose errors */
         }
       };
+
+      // AbortSignal support: close with abortValue when aborted.
+      const onAbort = () => close(options?.abortValue as T);
+      if (options?.signal) {
+        if (options.signal.aborted) {
+          resolve(options.abortValue as T);
+          return;
+        }
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
 
       Promise.resolve(factory(this.ui, theme, this.keybindings, close))
         .then((c) => {
@@ -4332,6 +4366,7 @@ export class InteractiveMode {
           quietStartup: this.settingsManager.getQuietStartup(),
           clearOnShrink: this.settingsManager.getClearOnShrink(),
           safeMode: this.settingsManager.getSafeMode(),
+          extensionItems: this.buildExtensionSettingItems(),
         },
         {
           onAutoCompactChange: (enabled) => {
@@ -4459,6 +4494,9 @@ export class InteractiveMode {
                 : "Safe mode off — tools auto-run",
             );
           },
+          onExtensionSettingChange: (id, newValue) => {
+            this.handleExtensionSettingChange(id, newValue);
+          },
           onCancel: () => {
             done();
             this.ui.requestRender();
@@ -4467,6 +4505,48 @@ export class InteractiveMode {
       );
       return { component: selector, focus: selector.getSettingsList() };
     });
+  }
+
+  /**
+   * Build SettingItem rows for extension-contributed settings items.
+   * `values` map to cycleable rows; `open` maps to a submenu page.
+   */
+  private buildExtensionSettingItems(): SettingItem[] {
+    const runner = this.facade.extensionRunner;
+    if (!runner) return [];
+    const ctx = runner.createContext();
+    return runner.getSettingsItems().map((item): SettingItem => {
+      let currentValue = "";
+      try {
+        currentValue = item.getValue();
+      } catch {
+        currentValue = "?";
+      }
+      const row: SettingItem = {
+        id: `ext:${item.id}`,
+        label: item.label,
+        description: item.description,
+        currentValue,
+      };
+      if (item.values) row.values = item.values;
+      if (item.open) {
+        row.submenu = (value, done) => item.open!(value, done, ctx);
+      }
+      return row;
+    });
+  }
+
+  private handleExtensionSettingChange(id: string, newValue: string): void {
+    const runner = this.facade.extensionRunner;
+    if (!runner || !id.startsWith("ext:")) return;
+    const itemId = id.slice("ext:".length);
+    const item = runner.getSettingsItems().find((i) => i.id === itemId);
+    if (!item?.onChange) return;
+    try {
+      item.onChange(newValue, runner.createContext());
+    } catch (err) {
+      this.showError(`Extension setting "${item.label}" error: ${err}`);
+    }
   }
 
   private async handleModelCommand(searchTerm?: string): Promise<void> {

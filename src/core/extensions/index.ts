@@ -72,6 +72,12 @@ export type {
 	// Runtime
 	ExtensionRuntime,
 	ExtensionShortcut,
+	ExtensionPageAction,
+	ExtensionPageItem,
+	ExtensionPageOptions,
+	ExtensionPageResult,
+	ExtensionSettingsItem,
+	RegisteredExtensionSettingsItem,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,

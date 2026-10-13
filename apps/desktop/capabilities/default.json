@@ -2,7 +2,11 @@
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
 	"description": "Default capabilities for Pizza GUI",
-	"windows": ["main", "workspace-*"],
+	"windows": [
+		"main",
+		"workspace-*",
+		"pet"
+	],
 	"permissions": [
 		"core:default",
 		"core:event:default",
@@ -12,6 +16,11 @@
 		"core:image:allow-from-bytes",
 		"shell:allow-execute",
 		"shell:allow-open",
-		"dialog:default"
+		"dialog:default",
+		"core:window:allow-cursor-position",
+		"core:window:allow-inner-position",
+		"core:window:allow-scale-factor",
+		"core:window:allow-outer-position",
+		"core:window:allow-inner-size"
 	]
 }

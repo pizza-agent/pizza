@@ -1,0 +1,32 @@
+{
+  "id": "mushroom",
+  "name": "Mushroom",
+  "description": "Grows in dark terminals. Thrives on refactors.",
+  "frames": {
+    "idle": [
+      " .-^-.\n| o o |\n '---'",
+      " .-^-.\n| - - |\n '---'"
+    ],
+    "working": [
+      " .-^-.\n| o o |  *\n '---'",
+      " .-^-.\n| o o | *\n '---'"
+    ],
+    "celebrating": [
+      " .-^-.\n| ^o^ |\n '---'",
+      "\\.-^-./\n| ^o^ |\n '---'"
+    ],
+    "happy": [
+      " .-^-.\n| ^ ^ |\n '---'"
+    ],
+    "sad": [
+      " .-^-.\n| ; ; |\n '---'"
+    ],
+    "sleepy": [
+      " .-^-.\n| - - |z\n '---'",
+      " .-^-.\n| - - | Zz\n '---'"
+    ],
+    "eating": [
+      " .-^-.\n| omo |\n '---'"
+    ]
+  }
+}

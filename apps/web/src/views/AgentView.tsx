@@ -9,6 +9,7 @@ import { ChatSearch } from "@/components/ChatSearch";
 import { ArrowUp, Search, X } from "lucide-react";
 import { textMatches } from "@/lib/highlight";
 import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/components/Composer";
+import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
 import { cn, samePath } from "@/lib/utils";
@@ -211,7 +212,7 @@ function agentMessageFields(text: string): Pick<TimelineItem, "agentMessage"> {
 /** Build a TimelineItem[] from a get_messages response, matching tool cards to results. */
 function buildTimelineFromMessages(
 	messages: Array<Record<string, unknown>>,
-	t: (key: string) => string,
+	t: (key: string, options?: Record<string, unknown>) => string,
 ): TimelineItem[] {
 	const history: TimelineItem[] = [];
 	// Track tool cards by tool_call_id so toolResult messages can fill them.
@@ -1472,6 +1473,7 @@ export default function AgentView({
 					</div>
 				</div>
 			)}
+			{workspace && <ExtensionUiHost key={workspace} workspace={workspace} />}
 			<Composer
 				state={state}
 				workspace={workspace}
