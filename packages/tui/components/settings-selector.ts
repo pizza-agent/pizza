@@ -54,6 +54,8 @@ export interface SettingsConfig {
 	quietStartup: boolean;
 	clearOnShrink: boolean;
 	safeMode: boolean;
+	/** Pre-built rows contributed by extensions (already mapped to SettingItem). */
+	extensionItems?: SettingItem[];
 }
 
 export interface SettingsCallbacks {
@@ -80,6 +82,8 @@ export interface SettingsCallbacks {
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onSafeModeChange: (enabled: boolean) => void;
 	onCancel: () => void;
+	/** Cycle changes on extension-contributed items (id keeps its `ext:` prefix). */
+	onExtensionSettingChange?: (id: string, newValue: string) => void;
 }
 
 /**
@@ -379,6 +383,11 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Extension-contributed items come last (splice positions above are fixed).
+		if (config.extensionItems) {
+			items.push(...config.extensionItems);
+		}
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -387,6 +396,11 @@ export class SettingsSelectorComponent extends Container {
 			10,
 			getSettingsListTheme(),
 			(id, newValue) => {
+				// Extension items use dynamic ids ("ext:<id>")
+				if (id.startsWith("ext:")) {
+					callbacks.onExtensionSettingChange?.(id, newValue);
+					return;
+				}
 				// Built-in skill toggles use dynamic ids ("builtin-skill:<id>")
 				if (id.startsWith("builtin-skill:")) {
 					callbacks.onBuiltinSkillChange(id.slice("builtin-skill:".length), newValue === "true");

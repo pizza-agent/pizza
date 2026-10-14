@@ -114,11 +114,11 @@ export default {
 				// Instant read-receipt — a 👀 reaction says "received" without waiting
 				// on the LLM turn. Fire-and-forget: a failed reaction is fine.
 				await ctx.react("👀").catch(() => {});
-				// Telegram lets us show "typing…" while the agent works.
-				await ctx.replyWithChatAction("typing");
 				// Stream the reply: edit one preview message as text_delta chunks
 				// arrive. Throttled — Telegram rate-limits edits (~1/s per chat is
-				// the safe floor); a failed edit just drops that partial.
+				// the safe floor); a failed edit just drops that partial. The
+				// "typing…" action is the fallback liveness signal; it expires
+				// after ~5s so re-fire it on an interval for long turns.
 				let previewId: number | undefined;
 				let lastEdit = 0;
 				let firstPartialAt: number | undefined;
@@ -158,12 +158,18 @@ export default {
 						}, wait);
 					}
 				};
-				const reply = await runtime.deliver(
-					config.workspace,
-					ctx.message.text,
-					provenance("telegram", chatId, sender),
-					{ onPartial },
-				);
+				const typing = setInterval(() => void ctx.replyWithChatAction("typing").catch(() => {}), 4000);
+				let reply: string;
+				try {
+					reply = await runtime.deliver(
+						config.workspace,
+						ctx.message.text,
+						provenance("telegram", chatId, sender),
+						{ onPartial },
+					);
+				} finally {
+					clearInterval(typing);
+				}
 				clearTimeout(queued);
 				// Telegram caps messages at 4096 chars.
 				if (previewId !== undefined && reply.length <= 4000) {

@@ -15,7 +15,7 @@ import type { SessionProjection } from "../projection/session-projection.js";
 import type { LLMClient, ModelConfig, LLMResponse } from "../runtime/llm-types.js";
 import type { CompactionOutcome, CompactionPolicy, CompactionReason } from "../runtime/policies.js";
 import { serializeConversation, SUMMARIZATION_SYSTEM_PROMPT } from "./utils.js";
-import { DEFAULT_MASK_MIN_CHARS, maskToolResultEvents } from "./tool-result-masking.js";
+import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolResultEvents } from "./tool-result-masking.js";
 
 /**
  * - "mask": only replace old tool results with placeholders (no LLM call).
@@ -62,7 +62,7 @@ type EventMessagePair = {
 
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_RESERVE_TOKENS = 16384;
-const DEFAULT_KEEP_RECENT_TOKENS = 20000;
+const DEFAULT_KEEP_RECENT_TOKENS = 10000;
 const DEFAULT_MASK_TARGET_RATIO = 0.8;
 
 /**
@@ -180,7 +180,11 @@ export class CompactionEngine implements CompactionPolicy {
 			})
 			.filter((pair): pair is EventMessagePair => pair !== undefined);
 
-		const previousCompactionIndex = findLastIndex(pairs, (pair) => pair.event.type === "COMPACTION_END");
+		// Only summary compactions reset the compressible region — a mask-mode
+		// COMPACTION_END just clears tool outputs and must NOT become the
+		// boundary, or a later summary would only "summarize" the events
+		// after the mask (growing the context instead of shrinking it).
+		const previousCompactionIndex = findLastIndex(pairs, (pair) => pair.event.type === "COMPACTION_END" && !isMaskCompaction(pair.event));
 		const previousSummary =
 			previousCompactionIndex >= 0 ? (pairs[previousCompactionIndex]!.message as { summary?: string }).summary : undefined;
 		const startIndex = previousCompactionIndex >= 0 ? previousCompactionIndex + 1 : 0;
@@ -214,12 +218,16 @@ export class CompactionEngine implements CompactionPolicy {
 		}
 
 		const summary = await this._generateSummary(messagesToSummarize, previousSummary, signal);
+		// Per-message estimate — estimateMessagesTokens would read the last
+		// assistant message's cumulative provider usage and report nearly the
+		// whole pre-compaction total as "after" (observed tokens_after >
+		// tokens_before on real sessions).
 		const tokensAfter = estimateMessageTokens({
 			role: "compactionSummary",
 			summary,
 			tokensBefore,
 			timestamp: Date.now(),
-		}) + estimateMessagesTokens(keptPairs.map((pair) => pair.message));
+		}) + keptPairs.reduce((sum, pair) => sum + estimateMessageTokens(pair.message), 0);
 
 		return {
 			summary,

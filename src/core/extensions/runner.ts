@@ -9,6 +9,7 @@ import type { Theme } from "../../../packages/tui/theme/theme.js";
 import { toolRenderBridge } from "../tools/render-bridge.js";
 import type { ResourceDiagnostic } from "../ops/diagnostics.js";
 import type { EventBase } from "../event-store/types.js";
+import type { CompactionEntry } from "../types/session-types.js";
 import type { EventStore } from "../event-store/store.js";
 import type { KeybindingsConfig } from "../commands/keybindings.js";
 import type { ModelRegistry } from "../models/model-registry.js";
@@ -42,6 +43,8 @@ import type {
 	ProviderConfig,
 	RegisteredBuiltinCommand,
 	RegisteredCommand,
+	RegisteredExtensionMenu,
+	RegisteredExtensionSettingsItem,
 	RegisteredTool,
 	ReplacedSessionContext,
 	ResolvedCommand,
@@ -205,6 +208,7 @@ const noOpUIContext: ExtensionUIContext = {
 	setHeader: () => {},
 	setTitle: () => {},
 	custom: async () => undefined as never,
+	page: async () => ({ kind: "cancel" }) as const,
 	pasteToEditor: () => {},
 	setEditorText: () => {},
 	getEditorText: () => "",
@@ -360,7 +364,14 @@ export class ExtensionRunner {
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext): void {
+		const hadUI = this.hasUI();
 		this.uiContext = uiContext ?? noOpUIContext;
+		// session_start can fire before a UI context is bound (e.g. RPC mode
+		// binds it after the facade is created). Notify extensions that
+		// deferred UI work once a real context arrives.
+		if (!hadUI && this.hasUI()) {
+			void this.emit({ type: "ui_ready" });
+		}
 	}
 
 	getUIContext(): ExtensionUIContext {
@@ -477,6 +488,24 @@ export class ExtensionRunner {
 						? this.modelRegistry.find(payload.previous_provider, payload.previous_model_id)
 						: undefined;
 				await this.emit({ type: "model_select", model, previousModel, source: "set" });
+				break;
+			}
+			case "COMPACTION_END": {
+				const payload = event.payload as {
+					summary: string;
+					first_kept_event_id: string;
+					tokens_before: number;
+				};
+				const compactionEntry: CompactionEntry = {
+					type: "compaction",
+					id: event.event_id,
+					parentId: null,
+					timestamp: new Date(event.timestamp).toISOString(),
+					summary: payload.summary,
+					firstKeptEntryId: payload.first_kept_event_id,
+					tokensBefore: payload.tokens_before,
+				};
+				await this.emit({ type: "session_compact", compactionEntry, fromExtension: false });
 				break;
 			}
 		}
@@ -714,6 +743,28 @@ export class ExtensionRunner {
 
 	getCommandDiagnostics(): ResourceDiagnostic[] {
 		return this.commandDiagnostics;
+	}
+
+	/** All extension-contributed /settings items, in load order. */
+	getSettingsItems(): RegisteredExtensionSettingsItem[] {
+		const items: RegisteredExtensionSettingsItem[] = [];
+		for (const ext of this.extensions) {
+			for (const item of ext.settingsItems.values()) {
+				items.push(item);
+			}
+		}
+		return items;
+	}
+
+	/** All extension-contributed menus, in load order. */
+	getMenus(): RegisteredExtensionMenu[] {
+		const menus: RegisteredExtensionMenu[] = [];
+		for (const ext of this.extensions) {
+			for (const menu of ext.menus.values()) {
+				menus.push(menu);
+			}
+		}
+		return menus;
 	}
 
 	getCommand(name: string): ResolvedCommand | undefined {

@@ -174,6 +174,28 @@ export async function subscribeEvents(handler: EventHandler): Promise<() => void
 	return subscribeSse(handler);
 }
 
+/** Subscribe to extension_ui_request frames emitted by the sidecar. */
+export async function subscribeExtensionUi(
+	handler: (request: Record<string, unknown> & { _cwd?: string }) => void,
+): Promise<() => void> {
+	if (isTauri()) {
+		const { listen } = await import("@tauri-apps/api/event");
+		const unlisten = await listen("extension_ui_request", (event) =>
+			handler(event.payload as Record<string, unknown> & { _cwd?: string }),
+		).catch(() => null);
+		return () => { try { unlisten?.(); } catch { /* registry gone (reload) */ } };
+	}
+	// Browser mode: requests ride the same SSE stream as events.
+	return subscribeSse((line) => {
+		if (line?.type === "extension_ui_request") handler(line);
+	});
+}
+
+/** Respond to an extension_ui_request (answers pending ctx.ui.* calls). */
+export function respondExtensionUi(response: Record<string, unknown> & { id: string }): void {
+	void sendCommandRaw({ ...response, type: "extension_ui_response" }).catch(() => {});
+}
+
 export async function subscribeSidecarExit(handler: ExitHandler): Promise<() => void> {
 	if (isTauri()) {
 		const { listen } = await import("@tauri-apps/api/event");
@@ -525,6 +547,55 @@ export async function getExtensions(): Promise<ExtensionInfo[]> {
 		return r.data?.extensions ?? [];
 	} catch {
 		return [];
+	}
+}
+
+/** A menu item contributed by an extension (see get_extension_menus). */
+export interface ExtensionMenuItemWire {
+	id: string;
+	label: string;
+	description?: string;
+	value?: string;
+	/** Slash command steered into the session when picked (e.g. "/pet feed"). */
+	command?: string;
+	/** Desktop command invoked instead (Tauri command name, e.g. "toggle_pet_window"). */
+	uiCommand?: string;
+}
+
+export interface ExtensionMenuWire {
+	id: string;
+	label: string;
+	description?: string;
+	/** Menu-specific payload for bespoke pages (e.g. the pet save + species). */
+	data?: Record<string, unknown>;
+	items: ExtensionMenuItemWire[];
+}
+
+/** Extension-contributed menus for app chrome (sidebar / menus). */
+export async function getExtensionMenus(): Promise<ExtensionMenuWire[]> {
+	try {
+		const r = await sendCommandAwait<{ menus: ExtensionMenuWire[] }>({ type: "get_extension_menus" }, 10000);
+		return r.data?.menus ?? [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Execute an extension menu item: `uiCommand` invokes a desktop command
+ * (Tauri), `command` steers a slash command into the session where it
+ * resolves to a registered extension command without interrupting a turn.
+ */
+export function runExtensionMenuItem(item: ExtensionMenuItemWire): void {
+	if (item.uiCommand) {
+		if (!isTauri()) return;
+		void import("@tauri-apps/api/core")
+			.then(({ invoke }) => invoke(item.uiCommand!))
+			.catch(() => {});
+		return;
+	}
+	if (item.command) {
+		void sendCommandAwait({ type: "steer", message: item.command }).catch(() => {});
 	}
 }
 

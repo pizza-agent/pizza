@@ -136,6 +136,64 @@ describe("CompactionEngine tool-result masking", () => {
 		store.close();
 	});
 
+	it("a mask-mode COMPACTION_END does not bound a later summary", async () => {
+		// Regression: findLastIndex previously treated ANY COMPACTION_END as the
+		// compactable boundary — including mask-mode ones. A mask followed by a
+		// summary would then "summarize" only the few events after the mask and
+		// return tokens_after LARGER than tokens_before.
+		const store = new SqliteEventStore("compaction-mask-boundary", ":memory:");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "important old request" } });
+		appendAssistant(store, "old answer");
+		store.append({
+			actor_id: "compactor",
+			type: "COMPACTION_END",
+			payload: {
+				mode: "mask",
+				summary: "Cleared 1 old tool result(s)",
+				first_kept_event_id: "whatever",
+				mask_before_event_id: "whatever",
+				tokens_before: 5000,
+				tokens_after: 4000,
+			},
+		});
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "new context ".repeat(80) } });
+		appendAssistant(store, "new answer ".repeat(40));
+		const recent = store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "recent request" } });
+		appendAssistant(store, "recent answer");
+
+		let prompt = "";
+		const llmClient: LLMClient = {
+			async complete(request): Promise<LLMResponse> {
+				const message = request.messages[0];
+				prompt = typeof message.content === "string" ? message.content : message.content.map((block) => "text" in block ? block.text : "").join("\n");
+				return {
+					content: [{ type: "text", text: "summary" }],
+					provider: "test",
+					model: "test",
+					usage: { input: 1, output: 1, cache_read: 0, cache_write: 0, total: 2, cost: 0 },
+					stopReason: "stop",
+				};
+			},
+		};
+
+		const engine = new CompactionEngine({
+			store,
+			projection: createProjection(store),
+			llmClient,
+			model: { provider: "test", model_id: "test" },
+			settings: { keepRecentTokens: 10, strategy: "summary" },
+		});
+
+		const result = await engine.compact("manual", new AbortController().signal);
+
+		// The pre-mask "important old request" must still be inside the
+		// summarized range — not excluded by the mask-mode boundary.
+		expect(prompt).toContain("important old request");
+		expect(result.first_kept_event_id).toBe(recent.event_id);
+		expect(result.tokens_after).toBeLessThan(result.tokens_before);
+		store.close();
+	});
+
 	it("summary strategy never masks", async () => {
 		const store = new SqliteEventStore("compaction-summary-only", ":memory:");
 		seed(store);

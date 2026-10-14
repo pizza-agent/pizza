@@ -29,6 +29,9 @@ import {
 	setNetwork,
 	getApprovalPolicy,
 	setApprovalPolicy,
+	getExtensionMenus,
+	runExtensionMenuItem,
+	type ExtensionMenuWire,
 	type ApprovalPolicy,
 	type CustomProviderInput,
 	type CustomProviderTestResult,
@@ -37,7 +40,8 @@ import {
 import type { RpcSessionState } from "@/lib/types";
 import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { PluginsContent } from "@/views/PluginsView";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
+import { PetSettingsPage } from "@/components/PetSettingsPage";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
 import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
@@ -1175,14 +1179,49 @@ function SetupBanner({ state }: { state: RpcSessionState | null }) {
 	);
 }
 
+/** Settings page for an extension-contributed menu: each item is a row that
+ *  shows its live value and runs its command/uiCommand when picked. */
+function ExtensionMenuPage({ menu, onAction }: { menu: ExtensionMenuWire; onAction: () => void }) {
+	return (
+		<SettingsSection title={menu.label} description={menu.description}>
+			{menu.items.map((item) => {
+				const actionable = Boolean(item.command || item.uiCommand);
+				return (
+					<SettingsRow key={item.id} title={item.label} description={item.description}>
+						{item.value && <span className="text-xs text-muted">{item.value}</span>}
+						{actionable && (
+							<button
+								type="button"
+								onClick={() => {
+									runExtensionMenuItem(item);
+									onAction();
+								}}
+								title={item.description ?? item.label}
+								className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+							>
+								<ChevronRight className="h-4 w-4" />
+							</button>
+						)}
+					</SettingsRow>
+				);
+			})}
+		</SettingsSection>
+	);
+}
+
 type SettingsPageId = "general" | "scheduler" | "about" | "provider" | "plugins";
+/** Static pages plus extension-contributed pages addressed as `ext:<menuId>`. */
+type SettingsPage = SettingsPageId | `ext:${string}`;
 const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "scheduler", "about", "provider", "plugins"];
+const EXT_PAGE_PREFIX = "ext:";
 
 export default function SettingsView({
 	state,
+	workspace,
 	onRestartSidecar,
 }: {
 	state: RpcSessionState | null;
+	workspace?: string;
 	onRestartSidecar?: () => Promise<void> | void;
 }) {
 	const { t } = useTranslation();
@@ -1200,9 +1239,11 @@ export default function SettingsView({
 	// "updates" is the pre-rename id for the About page; keep accepting it so
 	// old deep links still land somewhere sensible.
 	const normalizedPageParam = pageParam === "updates" ? "about" : pageParam;
-	const page: SettingsPageId = SETTINGS_PAGE_IDS.includes(normalizedPageParam as SettingsPageId)
+	const page: SettingsPage = SETTINGS_PAGE_IDS.includes(normalizedPageParam as SettingsPageId)
 		? (normalizedPageParam as SettingsPageId)
-		: isSetupMode ? "provider" : "general";
+		: normalizedPageParam?.startsWith(EXT_PAGE_PREFIX)
+			? (normalizedPageParam as SettingsPage)
+			: isSetupMode ? "provider" : "general";
 	const [navSearch, setNavSearch] = useState("");
 	const [restarting, setRestarting] = useState(false);
 	const [restartError, setRestartError] = useState("");
@@ -1238,7 +1279,19 @@ export default function SettingsView({
 	const canBack = histIdx > 0;
 	const canForward = histIdx < maxIdxRef.current;
 
-	const navGroups: Array<{ label: string; items: Array<{ id: SettingsPageId | "plugins"; icon: typeof Key; label: string }> }> = [
+	// Extension-contributed menus surface as settings pages (`ext:<menuId>`) —
+	// each registered menu becomes a nav entry whose items render as rows.
+	const [extMenus, setExtMenus] = useState<ExtensionMenuWire[]>([]);
+	const refreshExtMenus = useCallback(() => {
+		void getExtensionMenus().then(setExtMenus).catch(() => {});
+	}, []);
+	useEffect(refreshExtMenus, [refreshExtMenus]);
+	// Re-evaluate visible/getValue when an extension page is opened.
+	useEffect(() => {
+		if (page.startsWith(EXT_PAGE_PREFIX)) refreshExtMenus();
+	}, [page, refreshExtMenus]);
+
+	const navGroups: Array<{ label: string; items: Array<{ id: SettingsPage; icon: typeof Key; label: string }> }> = [
 		{
 			label: t("settings.tabs.general"),
 			items: [
@@ -1254,6 +1307,16 @@ export default function SettingsView({
 				{ id: "plugins", icon: Puzzle, label: t("layout.plugins") },
 			],
 		},
+		...(extMenus.length > 0
+			? [{
+					label: t("settings.nav.groupExtensions"),
+					items: extMenus.map((m) => ({
+						id: `${EXT_PAGE_PREFIX}${m.id}` as SettingsPage,
+						icon: Puzzle,
+						label: m.label,
+					})),
+				}]
+			: []),
 	];
 	// The search box filters nav entries (Codex settings pattern).
 	const q = navSearch.trim().toLowerCase();
@@ -1261,12 +1324,17 @@ export default function SettingsView({
 		.map((g) => ({ ...g, items: g.items.filter((i) => !q || i.label.toLowerCase().includes(q)) }))
 		.filter((g) => g.items.length > 0);
 
+	const activeExtMenu = page.startsWith(EXT_PAGE_PREFIX)
+		? extMenus.find((m) => `${EXT_PAGE_PREFIX}${m.id}` === page)
+		: undefined;
+
 	const pageTitle =
 		page === "general" ? t("settings.nav.general")
 		: page === "scheduler" ? t("settings.nav.scheduler")
 		: page === "about" ? t("settings.about.title")
 		: page === "plugins" ? t("layout.plugins")
-		: t("settings.tabs.provider");
+		: page === "provider" ? t("settings.tabs.provider")
+		: (activeExtMenu?.label ?? t("settings.nav.groupExtensions"));
 
 	return (
 		<div className="flex h-full flex-col">
@@ -1385,6 +1453,8 @@ export default function SettingsView({
 						{page === "about" && <AboutPage />}
 						{page === "provider" && <ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />}
 						{page === "plugins" && <PluginsContent />}
+						{activeExtMenu?.id === "pet" && <PetSettingsPage menu={activeExtMenu} onAction={refreshExtMenus} workspace={workspace} />}
+						{activeExtMenu && activeExtMenu.id !== "pet" && <ExtensionMenuPage menu={activeExtMenu} onAction={refreshExtMenus} />}
 					</div>
 				</div>
 			</div>

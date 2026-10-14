@@ -97,7 +97,55 @@ export type WidgetPlacement = "aboveEditor" | "belowEditor";
 export interface ExtensionWidgetOptions {
 	/** Where the widget is rendered. Defaults to "aboveEditor". */
 	placement?: WidgetPlacement;
+	/** Optional structured metadata attached to the widget frame (serialized
+	 * over RPC alongside widgetLines; ignored by the TUI). Lets rich frontends
+	 * render non-text representations — e.g. the desktop floating pet window
+	 * reads species/mood from meta instead of parsing ASCII frames. */
+	meta?: Record<string, unknown>;
 }
+
+// ============================================================================
+// List Page (declarative picker page)
+// ============================================================================
+
+/** A single row in an extension list page. */
+export interface ExtensionPageItem {
+	/** Stable id returned in the result. */
+	id: string;
+	/** Primary label. */
+	label: string;
+	/** Secondary description shown next to the label. */
+	description?: string;
+	/**
+	 * Preview rendered while this item is highlighted.
+	 * - string[]: static lines
+	 * - factory: a live component (e.g. animated), disposed on selection change
+	 */
+	preview?: string[] | ((tui: TUI, theme: Theme) => Component & { dispose?(): void });
+}
+
+/** A custom keyboard action on a list page, e.g. { key: "r", label: "rename" }. */
+export interface ExtensionPageAction {
+	key: string;
+	label: string;
+}
+
+/** Options for {@link ExtensionUIContext.page}. */
+export interface ExtensionPageOptions {
+	items: ExtensionPageItem[];
+	/** Extra key actions shown in the hint bar. Resolved as { kind: "action" }. */
+	actions?: ExtensionPageAction[];
+	/** Item id highlighted initially. */
+	initialSelection?: string;
+	/** AbortSignal to dismiss the page programmatically. */
+	signal?: AbortSignal;
+}
+
+/** Result of {@link ExtensionUIContext.page}. */
+export type ExtensionPageResult =
+	| { kind: "select"; item: ExtensionPageItem }
+	| { kind: "action"; action: string; item?: ExtensionPageItem }
+	| { kind: "cancel" };
 
 /** Raw terminal input listener for extensions. */
 export type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
@@ -191,6 +239,13 @@ export interface ExtensionUIContext {
 			onHandle?: (handle: OverlayHandle) => void;
 		},
 	): Promise<T>;
+
+	/**
+	 * Show a declarative list page: a navigable item list with an optional
+	 * preview pane per item and custom key actions. Replaces the editor area.
+	 * Resolves when the user selects an item, triggers an action, or cancels.
+	 */
+	page(title: string, options: ExtensionPageOptions): Promise<ExtensionPageResult>;
 
 	/** Paste text into the editor, triggering paste handling (collapse for large content). */
 	pasteToEditor(text: string): void;
@@ -502,6 +557,15 @@ export interface SessionStartEvent {
 	reason: "startup" | "reload" | "new" | "resume" | "fork";
 	/** Previously active session file. Present for "new", "resume", and "fork". */
 	previousSessionFile?: string;
+}
+
+/**
+ * Fired when a real UI context is bound to the runner (TUI init, RPC client
+ * attach). `session_start` can fire before the UI context exists, so
+ * extensions that render UI should also listen for this event.
+ */
+export interface UiReadyEvent {
+	type: "ui_ready";
 }
 
 /** Fired before switching to another session (can be cancelled) */
@@ -929,6 +993,7 @@ export function isToolCallEventType(toolName: string, event: ToolCallEvent): boo
 export type ExtensionEvent =
 	| ResourcesDiscoverEvent
 	| SessionEvent
+	| UiReadyEvent
 	| ContextEvent
 	| BeforeProviderRequestEvent
 	| AfterProviderResponseEvent
@@ -1061,6 +1126,7 @@ export interface ExtensionAPI {
 
 	on(event: "resources_discover", handler: ExtensionHandler<ResourcesDiscoverEvent, ResourcesDiscoverResult>): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
+	on(event: "ui_ready", handler: ExtensionHandler<UiReadyEvent>): void;
 	on(
 		event: "session_before_switch",
 		handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
@@ -1151,6 +1217,24 @@ export interface ExtensionAPI {
 
 	/** Register a custom renderer for CustomMessageEntry. */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
+
+	/**
+	 * Register an item in the /settings menu.
+	 *
+	 * - `values` + `onChange`: a cycleable setting row (e.g. a boolean toggle).
+	 * - `open`: Enter opens a full custom submenu component (any pi-tui Component).
+	 *
+	 * Ids are namespaced as `ext:<id>` in the UI. Registering the same id twice
+	 * replaces the previous registration (e.g. after reload).
+	 */
+	registerSettingsItem(item: ExtensionSettingsItem): void;
+
+	/**
+	 * Register a menu contribution for rich frontends (desktop GUI). The menu
+	 * descriptor must be serializable — items trigger slash commands or
+	 * frontend commands rather than holding component callbacks.
+	 */
+	registerMenu(menu: ExtensionMenu): void;
 
 	// =========================================================================
 	// Actions
@@ -1548,8 +1632,92 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	settingsItems: Map<string, RegisteredExtensionSettingsItem>;
+	menus: Map<string, RegisteredExtensionMenu>;
 }
 
+/**
+ * An item an extension contributes to the /settings menu.
+ */
+export interface ExtensionSettingsItem {
+	/** Unique id within this extension (rendered as `ext:<id>`). */
+	id: string;
+	/** Row label shown in the settings list. */
+	label: string;
+	/** Row description shown when the item is highlighted. */
+	description?: string;
+	/** Text displayed on the right side of the row (evaluated when settings open). */
+	getValue(): string;
+	/** Cycleable values for simple settings (e.g. ["on", "off"]). Enter/Space cycles. */
+	values?: string[];
+	/** Called when a `values` row changes. */
+	onChange?: (value: string, ctx: ExtensionContext) => void;
+	/**
+	 * Custom submenu page. Mirrors pi-tui SettingItem.submenu: build a component
+	 * and call done() when finished (optionally pass a new display value).
+	 */
+	open?: (
+		currentValue: string,
+		done: (selectedValue?: string, options?: { navigateTo?: string }) => void,
+		ctx: ExtensionContext,
+	) => Component;
+}
+
+/**
+ * A menu an extension contributes to rich frontends (the desktop GUI renders
+ * these as menu entries in the app chrome; ignored by the TUI). Everything
+ * here must serialize over RPC — actions are referenced, not embedded.
+ */
+export interface ExtensionMenu {
+	/** Unique id within this extension. */
+	id: string;
+	/** Row label shown in the menu (e.g. "Pet"). */
+	label: string;
+	/** Secondary line under the label. */
+	description?: string;
+	items: ExtensionMenuItem[];
+	/**
+	 * Extra JSON-serializable data shipped with the menu so rich frontends can
+	 * render a bespoke page (e.g. the pet menu carries the save + species
+	 * catalog). A function is evaluated per fetch; objects are sent as-is.
+	 */
+	data?: Record<string, unknown> | (() => Record<string, unknown>);
+}
+
+export interface ExtensionMenuItem {
+	/** Unique id within the menu. */
+	id: string;
+	/** Row label. */
+	label: string;
+	/** Secondary line under the label. */
+	description?: string;
+	/** Right-side value text, evaluated when the menu is fetched (e.g. "Lv.11"). */
+	getValue?(): string;
+	/** Hide the row when this returns false (evaluated per fetch). */
+	visible?(): boolean;
+	/**
+	 * Slash-command text executed when the item is picked (e.g. "/pet feed").
+	 * Steered through the session — resolves to a registered command or,
+	 * failing that, is sent to the agent as a prompt.
+	 */
+	command?: string;
+	/**
+	 * Frontend-level command to invoke instead of `command` — a Tauri command
+	 * name on the desktop (e.g. "toggle_pet_window"). For actions that live
+	 * in app chrome rather than in the agent session.
+	 */
+	uiCommand?: string;
+}
+
+/** ExtensionMenu annotated with its source extension. */
+export interface RegisteredExtensionMenu extends ExtensionMenu {
+	sourceInfo: SourceInfo;
+}
+
+/** ExtensionSettingsItem annotated with its source extension. */
+export interface RegisteredExtensionSettingsItem extends ExtensionSettingsItem {
+	sourceInfo: SourceInfo;
+}
 /** Result of loading extensions. */
 export interface LoadExtensionsResult {
 	extensions: Extension[];

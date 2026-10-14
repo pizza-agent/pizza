@@ -357,6 +357,7 @@ export type RpcCommand =
 	| { id?: string; type: "delete_skill"; skillName: string }
 	| { id?: string; type: "install_skill"; source: string; slug: string }
 	| { id?: string; type: "get_extensions" }
+	| { id?: string; type: "get_extension_menus" }
 	| { id?: string; type: "get_themes" }
 	| { id?: string; type: "set_extension_enabled"; extensionId: string; enabled: boolean }
 	| { id?: string; type: "install_extension"; extensionId: string }
@@ -448,6 +449,26 @@ export interface RpcSkillInfo {
 	path: string;
 	/** Where the skill comes from (e.g. "builtin", "local", a package name). */
 	source: string;
+}
+
+/** A menu contributed by an extension, as returned by get_extension_menus. */
+export interface RpcExtensionMenu {
+	id: string;
+	label: string;
+	description?: string;
+	items: RpcExtensionMenuItem[];
+}
+
+export interface RpcExtensionMenuItem {
+	id: string;
+	label: string;
+	description?: string;
+	/** Right-side value text (e.g. "Lv.11"). */
+	value?: string;
+	/** Slash-command text to steer when picked (e.g. "/pet feed"). */
+	command?: string;
+	/** Frontend command to invoke instead (Tauri command name on desktop). */
+	uiCommand?: string;
 }
 
 /** An extension loaded by the agent, as returned by get_extensions. */
@@ -675,6 +696,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
 	| { id?: string; type: "response"; command: "install_skill"; success: true; data: { name: string; path: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
+	| { id?: string; type: "response"; command: "get_extension_menus"; success: true; data: { menus: RpcExtensionMenu[] } }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }
@@ -772,7 +794,8 @@ export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
 	| { type: "extension_ui_request"; id: string; method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
 	| { type: "extension_ui_request"; id: string; method: "setStatus"; statusKey: string; statusText: string | undefined }
-	| { type: "extension_ui_request"; id: string; method: "setWidget"; widgetKey: string; widgetLines: string[] | undefined; widgetPlacement?: "aboveEditor" | "belowEditor" }
+	| { type: "extension_ui_request"; id: string; method: "setWidget"; widgetKey: string; widgetLines: string[] | undefined; widgetPlacement?: "aboveEditor" | "belowEditor"; widgetMeta?: Record<string, unknown> }
+	| { type: "extension_ui_request"; id: string; method: "page"; title: string; items: RpcExtensionPageItem[]; actions?: Array<{ key: string; label: string }>; initialSelection?: string }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
@@ -784,7 +807,17 @@ export type RpcExtensionUIRequest =
 export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
-	| { type: "extension_ui_response"; id: string; cancelled: true };
+	| { type: "extension_ui_response"; id: string; cancelled: true }
+	| { type: "extension_ui_response"; id: string; page: { kind: "select"; itemId: string } | { kind: "action"; action: string; itemId?: string } | { kind: "cancel" } };
+
+/** Serializable form of an ExtensionPageItem for the `page` UI request. */
+export interface RpcExtensionPageItem {
+	id: string;
+	label: string;
+	description?: string;
+	/** Static preview lines (component-factory previews are TUI-only). */
+	preview?: string[];
+}
 
 // ============================================================================
 // Typed events (stdout, raw EventBase forwarded by the bridge)
