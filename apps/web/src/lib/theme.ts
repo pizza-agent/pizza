@@ -18,7 +18,19 @@ export interface CustomTheme {
 	css?: string;
 	/** Background video as a data: URI (not persisted — re-fetched on load). */
 	video?: string;
+	/** Launch-screen customization (persisted — the splash renders before the catalog loads). */
+	splash?: { css?: string; minDurationMs?: number };
 }
+
+/** What the launch screen needs, resolved from the active theme or its persisted snapshot. */
+export interface SplashSpec {
+	css?: string;
+	minDurationMs: number;
+	icon?: string;
+}
+
+/** Mirrors MAX_SPLASH_MIN_DURATION_MS in packages/tui/theme/theme.ts. */
+const MAX_SPLASH_MIN_DURATION_MS = 4000;
 
 const STORAGE_KEY = "pizza-theme";
 const MODE_KEY = "pizza-theme-mode";
@@ -26,6 +38,7 @@ const CSS_KEY = "pizza-theme-css";
 const EXTRA_CSS_KEY = "pizza-theme-extra-css";
 const TITLE_KEY = "pizza-theme-title";
 const ICON_KEY = "pizza-theme-icon";
+const SPLASH_KEY = "pizza-theme-splash";
 const STYLE_ID = "pizza-custom-theme";
 const EXTRA_STYLE_ID = "pizza-custom-theme-extra";
 const FAVICON_ID = "pizza-theme-favicon";
@@ -269,10 +282,15 @@ export async function refreshCustomThemes(): Promise<CustomTheme[]> {
 			icon: t.web!.icon,
 			css: t.web!.css,
 			video: t.web!.video,
+			splash: t.web!.splash,
 		}));
 	injectThemesCss();
 	// Re-apply: a previously saved custom theme may have just become available.
-	applyTheme(getThemeId());
+	const id = getThemeId();
+	applyTheme(id);
+	// Refresh the pre-paint snapshot too, so edits to the theme file reach
+	// the next launch (index.html + the splash read it before this runs).
+	if (findCustomTheme(id)) persistTheme(id);
 	for (const listener of customThemeListeners) listener();
 	return customThemes;
 }
@@ -319,27 +337,57 @@ export function getThemeId(): string {
 /** Select a theme: "light", "dark", or a custom theme name. */
 export function setTheme(id: string): void {
 	applyTheme(id);
+	persistTheme(id);
+}
+
+/** Snapshot the theme into localStorage for the pre-paint script and the launch screen. */
+function persistTheme(id: string): void {
+	const put = (key: string, value: string | undefined) =>
+		value ? localStorage.setItem(key, value) : localStorage.removeItem(key);
 	try {
 		localStorage.setItem(STORAGE_KEY, id);
 		localStorage.setItem(MODE_KEY, getTheme());
 		const custom = findCustomTheme(id);
-		if (custom) {
-			localStorage.setItem(CSS_KEY, renderThemeCss(custom));
-			if (custom.css) localStorage.setItem(EXTRA_CSS_KEY, custom.css);
-			else localStorage.removeItem(EXTRA_CSS_KEY);
-			if (custom.title) localStorage.setItem(TITLE_KEY, custom.title);
-			else localStorage.removeItem(TITLE_KEY);
-			if (custom.icon) localStorage.setItem(ICON_KEY, custom.icon);
-			else localStorage.removeItem(ICON_KEY);
-		} else {
-			localStorage.removeItem(CSS_KEY);
-			localStorage.removeItem(EXTRA_CSS_KEY);
-			localStorage.removeItem(TITLE_KEY);
-			localStorage.removeItem(ICON_KEY);
-		}
+		put(CSS_KEY, custom && renderThemeCss(custom));
+		put(EXTRA_CSS_KEY, custom?.css);
+		put(TITLE_KEY, custom?.title);
+		put(ICON_KEY, custom?.icon);
+		put(SPLASH_KEY, custom?.splash && JSON.stringify(custom.splash));
 	} catch {
 		/* ignore */
 	}
+}
+
+function readPersistedSplash(): CustomTheme["splash"] {
+	try {
+		const raw = localStorage.getItem(SPLASH_KEY);
+		return raw ? (JSON.parse(raw) as CustomTheme["splash"]) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Launch-screen spec for the active theme. At startup the theme catalog has
+ * not been fetched yet, so this falls back to the snapshot persistTheme wrote.
+ */
+export function getSplashSpec(): SplashSpec {
+	const custom = findCustomTheme(getThemeId());
+	const splash = custom ? custom.splash : readPersistedSplash();
+	let icon = custom?.icon;
+	if (!custom) {
+		try {
+			icon = localStorage.getItem(ICON_KEY) ?? undefined;
+		} catch {
+			/* ignore */
+		}
+	}
+	const min = Number(splash?.minDurationMs);
+	return {
+		css: splash?.css,
+		minDurationMs: Number.isFinite(min) ? Math.min(Math.max(min, 0), MAX_SPLASH_MIN_DURATION_MS) : 0,
+		icon,
+	};
 }
 
 export function toggleTheme(): Theme {

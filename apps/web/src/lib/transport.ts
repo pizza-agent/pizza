@@ -619,6 +619,8 @@ export interface WebThemeInfo {
 		css?: string;
 		/** Background video as a data: URI — plays muted+looping behind app content. */
 		video?: string;
+		/** Desktop launch screen: CSS mounted only while it is visible, and a minimum display time. */
+		splash?: { css?: string; minDurationMs?: number };
 	};
 }
 

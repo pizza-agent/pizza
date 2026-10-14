@@ -356,6 +356,70 @@
 	}
 }
 
+/* ---------------------------------------------------------------------------
+ * Launch splash — defaults only. The class/attribute names are a public theme
+ * contract (see BootSplash.tsx); themes override any of this via
+ * `web.splash.css`, which is injected after this sheet and wins ties.
+ * --------------------------------------------------------------------------- */
+.pizza-splash {
+	position: fixed;
+	inset: 0;
+	z-index: 90;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	background: var(--color-bg);
+	transition: opacity 360ms ease, visibility 0s linear 360ms;
+}
+.pizza-splash[data-state="exiting"] {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+.pizza-splash__backdrop {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+.pizza-splash__content {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1rem;
+	animation: pizza-splash-in 420ms ease-out both;
+}
+.pizza-splash__icon {
+	display: flex;
+	color: var(--color-accent);
+}
+.pizza-splash__icon img {
+	width: 48px;
+	height: 48px;
+	object-fit: contain;
+	border-radius: 0.5rem;
+}
+.pizza-splash__message {
+	font-size: 0.875rem;
+	color: var(--color-muted);
+}
+@keyframes pizza-splash-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.pizza-splash,
+	.pizza-splash *,
+	.pizza-splash *::before,
+	.pizza-splash *::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
 /* Markdown-rendered content (agent responses) */
 .md {
 	font-size: 0.875rem;

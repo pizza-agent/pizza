@@ -37,9 +37,10 @@ describe("theme web spec", () => {
 		expect(theme.web?.icon).toBeUndefined();
 		expect(theme.web?.css).toBeUndefined();
 		expect(theme.web?.video).toBeUndefined();
+		expect(theme.web?.splash).toBeUndefined();
 	});
 
-	it("passes through title, icon, css and video from the web block", () => {
+	it("passes through title, icon, css, video and splash from the web block", () => {
 		const themePath = writeTheme(tempRoot, "branded", {
 			web: {
 				label: "Branded",
@@ -47,10 +48,12 @@ describe("theme web spec", () => {
 				icon: "icon.svg",
 				css: "html { animation: x 1s; }",
 				video: "bg.mp4",
+				splash: { css: ".pizza-splash { color: red; }", minDurationMs: 800 },
 				tokens: { bg: "#101020" },
 			},
 		});
 		const theme = loadThemeFromPath(themePath, "truecolor");
+		expect(theme.web?.splash).toEqual({ css: ".pizza-splash { color: red; }", minDurationMs: 800 });
 		expect(theme.web?.title).toBe("Branded App");
 		expect(theme.web?.icon).toBe("icon.svg");
 		expect(theme.web?.css).toBe("html { animation: x 1s; }");

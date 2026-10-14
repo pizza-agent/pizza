@@ -6,6 +6,8 @@
 		<title>Pizza</title>
 		<script>
 			(function () {
+				// Theme hook: "boot" until the launch splash leaves (BootSplash.tsx).
+				document.documentElement.dataset.pizzaPhase = "boot";
 				try {
 					var saved = localStorage.getItem("pizza-theme");
 					var mode =

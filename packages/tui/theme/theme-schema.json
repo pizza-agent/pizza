@@ -349,6 +349,23 @@
 				"video": {
 					"type": "string",
 					"description": "Background video (mp4/webm/mov): a data: URI, or a file path relative to this theme JSON. Plays muted+looping on a fixed layer behind app content — make bg/surface tokens translucent so it shows through"
+				},
+				"splash": {
+					"type": "object",
+					"description": "Desktop launch screen. Stable CSS hooks: .pizza-splash[data-state=active|exiting] (root; the exit waits for its longest transition/animation), .pizza-splash__backdrop (empty decorative layer), .pizza-splash__content, .pizza-splash__icon, .pizza-splash__message, and html[data-pizza-phase=boot|ready] (set from first paint; usable from web.css too)",
+					"properties": {
+						"css": {
+							"type": "string",
+							"description": "Raw CSS mounted only while the launch screen is visible"
+						},
+						"minDurationMs": {
+							"type": "number",
+							"minimum": 0,
+							"maximum": 4000,
+							"description": "Keep the launch screen up at least this long so its animation can play on fast starts"
+						}
+					},
+					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false

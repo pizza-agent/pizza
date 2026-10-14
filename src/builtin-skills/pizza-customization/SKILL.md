@@ -162,7 +162,13 @@ repo — read it when unsure; every event and method is doc-commented there.
   `argument-hint` frontmatter.
 - **Theme**: `<name>.json` following `packages/tui/theme/theme-schema.json`
   (`name`, `vars`, `colors`; copy `dark.json` as a base). Select via the
-  `theme` key in `settings.json` or the theme picker in `/settings`.
+  `theme` key in `settings.json` or the theme picker in `/settings`. An
+  optional `web` block styles the desktop app: `tokens`, `title`, `icon`,
+  `css` (app-wide), `video`, and `splash` (`css` mounted only on the launch
+  screen + `minDurationMs`). Splash CSS hooks: `.pizza-splash[data-state=
+  active|exiting]`, `.pizza-splash__backdrop|content|icon|message`, and
+  `html[data-pizza-phase=boot|ready]` (also usable from `web.css`, e.g. to
+  fade an animated background in once the app is ready).
 - **Keybindings**: `~/.pizza/agent/keybindings.json`.
 - **Models**: `~/.pizza/agent/models.json` for static providers; an
   extension's `registerProvider` when OAuth or custom streaming is needed.

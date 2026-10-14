@@ -19,6 +19,9 @@ const ColorValueSchema = Type.Union([
 
 type ColorValue = Static<typeof ColorValueSchema>;
 
+/** Upper bound for `web.splash.minDurationMs` — a theme must never hold the app hostage. */
+export const MAX_SPLASH_MIN_DURATION_MS = 4000;
+
 const ThemeJsonSchema = Type.Object({
 	$schema: Type.Optional(Type.String()),
 	name: Type.String(),
@@ -97,8 +100,9 @@ const ThemeJsonSchema = Type.Object({
 	 * entries just like `colors` values. `title` rebrands the window/document
 	 * title, `icon` replaces the app icon (data: URI or a file path relative
 	 * to the theme JSON), `css` injects raw CSS while the theme is active
-	 * (background images, animations, ...), and `video` plays a looping
-	 * background video behind the app content.
+	 * (background images, animations, ...), `video` plays a looping
+	 * background video behind the app content, and `splash` styles the
+	 * desktop launch screen.
 	 */
 	web: Type.Optional(
 		Type.Object({
@@ -109,6 +113,12 @@ const ThemeJsonSchema = Type.Object({
 			icon: Type.Optional(Type.String()),
 			css: Type.Optional(Type.String()),
 			video: Type.Optional(Type.String()),
+			splash: Type.Optional(
+				Type.Object({
+					css: Type.Optional(Type.String()),
+					minDurationMs: Type.Optional(Type.Number({ minimum: 0, maximum: MAX_SPLASH_MIN_DURATION_MS })),
+				}),
+			),
 		}),
 	),
 });
@@ -201,6 +211,21 @@ export interface WebThemeSpec {
 	 * pair with translucent bg/surface tokens so it shows through.
 	 */
 	video?: string;
+	/** Desktop launch-screen customization (see {@link WebThemeSplash}). */
+	splash?: WebThemeSplash;
+}
+
+/**
+ * Launch-screen contribution. The desktop splash exposes a stable DOM/CSS
+ * contract (`.pizza-splash`, `.pizza-splash__backdrop|content|icon|message`,
+ * `[data-state="active"|"exiting"]`, `html[data-pizza-phase="boot"|"ready"]`)
+ * that `css` targets; that CSS is mounted only while the splash is on screen.
+ */
+export interface WebThemeSplash {
+	/** Raw CSS mounted only while the launch screen is visible. */
+	css?: string;
+	/** Keep the splash up at least this long (ms, capped at {@link MAX_SPLASH_MIN_DURATION_MS}). */
+	minDurationMs?: number;
 }
 
 // ============================================================================
@@ -694,6 +719,7 @@ function buildWebSpec(themeJson: ThemeJson, resolvedColors: Record<string, strin
 		icon: themeJson.web?.icon,
 		css: themeJson.web?.css,
 		video: themeJson.web?.video,
+		splash: themeJson.web?.splash,
 	};
 }
 

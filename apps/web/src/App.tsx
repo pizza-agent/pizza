@@ -8,6 +8,7 @@ import SettingsView from "@/views/SettingsView";
 import { subscribeSidecarExit, subscribeEvents, initSidecar, sendCommandAwait, listWorkspaces, deleteWorkspace, restartSidecar, stopMainAgent, setRpcWorkspace } from "@/lib/transport";
 import { refreshCustomThemes } from "@/lib/theme";
 import { BrandIcon } from "@/components/BrandIcon";
+import { BootSplash } from "@/components/BootSplash";
 import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
@@ -25,7 +26,9 @@ function AppInner() {
 	const [sidecarReady, setSidecarReady] = useState(false);
 	const [sidecarExitCode, setSidecarExitCode] = useState<number | null>(null);
 	const [workspace, setWorkspace] = useState<string | null>(null);
-	const [waitingForWorkspace, setWaitingForWorkspace] = useState(false);
+	// Starts true: the mount effect kicks off the first workspace init right
+	// away, and starting false would flash the empty app shell before it.
+	const [waitingForWorkspace, setWaitingForWorkspace] = useState(true);
 	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
 	const [streamingCwds, setStreamingCwds] = useState<Set<string>>(new Set());
 	const [recoveringMainAgent, setRecoveringMainAgent] = useState(false);
@@ -552,24 +555,15 @@ function AppInner() {
 	// AgentView holds per-workspace conversation caches (itemsByWs etc.) in
 	// refs — unmounting here would wipe them and lose the streaming/spinner
 	// state of an in-flight turn, so the waiting screen only shows when there
-	// is no live sidecar to show (first start / crashed sidecar).
-	if (waitingForWorkspace && !sidecarReady) {
-		return (
-			<PxlKitSurfaceProvider surface="linear">
-				<div className="flex h-screen items-center justify-center bg-bg">
-					<div className="flex flex-col items-center gap-4">
-						<BrandIcon size={48} className="text-accent" />
-						<p className="text-sm text-muted">{t("common.starting")}</p>
-					</div>
-				</div>
-			</PxlKitSurfaceProvider>
-		);
-	}
+	// is no live sidecar to show (first start / crashed sidecar). The splash
+	// stays mounted across the switch so it can play its exit over the app.
+	const booting = waitingForWorkspace && !sidecarReady;
 
 	return (
 		<PxlKitSurfaceProvider surface="linear">
 			<ConfirmHost />
-			<Routes>
+			<BootSplash active={booting} />
+			{!booting && <Routes>
 					<Route
 						element={
 							<Layout
@@ -630,7 +624,7 @@ function AppInner() {
 						} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 					</Route>
-			</Routes>
+			</Routes>}
 		</PxlKitSurfaceProvider>
 	);
 }
