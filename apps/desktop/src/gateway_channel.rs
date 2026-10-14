@@ -32,15 +32,28 @@ impl<T: Read + Write> ReadWrite for T {}
 
 /// Default gateway socket path. On Unix: `~/.pizza/gateway.sock`. On Windows:
 /// the named pipe `\\.\pipe\gateway` (mirrors the TS `gatewaySocketPath`).
+/// Debug builds use a `-dev` socket: a `cargo tauri dev` instance would
+/// otherwise share the installed app's gateway daemon, and identical version
+/// numbers defeat the version-mismatch restart — leaving fresh dev code
+/// talking to a stale production binary.
 pub fn gateway_socket_path() -> Option<PathBuf> {
 	#[cfg(unix)]
 	{
 		let home = std::env::var("HOME").ok()?;
-		Some(PathBuf::from(home).join(".pizza").join("gateway.sock"))
+		let name = if cfg!(debug_assertions) {
+			"gateway-dev.sock"
+		} else {
+			"gateway.sock"
+		};
+		Some(PathBuf::from(home).join(".pizza").join(name))
 	}
 	#[cfg(windows)]
 	{
-		Some(PathBuf::from(r"\\.\pipe\gateway"))
+		Some(PathBuf::from(if cfg!(debug_assertions) {
+			r"\\.\pipe\gateway-dev"
+		} else {
+			r"\\.\pipe\gateway"
+		}))
 	}
 	#[cfg(not(any(unix, windows)))]
 	{

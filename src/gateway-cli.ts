@@ -215,7 +215,9 @@ export async function handleGatewayCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "gateway") return false;
 
 	const sub = args[1];
-	const socketPath = gatewaySocketPath();
+	// PIZZA_GATEWAY_SOCKET lets you target a non-default socket, e.g. the
+	// dev desktop's gateway-dev.sock: `PIZZA_GATEWAY_SOCKET=~/.pizza/gateway-dev.sock pizza gateway status`
+	const socketPath = process.env.PIZZA_GATEWAY_SOCKET ?? gatewaySocketPath();
 
 	switch (sub) {
 		case "status":
