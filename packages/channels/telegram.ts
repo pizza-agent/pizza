@@ -110,6 +110,10 @@ export default {
 				[ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") ||
 				(ctx.from?.username ? `@${ctx.from.username}` : undefined) ||
 				(ctx.chat.type !== "private" && "title" in ctx.chat ? ctx.chat.title : undefined);
+			// Hoisted so the catch can retract a half-written preview when the
+			// turn fails.
+			let previewId: number | undefined;
+			let queued: ReturnType<typeof setTimeout> | undefined;
 			try {
 				// Instant read-receipt — a 👀 reaction says "received" without waiting
 				// on the LLM turn. Fire-and-forget: a failed reaction is fine.
@@ -119,10 +123,8 @@ export default {
 				// the safe floor); a failed edit just drops that partial. The
 				// "typing…" action is the fallback liveness signal; it expires
 				// after ~5s so re-fire it on an interval for long turns.
-				let previewId: number | undefined;
 				let lastEdit = 0;
 				let firstPartialAt: number | undefined;
-				let queued: ReturnType<typeof setTimeout> | undefined;
 				// Don't create the preview until the stream has been going for a
 				// beat — a fast reply would otherwise flash a one-word message
 				// that gets replaced a second later.
@@ -158,6 +160,7 @@ export default {
 						}, wait);
 					}
 				};
+				await ctx.replyWithChatAction("typing").catch(() => {});
 				const typing = setInterval(() => void ctx.replyWithChatAction("typing").catch(() => {}), 4000);
 				let reply: string;
 				try {
@@ -186,6 +189,10 @@ export default {
 					for (const part of chunk(reply, 4000)) await ctx.reply(part);
 				}
 			} catch (err) {
+				clearTimeout(queued);
+				if (previewId !== undefined) {
+					await ctx.api.deleteMessage(chatId, previewId).catch(() => {});
+				}
 				console.error(`[telegram] deliver failed for chat ${chatId}:`, errorMessage(err));
 				await ctx.reply(failureReply(err)).catch(() => {});
 			}

@@ -131,15 +131,17 @@ export default {
 			// waiting on the LLM turn. Fire-and-forget: a failed reaction is fine.
 			void lark.addReaction(msg.messageId, "Get").catch(() => {});
 
+			// Hoisted so the catch can retract a half-written preview when the
+			// turn fails.
+			let previewId: string | undefined;
+			let queued: ReturnType<typeof setTimeout> | undefined;
 			try {
 				// Stream the reply: post a preview message and edit it as
 				// text_delta chunks arrive (im.v1.message.update is text-only,
 				// so the preview is plain text and gets replaced by the final
 				// markdown/audio send). Throttled to stay under edit limits.
-				let previewId: string | undefined;
 				let lastEdit = 0;
 				let firstPartialAt: number | undefined;
-				let queued: ReturnType<typeof setTimeout> | undefined;
 				// Don't create the preview until the stream has been going for a
 				// beat — a fast one-word reply would otherwise flash a preview
 				// message that gets recalled a second later.
@@ -215,6 +217,8 @@ export default {
 				}
 				dropPreview();
 			} catch (err) {
+				clearTimeout(queued);
+				if (previewId) void lark.recallMessage(previewId).catch(() => {});
 				console.error(`[lark] deliver failed for ${chatId}→${config.workspace}:`, errorMessage(err));
 				await lark.send(chatId, { text: failureReply(err) }, sendOpts(msg)).catch((sendErr) => {
 					console.error(`[lark] failure reply also failed for ${chatId}:`, errorMessage(sendErr));
