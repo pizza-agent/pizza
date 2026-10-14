@@ -46,10 +46,11 @@ const WIDGET_KEY = "pet-widget";
 const STATUS_KEY = "pet";
 
 const USAGE = `Usage:
-  /pet adopt           Pick a pet (built-in species + custom packs in ~/.pizza/agent/pets/)
+  /pet adopt [id]      Pick a pet, or adopt a species directly by id
   /pet status          Show your pet
   /pet feed|play       Interact with your pet (+XP)
   /pet rename <name>   Rename your pet
+  /pet customize JSON  Set appearance scale and subtitle
   /pet release         Say goodbye (deletes save)
   /pet help            Show this help`;
 
@@ -130,6 +131,8 @@ function petMeta(): Record<string, unknown> | undefined {
 		mood,
 		busy: runtime.agentBusy,
 		floating: runtime.save.floating ?? null,
+		scale: typeof runtime.save.scale === "number" ? runtime.save.scale : 1,
+		subtitle: typeof runtime.save.subtitle === "string" ? runtime.save.subtitle : "",
 	};
 }
 
@@ -221,7 +224,13 @@ async function adoptFlow(ctx: ExtensionContext): Promise<void> {
 	if (!picked) return;
 	const name = (await ctx.ui.input("Name your pet", picked.name))?.trim() || picked.name;
 
-	runtime.save = { name, speciesId: picked.id, xp: runtime.state.xp, adoptedAt: Date.now() };
+	runtime.save = {
+		...(runtime.save ?? {}),
+		name,
+		speciesId: picked.id,
+		xp: runtime.state.xp,
+		adoptedAt: runtime.save?.adoptedAt ?? Date.now(),
+	};
 	runtime.species = picked;
 	dispatch("adopt");
 	if (!runtime.widgetMounted) mountWidget();
@@ -238,9 +247,33 @@ async function handlePetCommand(args: string, ctx: ExtensionCommandContext): Pro
 	ensurePetLoaded();
 
 	switch ((sub || "status").toLowerCase()) {
-		case "adopt":
+		case "adopt": {
+			// `/pet adopt <speciesId> [name]` — adopt a known species directly
+			// (used by the GUI pets grid); bare `/pet adopt` opens the picker.
+			const speciesArg = rest[0];
+			if (speciesArg) {
+				const picked = findSpecies(speciesArg);
+				if (!picked) {
+					ctx.ui.notify(`Unknown species "${speciesArg}". Run /pet adopt to browse.`, "warning");
+					return;
+				}
+				const name = rest.slice(1).join(" ").trim() || runtime.save?.name || picked.name;
+				runtime.save = {
+					...(runtime.save ?? {}),
+					name,
+					speciesId: picked.id,
+					xp: runtime.state.xp,
+					adoptedAt: runtime.save?.adoptedAt ?? Date.now(),
+				};
+				runtime.species = picked;
+				dispatch("adopt");
+				if (!runtime.widgetMounted) mountWidget();
+				ctx.ui.notify(`You adopted ${name} the ${picked.name}!`, "info");
+				return;
+			}
 			await adoptFlow(ctx);
 			return;
+		}
 		case "feed":
 		case "play": {
 			if (!requirePet(ctx)) return;
@@ -259,6 +292,25 @@ async function handlePetCommand(args: string, ctx: ExtensionCommandContext): Pro
 			persist();
 			refreshStatus();
 			ctx.ui.notify(`Your pet is now called ${name}.`, "info");
+			return;
+		}
+		case "customize": {
+			if (!requirePet(ctx)) return;
+			let options: { scale?: number; subtitle?: string };
+			try {
+				options = JSON.parse(rest.join(" ")) as { scale?: number; subtitle?: string };
+			} catch {
+				ctx.ui.notify('Customize expects JSON: /pet customize {"scale":1,"subtitle":"..."}', "warning");
+				return;
+			}
+			if (typeof options.scale === "number" && Number.isFinite(options.scale)) {
+				runtime.save!.scale = Math.min(1.5, Math.max(0.7, options.scale));
+			}
+			if (typeof options.subtitle === "string") runtime.save!.subtitle = options.subtitle.trim().slice(0, 80);
+			persist();
+			refreshStatus();
+			if (runtime.widgetMounted) pushFrame();
+			ctx.ui.notify("Pet appearance saved.", "info");
 			return;
 		}
 		case "release": {
@@ -314,8 +366,11 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 	pizza.registerCommand("pet", {
 		description: "Adopt and care for a terminal pet (tamagotchi-style companion).",
 		getArgumentCompletions: (prefix) => {
-			const subs = ["adopt", "status", "feed", "play", "rename", "release", "help"];
-			const filtered = subs.filter((s) => s.startsWith(prefix));
+			const subs = ["adopt", "status", "feed", "play", "rename", "customize", "release", "help"];
+			const candidates = prefix === "" || subs.some((s) => s.startsWith(prefix))
+				? subs
+				: [...subs, ...listAllSpecies().map((s) => `adopt ${s.id}`)];
+			const filtered = candidates.filter((s) => s.startsWith(prefix));
 			return filtered.length ? filtered.map((s) => ({ value: s, label: s })) : null;
 		},
 		handler: (args, ctx) => handlePetCommand(args, ctx),
@@ -422,6 +477,25 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 		id: "pet",
 		label: "Pet",
 		description: "Your terminal companion",
+		// Bespoke settings-page payload: the GUI renders a pets manager
+		// (preview + species grid) from this data.
+		data: () => ({
+			pet: runtime.save
+				? {
+						name: runtime.save.name,
+						speciesId: runtime.save.speciesId,
+						xp: runtime.state.xp,
+						level: runtime.state.level,
+						mood: effectiveMood(runtime.state, { agentBusy: runtime.agentBusy }),
+						busy: runtime.agentBusy,
+						floating: runtime.save.floating ?? null,
+						scale: typeof runtime.save.scale === "number" ? runtime.save.scale : 1,
+						subtitle: typeof runtime.save.subtitle === "string" ? runtime.save.subtitle : "",
+						adoptedAt: runtime.save.adoptedAt,
+					}
+				: null,
+			species: listAllSpecies(),
+		}),
 		items: [
 			{
 				id: "float",
@@ -430,7 +504,7 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 				uiCommand: "toggle_pet_window",
 				visible: menuHasPet,
 			},
-			{ id: "adopt", label: "Adopt a pet…", command: "/pet adopt", visible: () => !menuHasPet() },
+			{ id: "adopt", label: "Adopt / change pet…", command: "/pet adopt" },
 			{
 				id: "status",
 				label: "Status",

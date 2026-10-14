@@ -566,6 +566,8 @@ export interface ExtensionMenuWire {
 	id: string;
 	label: string;
 	description?: string;
+	/** Menu-specific payload for bespoke pages (e.g. the pet save + species). */
+	data?: Record<string, unknown>;
 	items: ExtensionMenuItemWire[];
 }
 
@@ -576,6 +578,24 @@ export async function getExtensionMenus(): Promise<ExtensionMenuWire[]> {
 		return r.data?.menus ?? [];
 	} catch {
 		return [];
+	}
+}
+
+/**
+ * Execute an extension menu item: `uiCommand` invokes a desktop command
+ * (Tauri), `command` steers a slash command into the session where it
+ * resolves to a registered extension command without interrupting a turn.
+ */
+export function runExtensionMenuItem(item: ExtensionMenuItemWire): void {
+	if (item.uiCommand) {
+		if (!isTauri()) return;
+		void import("@tauri-apps/api/core")
+			.then(({ invoke }) => invoke(item.uiCommand!))
+			.catch(() => {});
+		return;
+	}
+	if (item.command) {
+		void sendCommandAwait({ type: "steer", message: item.command }).catch(() => {});
 	}
 }
 

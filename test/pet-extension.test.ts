@@ -68,11 +68,13 @@ describe("pet state machine", () => {
 
 describe("pet store", () => {
 	it("roundtrips pet.json in the agent dir", () => {
-		savePet({ name: "Momo", speciesId: "cat", xp: 42, adoptedAt: 123 });
+		savePet({ name: "Momo", speciesId: "cat", xp: 42, adoptedAt: 123, scale: 1.25, subtitle: "Diff inspector" });
 		const loaded = loadPetSave();
 		expect(loaded?.name).toBe("Momo");
 		expect(loaded?.speciesId).toBe("cat");
 		expect(loaded?.xp).toBe(42);
+		expect(loaded?.scale).toBe(1.25);
+		expect(loaded?.subtitle).toBe("Diff inspector");
 		deletePetSave();
 		expect(loadPetSave()).toBeUndefined();
 	});
@@ -81,6 +83,8 @@ describe("pet store", () => {
 		const all = listAllSpecies();
 		expect(all.map((s) => s.id)).toContain("cat");
 		expect(all.map((s) => s.id)).toContain("slime");
+		expect(all.map((s) => s.id)).toContain("pixel-mochi");
+		expect(findSpecies("pixel-mochi")?.frames.idle?.length).toBeGreaterThan(0);
 
 		const dir = join(getAgentDir(), "pets");
 		mkdirSync(dir, { recursive: true });

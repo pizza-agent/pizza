@@ -2056,7 +2056,21 @@ pub fn close_pet_window_keep_flag(app: &AppHandle) {
 	notify_pet_window_state(app, false);
 }
 
-/// Close the floating pet window (from its own close button).
+/// Bring the main window forward and route it to the Pet settings page.
+#[tauri::command]
+pub fn open_pet_settings(app: AppHandle) -> Result<(), String> {
+	let main = app
+		.get_webview_window("main")
+		.ok_or_else(|| "Main window is unavailable".to_string())?;
+	main.show().map_err(|e| format!("show main window: {e}"))?;
+	let _ = main.unminimize();
+	main.set_focus()
+		.map_err(|e| format!("focus main window: {e}"))?;
+	main.emit("open_pet_settings", ())
+		.map_err(|e| format!("navigate to Pet settings: {e}"))
+}
+
+/// Close the floating pet window (from its context menu).
 #[tauri::command]
 pub async fn close_pet_window(app: AppHandle) -> Result<(), String> {
 	log_file("close_pet_window command called");

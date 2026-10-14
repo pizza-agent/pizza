@@ -624,7 +624,28 @@
       "backToApp": "返回应用",
       "search": "搜索设置...",
       "scheduler": "定时任务",
-      "groupIntegrations": "集成"
+      "groupIntegrations": "集成",
+      "groupExtensions": "扩展"
+    },
+    "pet": {
+      "subtitle": "你的桌面伙伴，会跟随 agent 的工作状态变化。",
+      "showMini": "显示迷你宠物",
+      "hideMini": "收起迷你宠物",
+      "customize": "自定义",
+      "customizeHint": "调整宠物大小和显示在它下方的小标题。",
+      "size": "宠物大小",
+      "subtitleLabel": "小标题",
+      "subtitlePlaceholder": "陪你一起完成每个小目标",
+      "save": "保存",
+      "cancel": "取消",
+      "myPets": "我的宠物",
+      "createPet": "创作宠物",
+      "refresh": "刷新",
+      "noPet": "还没有宠物，在下面挑一只吧。",
+      "adoptCta": "领养宠物",
+      "none": "无",
+      "noneDescription": "放走当前伙伴",
+      "current": "当前"
     },
     "general": {
       "compaction": "上下文压缩",

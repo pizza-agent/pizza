@@ -1583,10 +1583,18 @@ export async function runRpcModeWithFacade(
 		case "get_extension_menus": {
 			// Serialize registered extension menus: value/visible callbacks are
 			// evaluated here so the frontend gets plain data.
-			const menus = (facade.extensionRunner?.getMenus() ?? []).map((menu) => ({
+			const menus = (facade.extensionRunner?.getMenus() ?? []).map((menu) => {
+				let data: Record<string, unknown> | undefined;
+				try {
+					data = typeof menu.data === "function" ? menu.data() : menu.data;
+				} catch {
+					data = undefined;
+				}
+				return {
 				id: menu.id,
 				label: menu.label,
 				description: menu.description,
+				data,
 				items: menu.items
 					.filter((item) => {
 						try {
@@ -1611,7 +1619,8 @@ export async function runRpcModeWithFacade(
 							uiCommand: item.uiCommand,
 						};
 					}),
-			}));
+				};
+			});
 			return success(id, "get_extension_menus", { menus });
 		}
 

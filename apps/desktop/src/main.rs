@@ -24,6 +24,7 @@ fn main() {
 			bridge::new_workspace,
 			bridge::toggle_pet_window,
 			bridge::close_pet_window,
+			bridge::open_pet_settings,
 			bridge::get_pet_state,
 			bridge::list_workspaces,
 			bridge::delete_workspace,

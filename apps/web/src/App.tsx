@@ -72,6 +72,22 @@ function AppInner() {
 		refreshWorkspaces();
 	}, [refreshWorkspaces]);
 
+	useEffect(() => {
+		if (!isTauri()) return;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void import("@tauri-apps/api/event")
+			.then(({ listen }) => listen("open_pet_settings", () => navigate("/settings?page=ext:pet")))
+			.then((fn) => {
+				if (disposed) fn();
+				else unlisten = fn;
+			});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, [navigate]);
+
 	const [initError, setInitError] = useState<string | null>(null);
 	const startWithWorkspace = useCallback(async (cwd?: string) => {
 		const generation = ++initGenerationRef.current;
@@ -587,6 +603,7 @@ function AppInner() {
 						<Route path="/settings" element={
 							<SettingsView
 								state={state}
+								workspace={workspace ?? undefined}
 								onRestartSidecar={async () => {
 									if (!workspace) return;
 									// restart_sidecar (Rust) returns the entire JSON-RPC

@@ -624,7 +624,28 @@
       "backToApp": "Back to app",
       "search": "Search settings...",
       "scheduler": "Scheduled tasks",
-      "groupIntegrations": "Integrations"
+      "groupIntegrations": "Integrations",
+      "groupExtensions": "Extensions"
+    },
+    "pet": {
+      "subtitle": "Your desktop companion. It reacts to the agent's work.",
+      "showMini": "Show mini",
+      "hideMini": "Hide mini",
+      "customize": "Customize",
+      "customizeHint": "Adjust the pet's size and the line shown beneath it.",
+      "size": "Pet size",
+      "subtitleLabel": "Small title",
+      "subtitlePlaceholder": "A tiny companion for big ideas",
+      "save": "Save",
+      "cancel": "Cancel",
+      "myPets": "My pets",
+      "createPet": "Create pet",
+      "refresh": "Refresh",
+      "noPet": "No pet yet. Pick a companion below.",
+      "adoptCta": "Adopt a pet",
+      "none": "None",
+      "noneDescription": "Release your companion",
+      "current": "Current"
     },
     "general": {
       "compaction": "Compaction",

@@ -15,10 +15,12 @@ import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { parseFrontmatter } from "../src/utils/frontmatter.js";
 
 describe("built-in skills registry", () => {
-	it("has a non-empty, unique set of ids", () => {
+	it("has a non-empty, unique set of ids and enables create-pet by default", () => {
 		const ids = getBuiltinSkillIds();
 		expect(ids.length).toBeGreaterThan(0);
 		expect(new Set(ids).size).toBe(ids.length);
+		expect(ids).toContain("create-pet");
+		expect(isBuiltinSkillDefaultEnabled("create-pet")).toBe(true);
 	});
 
 	it("isBuiltinSkillId matches registry ids only", () => {

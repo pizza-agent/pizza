@@ -1676,6 +1676,12 @@ export interface ExtensionMenu {
 	/** Secondary line under the label. */
 	description?: string;
 	items: ExtensionMenuItem[];
+	/**
+	 * Extra JSON-serializable data shipped with the menu so rich frontends can
+	 * render a bespoke page (e.g. the pet menu carries the save + species
+	 * catalog). A function is evaluated per fetch; objects are sent as-is.
+	 */
+	data?: Record<string, unknown> | (() => Record<string, unknown>);
 }
 
 export interface ExtensionMenuItem {

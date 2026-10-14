@@ -84,4 +84,19 @@ const SLIME: PetSpeciesDef = {
 	},
 };
 
-export const BUILTIN_SPECIES: readonly PetSpeciesDef[] = [CAT, DOG, SLIME];
+const MOCHI: PetSpeciesDef = {
+	id: "pixel-mochi",
+	name: "Mochi",
+	description: "A tiny hooded pixel sprite with a soft blush.",
+	frames: {
+		idle: ["   .---.   \n  / o o \\\n |   ^   |\n  \\_____/ ", "   .---.   \n  / - - \\\n |   ^   |\n  \\_____/ "],
+		working: ["   .---.   \n  / o o \\\n |   ^   |~\n  \\_____/ "],
+		celebrating: [" \\ .---. / \n  / ^ ^ \\\n |   ^   |\n  \\_____/ "],
+		happy: ["   .---.   \n  / ^ ^ \\\n |   ^   |\n  \\_____/ "],
+		sad: ["   .---.   \n  / ; ; \\\n |   v   |\n  \\_____/ "],
+		sleepy: ["   .---.   \n  / - - \\\n |   _   | z\n  \\_____/ "],
+		eating: ["   .---.   \n  / o o \\\n |  owo  |\n  \\_____/ "],
+	},
+};
+
+export const BUILTIN_SPECIES: readonly PetSpeciesDef[] = [CAT, DOG, SLIME, MOCHI];
