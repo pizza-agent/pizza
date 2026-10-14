@@ -530,9 +530,11 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const themesDir = getThemesDir();
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
+		const oceanPath = path.join(themesDir, "ocean.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
+			ocean: JSON.parse(fs.readFileSync(oceanPath, "utf-8")) as ThemeJson,
 		};
 	}
 	return BUILTIN_THEMES;
@@ -824,6 +826,14 @@ export function loadThemeFromPath(themePath: string, mode?: ColorMode): Theme {
 	const content = fs.readFileSync(themePath, "utf-8");
 	const themeJson = parseThemeJsonContent(themePath, content);
 	return createTheme(themeJson, mode, themePath);
+}
+
+/** Built-in themes that ship a `web` block (selectable in the desktop/web UI). */
+export function getBuiltinWebThemes(): Theme[] {
+	const themesDir = getThemesDir();
+	return Object.entries(getBuiltinThemes())
+		.filter(([, json]) => json.web)
+		.map(([name]) => loadThemeFromPath(path.join(themesDir, `${name}.json`)));
 }
 
 function loadTheme(name: string, mode?: ColorMode): Theme {

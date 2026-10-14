@@ -272,7 +272,10 @@ const customThemeListeners = new Set<() => void>();
 export async function refreshCustomThemes(): Promise<CustomTheme[]> {
 	const infos = await listThemes();
 	customThemes = infos
-		.filter((t) => t.web && !t.builtin)
+		// Selectable web themes = themes that ship a web token map, regardless
+		// of source (the built-in light/dark carry no `web` block and are
+		// handled by mode toggles instead).
+		.filter((t) => t.web?.tokens != null)
 		.map((t) => ({
 			name: t.name,
 			label: t.web!.label ?? t.label ?? t.name,

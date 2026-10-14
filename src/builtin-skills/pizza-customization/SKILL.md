@@ -168,7 +168,9 @@ repo — read it when unsure; every event and method is doc-commented there.
   screen + `minDurationMs`). Splash CSS hooks: `.pizza-splash[data-state=
   active|exiting]`, `.pizza-splash__backdrop|content|icon|message`, and
   `html[data-pizza-phase=boot|ready]` (also usable from `web.css`, e.g. to
-  fade an animated background in once the app is ready).
+  fade an animated background in once the app is ready). The built-in
+  `ocean` theme is a complete reference for `web.css` + `web.splash`; a user
+  theme with the same name overrides a built-in one.
 - **Keybindings**: `~/.pizza/agent/keybindings.json`.
 - **Models**: `~/.pizza/agent/models.json` for static providers; an
   extension's `registerProvider` when OAuth or custom streaming is needed.

@@ -13,11 +13,12 @@
  *    `transcribe_audio` / OpenAI whisper); right-click opens pet actions
  */
 
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { EyeOff, MessageCircle, Settings } from "lucide-react";
 import {
 	PetSprite,
 	PetChatPill,
@@ -48,19 +49,19 @@ function PetFloat() {
 	const justDraggedRef = useRef(false);
 	const petSpeciesId = (meta ?? saveMeta)?.species;
 
+	const dismissMenu = useCallback(() => setContextMenu(null), []);
 	useEffect(() => {
 		if (!contextMenu) return;
-		const dismiss = () => setContextMenu(null);
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") dismiss();
+			if (event.key === "Escape") dismissMenu();
 		};
-		window.addEventListener("mousedown", dismiss);
+		window.addEventListener("mousedown", dismissMenu);
 		window.addEventListener("keydown", onKeyDown);
 		return () => {
-			window.removeEventListener("mousedown", dismiss);
+			window.removeEventListener("mousedown", dismissMenu);
 			window.removeEventListener("keydown", onKeyDown);
 		};
-	}, [contextMenu]);
+	}, [contextMenu, dismissMenu]);
 
 	// Bootstrap from the pet save so the real critter renders even when no
 	// workspace session has pushed a widget frame yet this run.
@@ -169,7 +170,7 @@ function PetFloat() {
 			}}
 			onMouseDown={(e) => {
 				justDraggedRef.current = false;
-				if ((e.target as HTMLElement).closest("[data-nodrag]")) return;
+				if (e.button !== 0 || (e.target as HTMLElement).closest("[data-nodrag]")) return;
 				dragRef.current = { x: e.clientX, y: e.clientY };
 			}}
 			onMouseMove={(e) => {
@@ -230,45 +231,118 @@ function PetFloat() {
 					<pre style={petAsciiStyle}>{lines.join("\n")}</pre>
 				)}
 			</div>
-			{contextMenu && <PetContextMenu x={contextMenu.x} y={contextMenu.y} onDismiss={() => setContextMenu(null)} />}
+			{contextMenu && (
+				<PetContextMenu
+					x={contextMenu.x}
+					y={contextMenu.y}
+					title={noPet ? undefined : effectiveMeta?.name}
+					level={effectiveMeta?.level}
+					chatOpen={chatOpen}
+					onToggleChat={noPet ? undefined : () => setChatOpen((v) => !v)}
+					onDismiss={dismissMenu}
+				/>
+			)}
 		</div>
 	);
 }
 
-function PetContextMenu({ x, y, onDismiss }: { x: number; y: number; onDismiss: () => void }) {
-	const width = 208;
-	const height = 92;
-	const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
-	const top = Math.max(8, Math.min(y, window.innerHeight - height - 8));
+interface PetMenuProps {
+	x: number;
+	y: number;
+	title?: string;
+	level?: number;
+	chatOpen: boolean;
+	onToggleChat?: () => void;
+	onDismiss: () => void;
+}
+
+/** Labeled glass menu at the cursor. Styles live in pet.html (`.pet-menu*`). */
+function PetContextMenu({ x, y, title, level, chatOpen, onToggleChat, onDismiss }: PetMenuProps) {
+	const menuRef = useRef<HTMLDivElement | null>(null);
+	const [pos, setPos] = useState({ left: x, top: y, origin: "top left" });
+
+	// Open toward the roomier side of the cursor, then clamp into the (small,
+	// 220×210) pet window. Measured after mount so header/rows can vary.
+	useLayoutEffect(() => {
+		const el = menuRef.current;
+		if (!el) return;
+		const { width, height } = el.getBoundingClientRect();
+		const m = 4;
+		const flipX = x + width + m > window.innerWidth;
+		const flipY = y + height + m > window.innerHeight;
+		const left = Math.max(m, Math.min(flipX ? x - width : x, window.innerWidth - width - m));
+		const top = Math.max(m, Math.min(flipY ? y - height : y, window.innerHeight - height - m));
+		setPos({ left, top, origin: `${flipY ? "bottom" : "top"} ${flipX ? "right" : "left"}` });
+		el.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus({ preventScroll: true });
+	}, [x, y]);
+
+	useEffect(() => {
+		window.addEventListener("blur", onDismiss);
+		return () => window.removeEventListener("blur", onDismiss);
+	}, [onDismiss]);
+
 	const run = (command: string) => {
 		onDismiss();
 		void invoke(command).catch((error) => console.error("pet menu action failed:", error));
 	};
 
+	const onKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+		event.preventDefault();
+		const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? []);
+		const i = items.indexOf(document.activeElement as HTMLButtonElement);
+		const next = event.key === "ArrowDown" ? i + 1 : i - 1 + items.length;
+		items[next % items.length]?.focus();
+	};
+
 	return (
 		<div
+			ref={menuRef}
 			role="menu"
-			className="fixed z-50 min-w-52 rounded-xl border border-border bg-surface p-1 shadow-lg"
-			style={{ left, top, width }}
+			aria-label={title ?? "Pet"}
+			className="pet-menu"
+			data-nodrag
+			style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}
 			onMouseDown={(event) => event.stopPropagation()}
+			onContextMenu={(event) => event.preventDefault()}
+			onKeyDown={onKeyDown}
 		>
-			<button
-				type="button"
-				role="menuitem"
-				onClick={() => run("close_pet_window")}
-				className="flex w-full flex-col rounded-lg px-3 py-1.5 text-left text-[13px] text-fg hover:bg-surface-2"
-			>
-				<span>Hide pet</span>
-				<span className="text-[11px] text-muted">Close the floating pet</span>
+			{title && (
+				<>
+					<div className="pet-menu__header">
+						<span>{title}</span>
+						{level != null && <span className="pet-menu__level">Lv.{level}</span>}
+					</div>
+					<div className="pet-menu__sep" role="separator" />
+				</>
+			)}
+			{onToggleChat && (
+				<button
+					type="button"
+					role="menuitem"
+					className="pet-menu__item"
+					onClick={() => {
+						onDismiss();
+						onToggleChat();
+					}}
+				>
+					<MessageCircle strokeWidth={1.8} />
+					{chatOpen ? "Close chat" : "Chat"}
+				</button>
+			)}
+			<button type="button" role="menuitem" className="pet-menu__item" onClick={() => run("open_pet_settings")}>
+				<Settings strokeWidth={1.8} />
+				Settings
 			</button>
+			<div className="pet-menu__sep" role="separator" />
 			<button
 				type="button"
 				role="menuitem"
-				onClick={() => run("open_pet_settings")}
-				className="flex w-full flex-col rounded-lg px-3 py-1.5 text-left text-[13px] text-fg hover:bg-surface-2"
+				className="pet-menu__item pet-menu__item--danger"
+				onClick={() => run("close_pet_window")}
 			>
-				<span>Pet settings</span>
-				<span className="text-[11px] text-muted">Open the Pet settings page</span>
+				<EyeOff strokeWidth={1.8} />
+				Hide pet
 			</button>
 		</div>
 	);

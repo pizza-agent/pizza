@@ -41,7 +41,7 @@ import { installSkillFromGitHub } from "../../src/core/skills/skill-install.js";
 import { buildHistoryTreeNodes } from "../../src/core/projection/history-tree.js";
 import { killTrackedDetachedChildren } from "../../src/utils/shell.js";
 import { startPtyServer, type PtyServer } from "../pty/pty-server.js";
-import { type Theme, theme, resolveThemeIcon, resolveThemeVideo } from "../../packages/tui/theme/theme.js";
+import { type Theme, theme, resolveThemeIcon, resolveThemeVideo, getBuiltinWebThemes } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
 import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "@tomsun28/pizza-protocol";
 import { installCrashHandlers } from "../../src/core/ops/crash-handlers.js";
@@ -414,7 +414,11 @@ function readInstalledPackageJson(installedPath: string | undefined): { name?: s
  */
 function buildThemeInfos(facade: SessionFacade): RpcThemeInfo[] {
 	const builtinDir = getThemesDir();
-	const themes = facade.resourceLoader?.getThemes().themes ?? [];
+	const loaded = facade.resourceLoader?.getThemes().themes ?? [];
+	// Built-in web themes (e.g. ocean) are appended last so a user theme
+	// with the same name overrides the shipped one.
+	const names = new Set(loaded.map((t) => t.name));
+	const themes = [...loaded, ...getBuiltinWebThemes().filter((t) => !names.has(t.name))];
 	const infos: RpcThemeInfo[] = [];
 	for (const theme of themes) {
 		if (!theme.name || !theme.web) continue;

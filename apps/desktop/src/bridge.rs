@@ -1887,14 +1887,15 @@ fn emit_to_pet_window(app: &AppHandle, frame: &Value) {
 			close_pet_window_keep_flag(app);
 			return;
 		}
-		// Auto-open the desktop pet on the first frame unless the user
-		// explicitly docked it (widgetMeta.floating === false).
-		let docked = frame
+		// The desktop pet is hidden by default: auto-open on a frame only
+		// when the user has floated it before (widgetMeta.floating === true,
+		// persisted by toggle_pet_window).
+		let floating = frame
 			.get("widgetMeta")
 			.and_then(|m| m.get("floating"))
 			.and_then(|f| f.as_bool())
-			== Some(false);
-		if !docked && app.get_webview_window(PET_WINDOW_LABEL).is_none() {
+			== Some(true);
+		if floating && app.get_webview_window(PET_WINDOW_LABEL).is_none() {
 			let app2 = app.clone();
 			tauri::async_runtime::spawn(async move {
 				let _ = toggle_pet_window(app2).await;
@@ -2035,7 +2036,8 @@ pub fn maybe_reopen_pet_window(app: &AppHandle) {
 	let Ok(save) = serde_json::from_str::<Value>(&raw) else {
 		return;
 	};
-	if save.get("floating").and_then(|v| v.as_bool()) == Some(false) {
+	// Hidden by default — reopen only if the user left it floating.
+	if save.get("floating").and_then(|v| v.as_bool()) != Some(true) {
 		return;
 	}
 	let app = app.clone();
