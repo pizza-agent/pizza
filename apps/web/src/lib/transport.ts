@@ -151,7 +151,7 @@ export async function sendCommandAwait<T = unknown>(
 	const id = (command.id as string) ?? crypto.randomUUID();
 	command.id = id;
 	ensureSse();
-	const promise = waitForResponse<T>(id, timeoutMs);
+	const promise = waitForResponse<T>(id, timeoutMs, String(command.type ?? ""));
 	await sendCommandRaw(command);
 	return promise;
 }
@@ -1485,7 +1485,7 @@ export async function getScheduledTaskHistory(
 
 let sseSource: EventSource | null = null;
 const sseHandlers = new Set<EventHandler>();
-const responseWaiters = new Map<string, { resolve: (r: RpcResponse) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const responseWaiters = new Map<string, { command: string; resolve: (r: RpcResponse) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
 function ensureSse() {
 	if (sseSource) return;
@@ -1506,11 +1506,21 @@ function ensureSse() {
 					}
 					return;
 				}
-				// Fallback: if no id match, resolve the oldest waiter
-				// (pizza rpc may not echo back the id)
-				const oldest = responseWaiters.entries().next();
-				if (!oldest.done) {
-					const [waiterId, waiter] = oldest.value;
+				// Fallback: if no id match, resolve a waiter whose `command`
+				// matches (pizza rpc may not echo back the id). Matching by
+				// command avoids mis-attributing a response to a different
+				// in-flight command when several are outstanding (e.g. two
+				// overlapping get_state polls); FIFO across commands is wrong.
+				const responseCommand = typeof line.command === "string" ? line.command : undefined;
+				let fallback: [string, (typeof responseWaiters extends Map<string, infer V> ? V : never)] | undefined;
+				for (const entry of responseWaiters.entries()) {
+					if (responseCommand === undefined || entry[1].command === responseCommand) {
+						fallback = entry;
+						break;
+					}
+				}
+				if (fallback) {
+					const [waiterId, waiter] = fallback;
 					responseWaiters.delete(waiterId);
 					clearTimeout(waiter.timer);
 					if (line.success) {
@@ -1542,14 +1552,14 @@ function subscribeSse(handler: EventHandler): () => void {
 	};
 }
 
-function waitForResponse<T>(id: string, timeoutMs: number): Promise<RpcResponse<T>> {
+function waitForResponse<T>(id: string, timeoutMs: number, command: string): Promise<RpcResponse<T>> {
 	ensureSse();
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
 			responseWaiters.delete(id);
 			reject(new Error(`Command timed out after ${timeoutMs}ms`));
 		}, timeoutMs);
-		responseWaiters.set(id, { resolve: resolve as (r: RpcResponse) => void, reject, timer });
+		responseWaiters.set(id, { command, resolve: resolve as (r: RpcResponse) => void, reject, timer });
 	});
 }
 
