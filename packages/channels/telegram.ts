@@ -110,89 +110,23 @@ export default {
 				[ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") ||
 				(ctx.from?.username ? `@${ctx.from.username}` : undefined) ||
 				(ctx.chat.type !== "private" && "title" in ctx.chat ? ctx.chat.title : undefined);
-			// Hoisted so the catch can retract a half-written preview when the
-			// turn fails.
-			let previewId: number | undefined;
-			let queued: ReturnType<typeof setTimeout> | undefined;
 			try {
 				// Instant read-receipt — a 👀 reaction says "received" without waiting
 				// on the LLM turn. Fire-and-forget: a failed reaction is fine.
 				await ctx.react("👀").catch(() => {});
-				// Stream the reply: edit one preview message as text_delta chunks
-				// arrive. Throttled — Telegram rate-limits edits (~1/s per chat is
-				// the safe floor); a failed edit just drops that partial. The
-				// "typing…" action is the fallback liveness signal; it expires
+				// "typing…" is the liveness signal while the turn runs; it expires
 				// after ~5s so re-fire it on an interval for long turns.
-				let lastEdit = 0;
-				let firstPartialAt: number | undefined;
-				// Don't create the preview until the stream has been going for a
-				// beat — a fast reply would otherwise flash a one-word message
-				// that gets replaced a second later.
-				const PREVIEW_DELAY_MS = 1500;
-				const onPartial = (text: string): void => {
-					firstPartialAt ??= Date.now();
-					const apply = (): void => {
-						lastEdit = Date.now();
-						const body = text.slice(0, 4000) || "…";
-						const done = (async () => {
-							if (previewId === undefined) {
-								const sent = await ctx.reply(body);
-								previewId = sent.message_id;
-							} else {
-								await ctx.api.editMessageText(chatId, previewId, body);
-							}
-						})();
-						void done.catch(() => {});
-					};
-					const now = Date.now();
-					const wait =
-						previewId === undefined
-							? PREVIEW_DELAY_MS - (now - firstPartialAt!)
-							: 1500 - (now - lastEdit);
-					if (wait <= 0) {
-						clearTimeout(queued);
-						queued = undefined;
-						apply();
-					} else if (!queued) {
-						queued = setTimeout(() => {
-							queued = undefined;
-							apply();
-						}, wait);
-					}
-				};
 				await ctx.replyWithChatAction("typing").catch(() => {});
 				const typing = setInterval(() => void ctx.replyWithChatAction("typing").catch(() => {}), 4000);
 				let reply: string;
 				try {
-					reply = await runtime.deliver(
-						config.workspace,
-						ctx.message.text,
-						provenance("telegram", chatId, sender),
-						{ onPartial },
-					);
+					reply = await runtime.deliver(config.workspace, ctx.message.text, provenance("telegram", chatId, sender));
 				} finally {
 					clearInterval(typing);
 				}
-				clearTimeout(queued);
 				// Telegram caps messages at 4096 chars.
-				if (previewId !== undefined && reply.length <= 4000) {
-					// Reuse the preview message — final markdown/text replaces it.
-					await ctx.api.editMessageText(chatId, previewId, reply).catch(async () => {
-						for (const part of chunk(reply, 4000)) await ctx.reply(part);
-					});
-				} else {
-					// Long reply (or streaming never produced a preview): drop the
-					// partial preview and send the chunked final text.
-					if (previewId !== undefined) {
-						await ctx.api.deleteMessage(chatId, previewId).catch(() => {});
-					}
-					for (const part of chunk(reply, 4000)) await ctx.reply(part);
-				}
+				for (const part of chunk(reply, 4000)) await ctx.reply(part);
 			} catch (err) {
-				clearTimeout(queued);
-				if (previewId !== undefined) {
-					await ctx.api.deleteMessage(chatId, previewId).catch(() => {});
-				}
 				console.error(`[telegram] deliver failed for chat ${chatId}:`, errorMessage(err));
 				await ctx.reply(failureReply(err)).catch(() => {});
 			}

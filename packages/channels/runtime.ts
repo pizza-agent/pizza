@@ -54,18 +54,6 @@ export interface ChannelRuntimeOptions {
 	onFatal: (error: unknown) => void;
 }
 
-/** Options for {@link ChannelRuntime.deliver}. */
-export interface DeliverOptions {
-	/**
-	 * Called with the accumulated reply text as the agent streams it
-	 * (AGENT_MESSAGE_CHUNK text deltas). Adapters use it for live message
-	 * edits; it fires only between OUR user message and the turn's idle event,
-	 * so partials can't bleed across delivers. Errors thrown here are ignored
-	 * (a failed edit must not break delivery).
-	 */
-	onPartial?: (text: string) => void;
-}
-
 /**
  * The slice of the gateway a channel adapter needs, in-process. Implemented
  * by the gateway's channel host (see gateway-server.ts channelHost) so the
@@ -176,10 +164,10 @@ export class ChannelRuntime {
 	}
 
 	/** Deliver `text` to a workspace agent and await its reply. */
-	async deliver(workspace: string, text: string, source: MessageSource, opts?: DeliverOptions): Promise<string> {
+	async deliver(workspace: string, text: string, source: MessageSource): Promise<string> {
 		if (!this.connected) throw new Error("ChannelRuntime not started — call start() first");
 		const cwd = await this.attachWorkspace(workspace);
-		const waiter = this.expectReply(cwd, opts?.onPartial);
+		const waiter = this.expectReply(cwd);
 		try {
 			const ack = await this.bridge.tell(workspace, text, source);
 			waiter.setMessageId(ack.messageId);
@@ -205,10 +193,7 @@ export class ChannelRuntime {
 	 * idle event — i.e. the turn our message started (or was queued into via
 	 * follow-up) has settled. Rejects on tellTimeoutMs.
 	 */
-	private expectReply(
-		cwd: string,
-		onPartial?: (text: string) => void,
-	): {
+	private expectReply(cwd: string): {
 		done: Promise<void>;
 		setMessageId: (id: string) => void;
 		dispose: () => void;
@@ -223,28 +208,8 @@ export class ChannelRuntime {
 			rejectDone = reject;
 		});
 		// Events already processed — the buffered-event replay below passes
-		// object-identical events the live listener may have seen, and text
-		// deltas are additive so double-counting corrupts the partial buffer.
+		// object-identical events the live listener may have seen.
 		const seen = new Set<ChannelEvent>();
-		/** text-delta accumulation per contentIndex (a turn can hold several
-		 *  text blocks; a new AGENT_MESSAGE_START resets the buffer). */
-		let partial = "";
-		const emitPartial = (event: ChannelEvent): void => {
-			if (!onPartial) return;
-			if (event.type === "AGENT_MESSAGE_START") {
-				partial = "";
-				return;
-			}
-			if (event.type !== "AGENT_MESSAGE_CHUNK") return;
-			const chunk = (event.payload as { chunk?: { kind?: string; delta?: string } } | undefined)?.chunk;
-			if (chunk?.kind !== "text_delta" || typeof chunk.delta !== "string") return;
-			partial += chunk.delta;
-			try {
-				onPartial(partial);
-			} catch {
-				/* a failed live-edit must not break delivery */
-			}
-		};
 		const process = (event: ChannelEvent): void => {
 			if (seen.has(event) || settled) return;
 			seen.add(event);
@@ -262,7 +227,6 @@ export class ChannelRuntime {
 				if (event.type === "USER_MESSAGE" && containsId(event)) sawOwnMessage = true;
 				return;
 			}
-			emitPartial(event);
 			if (isIdleEvent(event)) finish();
 		};
 		const containsId = (event: ChannelEvent): boolean =>

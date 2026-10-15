@@ -131,64 +131,9 @@ export default {
 			// waiting on the LLM turn. Fire-and-forget: a failed reaction is fine.
 			void lark.addReaction(msg.messageId, "Get").catch(() => {});
 
-			// Hoisted so the catch can retract a half-written preview when the
-			// turn fails.
-			let previewId: string | undefined;
-			let queued: ReturnType<typeof setTimeout> | undefined;
 			try {
-				// Stream the reply: post a preview message and edit it as
-				// text_delta chunks arrive (im.v1.message.update is text-only,
-				// so the preview is plain text and gets replaced by the final
-				// markdown/audio send). Throttled to stay under edit limits.
-				let lastEdit = 0;
-				let firstPartialAt: number | undefined;
-				// Don't create the preview until the stream has been going for a
-				// beat — a fast one-word reply would otherwise flash a preview
-				// message that gets recalled a second later.
-				const PREVIEW_DELAY_MS = 1500;
-				const onPartial = (partial: string): void => {
-					firstPartialAt ??= Date.now();
-					const apply = (): void => {
-						lastEdit = Date.now();
-						const body = partial.slice(0, 3800) || "…";
-						const done = (async () => {
-							if (previewId === undefined) {
-								const sent = await lark.send(chatId, { text: body }, sendOpts(msg));
-								previewId = sent.messageId;
-							} else {
-								await lark.editMessage(previewId, body);
-							}
-						})();
-						void done.catch(() => {});
-					};
-					const now = Date.now();
-					const wait =
-						previewId === undefined
-							? PREVIEW_DELAY_MS - (now - firstPartialAt!)
-							: 900 - (now - lastEdit);
-					if (wait <= 0) {
-						clearTimeout(queued);
-						queued = undefined;
-						apply();
-					} else if (!queued) {
-						queued = setTimeout(() => {
-							queued = undefined;
-							apply();
-						}, wait);
-					}
-				};
-				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName), { onPartial });
-				clearTimeout(queued);
-				// The preview is plain text — the final send carries markdown /
-				// audio, so drop the preview once the real reply is out.
-				const dropPreview = (): void => {
-					if (previewId) void lark.recallMessage(previewId).catch(() => {});
-					previewId = undefined;
-				};
-				if (!reply.trim()) {
-					dropPreview();
-					return;
-				}
+				const reply = await runtime.deliver(config.workspace, text, provenance("lark", chatId, msg.senderName));
+				if (!reply.trim()) return;
 
 				// Outbound voice: <speak>…</speak> segments, or the whole reply when
 				// the configured mode says this turn should be spoken.
@@ -201,7 +146,6 @@ export default {
 						const audioBuf = await voice.speak(speakable);
 						await lark.send(chatId, { audio: { source: audioBuf } }, sendOpts(msg));
 						spoke = true;
-						if (!stripSpeakTags(reply).trim()) dropPreview();
 						console.log(`[lark] voice reply sent (${audioBuf.length} bytes)`);
 					} catch (err) {
 						console.error(`[lark] voice reply failed for ${chatId}:`, errorMessage(err));
@@ -215,10 +159,7 @@ export default {
 				if (cleaned && (!spoke || cleaned !== speakable)) {
 					await lark.send(chatId, { markdown: cleaned }, sendOpts(msg));
 				}
-				dropPreview();
 			} catch (err) {
-				clearTimeout(queued);
-				if (previewId) void lark.recallMessage(previewId).catch(() => {});
 				console.error(`[lark] deliver failed for ${chatId}→${config.workspace}:`, errorMessage(err));
 				await lark.send(chatId, { text: failureReply(err) }, sendOpts(msg)).catch((sendErr) => {
 					console.error(`[lark] failure reply also failed for ${chatId}:`, errorMessage(sendErr));

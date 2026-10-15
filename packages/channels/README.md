@@ -51,7 +51,8 @@ The Channels tab saves configs to `<agentDir>/channels.json`. The gateway's
 channel supervisor (`packages/gateway/channel-supervisor.ts`) runs each enabled
 channel **inside the daemon** through `runChannel`: delivery, event fan-out and
 rpc go over an in-process `ChannelBridge` — no adapter subprocesses, no socket
-round-trips, and streaming replies via `deliver(..., { onPartial })`.
+round-trips. `deliver()` resolves with the final reply once the turn
+completes; adapters send it in one go (no streaming previews).
 
 Adapters must never `process.exit` mid-run — report unrecoverable platform
 failures through `runtime.reportFatal()`, which marks the channel crashed and

@@ -14,7 +14,7 @@ import discord from "./discord.js";
 import lark from "./lark.js";
 import { ChannelRuntime, type ChannelBridge } from "./runtime.js";
 
-export type { ChannelBridge, ChannelRuntimeOptions, DeliverOptions } from "./runtime.js";
+export type { ChannelBridge, ChannelRuntimeOptions } from "./runtime.js";
 export { routeFetchThroughProxy, routeHttpsThroughProxy } from "./runtime.js";
 import slack from "./slack.js";
 import telegram from "./telegram.js";
