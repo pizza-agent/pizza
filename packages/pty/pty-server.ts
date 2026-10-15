@@ -143,7 +143,6 @@ export async function startPtyServer(options: PtyServerOptions = {}): Promise<Pt
 						send({ type: "output", data: "\r\n\x1b[31mTerminal failed to start the shell. See /tmp/pizza-pty.log\x1b[0m\r\n" });
 					}
 					send({ type: "exit", exitCode });
-					send({ type: "exit", exitCode });
 					try { ws.close(); } catch { /* ignore */ }
 				});
 				session.pty = { proc };
