@@ -50,12 +50,30 @@ const CONTEXT_RELEVANT_EVENT_TYPES: EventType[] = [
 export type ResolveSourceContext = (ref: SessionSourceRef) => BuiltContext | undefined;
 
 export class SessionProjection {
+	/** Session this projection reads — SessionManager uses it to key its
+	 * projection cache (a new descriptor ⇒ stale projection). */
+	readonly descriptor: SessionDescriptor;
+
+	/**
+	 * buildContext() re-scans the whole session event range and re-parses every
+	 * payload — for a long session that is MBs of work, repeated per footer
+	 * render, per get_state, and per turn. Events are append-only, so the built
+	 * result is valid until store.head_sequence advances or the descriptor is
+	 * mutated. Cache the last result keyed on both.
+	 */
+	private _contextCache: { head: number; maxTokens: number | undefined; value: BuiltContext } | undefined;
+	/** Frozen parent/source contexts are immutable; cache them per descriptor. */
+	private _parentContextCache: { key: string; value: BuiltContext | undefined } | undefined;
+	private _sourceContextCache: { key: string; value: BuiltContext | undefined } | undefined;
+
 	constructor(
 		private store: EventStore,
-		private descriptor: SessionDescriptor,
+		descriptor: SessionDescriptor,
 		private resolveSession?: (sessionId: string) => SessionDescriptor | undefined,
 		private resolveSourceContext?: ResolveSourceContext,
-	) {}
+	) {
+		this.descriptor = descriptor;
+	}
 
 	/**
 	 * Build LLM-usable context message list.
@@ -67,12 +85,23 @@ export class SessionProjection {
 	 * 4. Apply token budget truncation if needed
 	 */
 	buildContext(options?: BuildContextOptions): BuiltContext {
+		const cacheKey = this.store.head_sequence;
+		if (this._contextCache && this._contextCache.head === cacheKey && this._contextCache.maxTokens === options?.max_tokens) {
+			return this._contextCache.value;
+		}
 		// Zero-copy cross-workspace fork: prepend the SOURCE workspace's context
-		// (read-only, via the injected resolver) instead of cloned events.
-		const sourceContext =
-			this.descriptor.source_ref && this.resolveSourceContext
-				? this.resolveSourceContext(this.descriptor.source_ref)
-				: undefined;
+		// (read-only, via the injected resolver) instead of cloned events. The
+		// source is frozen — cache the resolution (including failures) so a
+		// missing source store isn't re-probed on every build.
+		let sourceContext: BuiltContext | undefined;
+		const srcRef = this.descriptor.source_ref;
+		if (srcRef && this.resolveSourceContext) {
+			const srcKey = `${srcRef.workspace_id}|${srcRef.session_id}`;
+			sourceContext = this._sourceContextCache?.key === srcKey
+				? this._sourceContextCache.value
+				: (this._sourceContextCache = { key: srcKey, value: this.resolveSourceContext(srcRef) }).value;
+		}
+
 		const parentContext = this._buildContextParent(options);
 		const { start, end } = this._getEventRange();
 		const rawEvents = this.store.query({
@@ -117,12 +146,14 @@ export class SessionProjection {
 			messages = sanitizeToolPairing(this._truncateByTokens(messages, options.max_tokens));
 		}
 
-		return {
+		const built: BuiltContext = {
 			messages,
 			events: [...(sourceContext?.events ?? []), ...(parentContext?.events ?? []), ...events],
 			descriptor: this.descriptor,
 			contextPrefixEventCount: (sourceContext?.events.length ?? 0) + (parentContext?.events.length ?? 0),
 		};
+		this._contextCache = { head: cacheKey, maxTokens: options?.max_tokens, value: built };
+		return built;
 	}
 
 	/**
@@ -164,6 +195,9 @@ export class SessionProjection {
 	 */
 	updateDescriptor(updates: Partial<SessionDescriptor>): void {
 		Object.assign(this.descriptor, updates);
+		this._contextCache = undefined;
+		this._parentContextCache = undefined;
+		this._sourceContextCache = undefined;
 	}
 
 	/**
@@ -211,10 +245,18 @@ export class SessionProjection {
 	private _buildContextParent(options?: BuildContextOptions): BuiltContext | undefined {
 		const parent = this._getContextParentDescriptor();
 		if (!parent) return undefined;
-		return new SessionProjection(this.store, parent, this.resolveSession, this.resolveSourceContext).buildContext({
+		// The parent session is closed by definition — its event range is
+		// frozen, so its built context is immutable until the descriptor
+		// changes. Cache on the invariants instead of re-scanning the parent
+		// range on every context rebuild.
+		const key = `${parent.session_id}|${parent.event_range.start_event_id}|${parent.event_range.end_event_id}|${parent.summary_event_id ?? ""}`;
+		if (this._parentContextCache?.key === key) return this._parentContextCache.value;
+		const value = new SessionProjection(this.store, parent, this.resolveSession, this.resolveSourceContext).buildContext({
 			...options,
 			max_tokens: undefined,
 		});
+		this._parentContextCache = { key, value };
+		return value;
 	}
 
 	private _applyCompactionBoundary(events: EventBase[]): EventBase[] {

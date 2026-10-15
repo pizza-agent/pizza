@@ -42,6 +42,13 @@ export class SqliteEventStore implements EventStore, SessionStore {
 
 	private _nextSequence = 0;
 	private _closed = false;
+	/**
+	 * Prepared-statement cache. node:sqlite recompiles SQL on every prepare()
+	 * — hot paths like get() (causal-chain walks, compaction-boundary lookups)
+	 * call it dozens of times per event, so reuse the same statements.
+	 * Cleared on close (the underlying DB objects die with it).
+	 */
+	private _stmtCache = new Map<string, ReturnType<DatabaseSync["prepare"]>>();
 
 	readonly workspace_id: string;
 
@@ -257,13 +264,21 @@ export class SqliteEventStore implements EventStore, SessionStore {
 			params.push(filter.limit);
 		}
 
-		return this.db.prepare(sql).all(...params).map((row) => rowToEvent(row as EventRow));
+		return this._prepare(sql).all(...params).map((row) => rowToEvent(row as EventRow));
+	}
+
+	private _prepare(sql: string): ReturnType<DatabaseSync["prepare"]> {
+		let stmt = this._stmtCache.get(sql);
+		if (!stmt) {
+			stmt = this.db.prepare(sql);
+			this._stmtCache.set(sql, stmt);
+		}
+		return stmt;
 	}
 
 	get(event_id: string): EventBase | undefined {
 		if (this._closed) return undefined;
-		const row = this.db
-			.prepare("select * from events where workspace_id = ? and event_id = ?")
+		const row = this._prepare("select * from events where workspace_id = ? and event_id = ?")
 			.get(this.workspace_id, event_id) as EventRow | undefined;
 		return row ? rowToEvent(row) : undefined;
 	}
@@ -304,16 +319,14 @@ export class SqliteEventStore implements EventStore, SessionStore {
 
 	get size(): number {
 		if (this._closed) return 0;
-		const row = this.db
-			.prepare("select count(*) as count from events where workspace_id = ?")
+		const row = this._prepare("select count(*) as count from events where workspace_id = ?")
 			.get(this.workspace_id) as { count: number };
 		return row.count;
 	}
 
 	get head(): string | undefined {
 		if (this._closed) return undefined;
-		const row = this.db
-			.prepare("select event_id from events where workspace_id = ? order by sequence desc limit 1")
+		const row = this._prepare("select event_id from events where workspace_id = ? order by sequence desc limit 1")
 			.get(this.workspace_id) as { event_id: string } | undefined;
 		return row?.event_id;
 	}
@@ -329,6 +342,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 			clearTimeout(this._metaTouchTimer);
 			this._metaTouchTimer = undefined;
 		}
+		this._stmtCache.clear();
 		this.db.close();
 	}
 
@@ -405,7 +419,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	private _insert(event: EventBase): void {
-		this.db.prepare(`
+		this._prepare(`
 			insert into events (
 				sequence, event_id, workspace_id, runtime_id, actor_id, timestamp, type,
 				payload_json, caused_by, correlation_id, thread_id, schema_version, idempotency_key
@@ -458,15 +472,13 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	}
 
 	private _dbMaxSequence(): number {
-		const row = this.db
-			.prepare("select coalesce(max(sequence), 0) as sequence from events where workspace_id = ?")
+		const row = this._prepare("select coalesce(max(sequence), 0) as sequence from events where workspace_id = ?")
 			.get(this.workspace_id) as { sequence: number };
 		return row.sequence;
 	}
 
 	private _getByIdempotencyKey(idempotencyKey: string): EventBase | undefined {
-		const row = this.db
-			.prepare("select * from events where workspace_id = ? and idempotency_key = ?")
+		const row = this._prepare("select * from events where workspace_id = ? and idempotency_key = ?")
 			.get(this.workspace_id, idempotencyKey) as EventRow | undefined;
 		return row ? rowToEvent(row) : undefined;
 	}

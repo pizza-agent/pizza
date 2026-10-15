@@ -122,7 +122,22 @@ const STALE_USAGE_RATIO = 1.5;
  * Falls back to full char/4 estimation when the provider-reported usage appears stale
  * (e.g. after a session fork that merged in messages from a different context).
  */
+/**
+ * Memoized per messages-array identity — the estimate depends only on the
+ * array contents, and callers (footer render, get_state, compaction check)
+ * pass the same cached BuiltContext.messages until new events land.
+ */
+const estimateCache = new WeakMap<AgentMessage[], ContextUsageEstimate>();
+
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+	const cached = estimateCache.get(messages);
+	if (cached) return cached;
+	const result = computeContextTokens(messages);
+	estimateCache.set(messages, result);
+	return result;
+}
+
+function computeContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	// A compaction/branch summary whose timestamp is >= the last assistant

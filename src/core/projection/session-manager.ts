@@ -71,6 +71,8 @@ export class SessionManager {
 	 * not retry every buildContext.
 	 */
 	private externalSources: Map<string, { store: EventStore & { close(): void }; manager: SessionManager } | null> = new Map();
+	/** Cached projection for the active session (invalidated on session switch/close). */
+	private _activeProjection: SessionProjection | undefined;
 
 	constructor(
 		private store: EventStore,
@@ -95,12 +97,18 @@ export class SessionManager {
 			this.createSession("user_explicit", undefined, { threadId: this.activeThreadId });
 		}
 		const desc = this.sessions.get(this.activeSessionId!)!;
-		return new SessionProjection(
-			this.store,
-			desc,
-			(sessionId) => this.sessions.get(sessionId),
-			this._resolveSourceContext,
-		);
+		// Reuse one projection per active descriptor — every getProjection()
+		// caller (footer render, get_state, turn start) would otherwise
+		// rebuild a fresh projection and re-scan the event log per call.
+		if (this._activeProjection?.descriptor !== desc) {
+			this._activeProjection = new SessionProjection(
+				this.store,
+				desc,
+				(sessionId) => this.sessions.get(sessionId),
+				this._resolveSourceContext,
+			);
+		}
+		return this._activeProjection;
 	}
 
 	/**
