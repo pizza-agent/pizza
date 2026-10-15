@@ -1775,7 +1775,15 @@ async fn init_sidecar_via_gateway(
 		}
 	})
 	.await
-	.map_err(|e| format!("blocking task failed: {e}"))??;
+	.map_err(|e| format!("blocking task failed: {e}"))
+	.and_then(|r| r)
+	.map_err(|e| {
+		log_file(&format!(
+			"init_sidecar_via_gateway: connect/attach failed cwd={}: {}",
+			cwd, e
+		));
+		e
+	})?;
 	log_file(&format!(
 		"init_sidecar_via_gateway: attached resolved={}",
 		resolved_cwd
