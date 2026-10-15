@@ -29,15 +29,23 @@ const TOOLS: Record<string, ToolConfig> = {
 	},
 };
 
-// Check if a command exists in PATH by trying to run it
+// Check if a command exists in PATH by trying to run it.
+// Cached: this used to spawn `<cmd> --version` on every grep/find tool call —
+// a whole process spawn per search in large repos.
+const commandExistsCache = new Map<string, boolean>();
 function commandExists(cmd: string): boolean {
+	const cachedResult = commandExistsCache.get(cmd);
+	if (cachedResult !== undefined) return cachedResult;
+	let exists = false;
 	try {
 		const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
 		// Check for ENOENT error (command not found)
-		return result.error === undefined || result.error === null;
+		exists = result.error === undefined || result.error === null;
 	} catch {
-		return false;
+		exists = false;
 	}
+	commandExistsCache.set(cmd, exists);
+	return exists;
 }
 
 function executableName(config: ToolConfig): string {
@@ -59,7 +67,9 @@ export function getBundledToolPath(tool: "fd" | "rg"): string | null {
 	return null;
 }
 
-// Get the path to a tool (system-wide or in our tools dir)
+// Get the path to a tool (system-wide or in our tools dir). The PATH probe
+// spawn inside commandExists is cached; the existsSync checks run per call
+// so late-set PIZZA_PACKAGE_DIR / freshly installed tools still resolve.
 export function getToolPath(tool: "fd" | "rg"): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;

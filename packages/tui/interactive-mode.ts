@@ -119,10 +119,6 @@ import {
   type SessionEntry,
   type SessionTreeNode,
 } from "../../src/core/types/session-types.js";
-import {
-  listWorkspaceSessions,
-  listAllSessions,
-} from "../../src/core/session/session-listing.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../src/core/commands/slash-commands.js";
 import type { SourceInfo } from "../../src/core/skills/source-info.js";
 import type { TruncationResult } from "../../src/core/tools/truncate.js";

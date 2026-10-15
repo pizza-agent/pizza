@@ -66,12 +66,14 @@ export async function execCommand(
 			if (!killed) {
 				killed = true;
 				proc.kill("SIGTERM");
-				// Force kill after 5 seconds if SIGTERM doesn't work
+				// Force kill after 5 seconds if SIGTERM doesn't work. unref() so
+				// the fallback timer doesn't keep a dying parent alive for 5s
+				// after the child already exited.
 				setTimeout(() => {
 					if (!proc.killed) {
 						proc.kill("SIGKILL");
 					}
-				}, 5000);
+				}, 5000).unref();
 			}
 		};
 
@@ -91,12 +93,18 @@ export async function execCommand(
 			}, options.timeout);
 		}
 
+		// Bound captured output: a runaway command (e.g. `yes`, a log follower)
+		// would otherwise grow these strings until OOM. Truncating the kept
+		// tail is safe — callers log/parse these, they don't need megabytes.
+		const OUTPUT_CAP = 4 * 1024 * 1024;
 		proc.stdout?.on("data", (data) => {
 			stdout += data.toString();
+			if (stdout.length > OUTPUT_CAP) stdout = stdout.slice(-OUTPUT_CAP);
 		});
 
 		proc.stderr?.on("data", (data) => {
 			stderr += data.toString();
+			if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(-OUTPUT_CAP);
 		});
 
 		// Wait for process termination without hanging on inherited stdio handles

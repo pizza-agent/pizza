@@ -928,7 +928,7 @@ export async function runRpcModeWithFacade(
 	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
 		return { id, type: "response", command, success: false, error: message };
 	};
-	const waitForCompactionEnd = (): Promise<{ summary: string; first_kept_event_id: string; tokens_before: number }> => {
+	const waitForCompactionEnd = (): Promise<{ summary: string; first_kept_event_id: string; tokens_before: number; tokens_after?: number }> => {
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				unsub();
@@ -938,7 +938,7 @@ export async function runRpcModeWithFacade(
 				if (event.type === "COMPACTION_END") {
 					clearTimeout(timer);
 					unsub();
-					resolve(event.payload as { summary: string; first_kept_event_id: string; tokens_before: number });
+					resolve(event.payload as { summary: string; first_kept_event_id: string; tokens_before: number; tokens_after?: number });
 				} else if (event.type === "COMPACTION_ABORTED") {
 					// A failed/aborted compaction emits ABORTED, not END — surface
 					// the real reason ("Nothing to compact", user cancelled, ...)
@@ -1141,6 +1141,7 @@ export async function runRpcModeWithFacade(
 					summary: result.summary,
 					firstKeptEntryId: result.first_kept_event_id,
 					tokensBefore: result.tokens_before,
+					tokensAfter: result.tokens_after,
 				});
 			}
 

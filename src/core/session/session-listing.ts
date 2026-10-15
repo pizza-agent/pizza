@@ -6,6 +6,9 @@
  * event-sourced implementation.
  */
 
+/** Cap for the legacy allMessagesText preview — ~2KB of searchable text per session. */
+const ALL_MESSAGES_CAP = 2048;
+
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentMessage, Message } from "../agent/types.js";
@@ -77,7 +80,7 @@ function buildSessionInfo(
 ): SessionListInfo {
 	let messageCount = 0;
 	let firstMessage = "";
-	const allMessages: string[] = [];
+	let allMessagesText = "";
 	let lastActivity = descriptor.created_at;
 
 	// Query context-relevant events for this session's range. Both bounds and
@@ -108,7 +111,12 @@ function buildSessionInfo(
 			if (text && !firstMessage) {
 				firstMessage = text.slice(0, 200);
 			}
-			if (text) allMessages.push(text);
+			// allMessagesText powers legacy consumers (kept for API compat) but
+			// nothing reads it today — cap it so listing a long session doesn't
+			// concatenate the entire conversation into one string per session.
+			if (text && allMessagesText.length < ALL_MESSAGES_CAP) {
+				allMessagesText += (allMessagesText ? " " : "") + text.slice(0, ALL_MESSAGES_CAP - allMessagesText.length);
+			}
 		} else if (event.type === "AGENT_MESSAGE_END") {
 			messageCount++;
 		}
@@ -126,7 +134,7 @@ function buildSessionInfo(
 		modified: new Date(lastActivity),
 		messageCount,
 		firstMessage: firstMessage || "(no messages)",
-		allMessagesText: allMessages.join(" "),
+		allMessagesText,
 	};
 }
 
