@@ -219,6 +219,14 @@ export class Reactor {
 	 */
 	private _streamIdleTimeoutMs = 10 * 60_000;
 	private _streamIdleTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Per-LLM-call abort controller: the stream-idle watchdog aborts this so a
+	 * hung stream fails the call (LLM_CALL_FAILED → retry path) WITHOUT
+	 * poisoning the turn-level abortController — aborting the shared
+	 * controller would make _shouldInterrupt() return true afterwards,
+	 * silently turning a recoverable stream stall into a user-visible abort. */
+	private _llmCallAbort: AbortController | undefined;
+	/** Set when the watchdog (not the user) aborted the in-flight call. */
+	private _streamIdleTimedOut = false;
 	/**
 	 * Rate-limit TOOL_EXECUTION_UPDATE emissions per tool call. The update
 	 * event is persisted to the store, so an unthrottled onUpdate means one
@@ -294,6 +302,8 @@ export class Reactor {
 	/** Stop the reactor. Clears all subscriptions. */
 	stop(): void {
 		this._isRunning = false;
+		this._stopStreamIdleWatchdog();
+		this._llmCallAbort?.abort();
 		this.abortController?.abort();
 		this._stopStreamIdleWatchdog();
 		for (const { timeout } of this.retryTimers.values()) {
@@ -755,13 +765,24 @@ export class Reactor {
 			// Start the stream-idle watchdog. It fires if no chunk arrives
 			// within the timeout window, aborting the hung LLM call so the
 			// reactor emits LLM_CALL_FAILED instead of hanging forever.
+			this._streamIdleTimedOut = false;
 			this._startStreamIdleWatchdog();
+			// Per-call abort: aborts when the turn aborts (user interrupt,
+			// reactor stop) or when the stream-idle watchdog fires — without
+			// marking the turn-level signal aborted.
+			const callAbort = new AbortController();
+			this._llmCallAbort = callAbort;
+			const parentSignal = this.abortController?.signal;
+			if (parentSignal) {
+				if (parentSignal.aborted) callAbort.abort();
+				else parentSignal.addEventListener("abort", () => callAbort.abort(), { once: true });
+			}
 			const response = await this.config.llmClient.complete({
 				messages: context.messages,
 				systemPrompt: this.config.systemPrompt,
 				model: this.config.model,
 				tools: this.config.tools,
-				signal: this.abortController?.signal,
+				signal: callAbort.signal,
 				onChunk: (chunk: LLMChunk) => {
 					// Reset the idle timer on each chunk — the stream is alive.
 					this._resetStreamIdleWatchdog();
@@ -777,10 +798,19 @@ export class Reactor {
 			});
 
 			this._stopStreamIdleWatchdog();
+			this._llmCallAbort = undefined;
 			this._handleLlmResponse(response, event.event_id, msgStart.event_id);
 		} catch (err) {
 			this._stopStreamIdleWatchdog();
-			const msg = err instanceof Error ? err.message : String(err);
+			this._llmCallAbort = undefined;
+			let msg = err instanceof Error ? err.message : String(err);
+			// Watchdog abort: turn the opaque AbortError into a meaningful,
+			// retryable failure — "aborted" matches no retryable pattern and
+			// would otherwise surface to the user as a cryptic turn error.
+			if (this._streamIdleTimedOut) {
+				this._streamIdleTimedOut = false;
+				msg = `LLM stream idle for ${this._streamIdleTimeoutMs}ms — connection stalled, timed out`;
+			}
 			const isRetryable = this.retryPolicy.isRetryable({ message: msg });
 
 			this._emit({
@@ -802,10 +832,13 @@ export class Reactor {
 		if (this._streamIdleTimer) clearTimeout(this._streamIdleTimer);
 		this._streamIdleTimer = setTimeout(() => {
 			this._streamIdleTimer = undefined;
-			// Abort the in-flight LLM call. This causes the `await` in
-			// _onLlmCallRequested to reject with an AbortError, which flows
-			// into the catch block and emits LLM_CALL_FAILED.
-			this.abortController?.abort();
+			this._streamIdleTimedOut = true;
+			// Abort ONLY the in-flight LLM call (never the turn controller).
+			// The `await` in _onLlmCallRequested rejects with an AbortError,
+			// which flows into the catch block and emits LLM_CALL_FAILED —
+			// where the retry policy can still apply, since the turn-level
+			// abort signal remains un-aborted.
+			this._llmCallAbort?.abort();
 		}, this._streamIdleTimeoutMs);
 	}
 
@@ -1315,6 +1348,12 @@ export class Reactor {
 		// The turn is over from the reactor's perspective. If a queued follow-up is
 		// delivered below, its USER_MESSAGE handler re-sets this to true synchronously.
 		this._turnInFlight = false;
+		// Drop trackers for aborted/incomplete turns: their remaining
+		// TOOL_EXECUTION_ENDs may never arrive (aborted mid-flight) and any late
+		// arrival must not resurrect the aggregate path for a dead turn.
+		if (payload.reason === "aborted") {
+			this.turnTrackers.clear();
+		}
 		this._emptyAnswerRetries = 0;
 
 		// If abort() was called, discard any pending follow-ups so the reactor stops.
