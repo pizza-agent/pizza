@@ -74,6 +74,7 @@ import type {
 } from "../../src/core/intent/types.js";
 import type { ModeEvent } from "../../src/modes/event-mapper.js";
 import { mapTypedEventToModeEvents } from "../../src/modes/event-mapper.js";
+import { estimateContextUsage } from "../../src/core/facade/extension-binding.js";
 import type { EventBase } from "../../src/core/event-store/types.js";
 import type {
   ExtensionCommandContext,
@@ -465,23 +466,11 @@ export class InteractiveMode {
 
   private getContextUsageFacade() {
     const model = this.getCurrentModelFromFacade();
-    const contextWindow = (model as any)?.contextWindow ?? 0;
-    if (contextWindow <= 0) return undefined;
     const messages = this.facade.getProjection().buildContext().messages;
-    const tokens = messages.reduce((sum, msg) => {
-      const content = (msg as any).content;
-      const text =
-        typeof content === "string"
-          ? content
-          : Array.isArray(content)
-            ? content
-                .filter((c: any) => c.type === "text")
-                .map((c: any) => c.text)
-                .join("")
-            : "";
-      return sum + Math.ceil(text.length / 4);
-    }, 0);
-    return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 };
+    // Shared estimator: uses the last assistant's provider-reported usage
+    // (accurate), falls back to CJK-aware per-message estimates, and treats
+    // a stale pre-compaction usage as invalid.
+    return estimateContextUsage(model as any, messages as any);
   }
 
   // ── Method wrappers ──────────────────────────────────
@@ -822,27 +811,8 @@ export class InteractiveMode {
       },
       getContextUsage: () => {
         const facadeModel = this.getCurrentModelFromFacade();
-        const contextWindow = facadeModel?.contextWindow ?? 0;
-        if (contextWindow <= 0) return undefined;
         const messages = facade.getProjection().buildContext().messages;
-        const tokens = messages.reduce((sum, msg) => {
-          const content = "content" in msg ? msg.content : undefined;
-          const text =
-            typeof content === "string"
-              ? content
-              : Array.isArray(content)
-                ? content
-                    .filter((c) => c.type === "text")
-                    .map((c) => c.text)
-                    .join("")
-                : "";
-          return sum + Math.ceil(text.length / 4);
-        }, 0);
-        return {
-          tokens,
-          contextWindow,
-          percent: (tokens / contextWindow) * 100,
-        };
+        return estimateContextUsage(facadeModel as any, messages as any);
       },
       getCwd: () => facade.runtime.cwd,
       isUsingOAuthSubscription: () => {

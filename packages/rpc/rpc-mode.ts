@@ -15,6 +15,8 @@ import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentMessage } from "../../src/core/agent/types.js";
+import { estimateContextUsage } from "../../src/core/facade/extension-binding.js";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { computeMessageStats, type SessionStats } from "../../src/core/session/session-stats.js";
 import type {
 	ExtensionUIContext,
@@ -566,37 +568,10 @@ function getFacadeSessionState(facade: SessionFacade, ptyPort?: number): RpcSess
 	const resolvedModel = facade.modelRegistry?.find(facade.model.provider, facade.model.model_id);
 	const contextWindow = (resolvedModel as { contextWindow?: number } | undefined)?.contextWindow ?? 0;
 
-	// Context usage estimate — uses the last assistant usage when available,
-	// falling back to a rough char/4 estimate for trailing messages.
-	let contextUsage: RpcSessionState["contextUsage"];
-	if (contextWindow > 0) {
-		let tokens: number | null = null;
-		// Find last assistant usage to get an accurate context token count.
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i] as { role?: string; usage?: { totalTokens?: number; input?: number; output?: number; cacheRead?: number; cacheWrite?: number }; stopReason?: string };
-			if (msg.role === "assistant" && msg.usage && msg.stopReason !== "aborted" && msg.stopReason !== "error") {
-				const u = msg.usage;
-				tokens = u.totalTokens || (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
-				// Add rough estimate for any messages after the last usage.
-				for (let j = i + 1; j < messages.length; j++) {
-					tokens += estimateMessageTokens(messages[j] as AgentMessage);
-				}
-				break;
-			}
-		}
-		if (tokens === null) {
-			let estimated = 0;
-			for (const message of messages) {
-				estimated += estimateMessageTokens(message as AgentMessage);
-			}
-			tokens = estimated;
-		}
-		contextUsage = {
-			tokens,
-			contextWindow,
-			percent: (tokens / contextWindow) * 100,
-		};
-	}
+	// Context usage via the shared estimator: uses the last assistant's
+	// provider-reported usage when fresh (post-compaction), falls back to
+	// CJK-aware per-message estimates when it's stale or absent.
+	const contextUsage = estimateContextUsage(resolvedModel as Model<Api> | undefined, messages);
 
 	// Cumulative token usage across all assistant messages.
 	let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalCost = 0;
@@ -633,17 +608,6 @@ function getFacadeSessionState(facade: SessionFacade, ptyPort?: number): RpcSess
 		contextUsage,
 		tokenUsage,
 	};
-}
-
-/** Rough token estimate for a message (chars / 4). Used when no usage data is available. */
-function estimateMessageTokens(msg: AgentMessage): number {
-	const content = "content" in msg ? (msg as { content?: unknown }).content : undefined;
-	const text = typeof content === "string"
-		? content
-		: Array.isArray(content)
-			? content.filter((c) => (c as { type?: string }).type === "text").map((c) => (c as { text?: string }).text ?? "").join("")
-			: "";
-	return Math.ceil(text.length / 4);
 }
 
 /**
