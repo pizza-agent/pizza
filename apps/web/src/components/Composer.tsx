@@ -1713,6 +1713,13 @@ ${insert}`;
 						) : (
 						<textarea
 							ref={textareaRef}
+							// ARIA role so desktop automation (accessibility tree /
+							// computer-use) can find and drive the composer —
+							// WKWebView otherwise collapses the web content into
+							// unlabeled static-text groups.
+							role="textbox"
+							aria-label={sidecarReady ? t("composer.placeholder") : t("composer.waitingForSidecar")}
+							aria-multiline="true"
 							className="w-full resize-none bg-transparent px-1 py-1 text-sm text-fg outline-none placeholder:text-muted min-h-[2.5rem] max-h-80"
 							placeholder={sidecarReady ? t("composer.placeholder") : t("composer.waitingForSidecar")}
 							value={input}
