@@ -156,9 +156,15 @@ describe("SessionFacade", () => {
 		const prompt = facade.prompt("stop");
 		await waitForEvent(runtime, "LLM_CALL_REQUESTED");
 
-		expect(facade.signal).toBe(requestSignal);
+		// The LLM call runs on a call-scoped child signal (reactor creates one
+		// so the stream-idle watchdog can abort a stalled call without
+		// poisoning the turn-level signal). Aborting the runtime must still
+		// propagate to the in-flight call.
+		expect(requestSignal).toBeDefined();
+		expect(requestSignal!.aborted).toBe(false);
 		facade.abort();
 		await prompt;
+		expect(requestSignal!.aborted).toBe(true);
 		expect(facade.signal).toBeUndefined();
 
 		facade.dispose();
