@@ -200,9 +200,11 @@ describe("SessionProjection", () => {
 		}
 
 		const projection = new SessionProjection(store, createDescriptor());
-		const context = projection.buildContext({ max_tokens: 500 }); // 500 / 100 = 5 messages max
+		// "Message i" is ~3-4 tokens each; a 50-token budget keeps ~12-16 messages.
+		const context = projection.buildContext({ max_tokens: 50 });
 
 		expect(context.messages.length).toBeLessThan(100);
+		expect(context.messages.length).toBeGreaterThan(0);
 	});
 
 	it("should return timeline entries", () => {

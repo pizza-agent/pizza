@@ -173,22 +173,32 @@ export class CompactionEngine implements CompactionPolicy {
 
 	async compact(reason: CompactionReason, signal: AbortSignal): Promise<CompactionOutcome> {
 		const built = this.config.projection.buildContext();
-		const pairs = built.events
-			.map((event): EventMessagePair | undefined => {
-				const message = eventToMessage(event);
-				return message ? { event, message } : undefined;
-			})
-			.filter((pair): pair is EventMessagePair => pair !== undefined);
+		// Split the event array BEFORE mapping to messages — non-message events
+		// get filtered out of pairs, so slicing pairs by the event count would
+		// mis-partition. Context prefix = fork source / context-parent session
+		// events, always injected verbatim by buildContext regardless of the
+		// compaction boundary: they must not be summarized (the prefix would
+		// re-inject them verbatim AND the summary would carry a copy), but DO
+		// count in tokens_after.
+		const toPairs = (events: EventBase[]): EventMessagePair[] =>
+			events
+				.map((event): EventMessagePair | undefined => {
+					const message = eventToMessage(event);
+					return message ? { event, message } : undefined;
+				})
+				.filter((pair): pair is EventMessagePair => pair !== undefined);
+		const prefixPairs = toPairs(built.events.slice(0, built.contextPrefixEventCount));
+		const sessionPairs = toPairs(built.events.slice(built.contextPrefixEventCount));
 
 		// Only summary compactions reset the compressible region — a mask-mode
 		// COMPACTION_END just clears tool outputs and must NOT become the
 		// boundary, or a later summary would only "summarize" the events
 		// after the mask (growing the context instead of shrinking it).
-		const previousCompactionIndex = findLastIndex(pairs, (pair) => pair.event.type === "COMPACTION_END" && !isMaskCompaction(pair.event));
+		const previousCompactionIndex = findLastIndex(sessionPairs, (pair) => pair.event.type === "COMPACTION_END" && !isMaskCompaction(pair.event));
 		const previousSummary =
-			previousCompactionIndex >= 0 ? (pairs[previousCompactionIndex]!.message as { summary?: string }).summary : undefined;
+			previousCompactionIndex >= 0 ? (sessionPairs[previousCompactionIndex]!.message as { summary?: string }).summary : undefined;
 		const startIndex = previousCompactionIndex >= 0 ? previousCompactionIndex + 1 : 0;
-		const compactablePairs = pairs.slice(startIndex);
+		const compactablePairs = sessionPairs.slice(startIndex);
 		if (compactablePairs.length < 2) {
 			throw new Error("Nothing to compact");
 		}
@@ -221,13 +231,18 @@ export class CompactionEngine implements CompactionPolicy {
 		// Per-message estimate — estimateMessagesTokens would read the last
 		// assistant message's cumulative provider usage and report nearly the
 		// whole pre-compaction total as "after" (observed tokens_after >
-		// tokens_before on real sessions).
-		const tokensAfter = estimateMessageTokens({
-			role: "compactionSummary",
-			summary,
-			tokensBefore,
-			timestamp: Date.now(),
-		}) + keptPairs.reduce((sum, pair) => sum + estimateMessageTokens(pair.message), 0);
+		// tokens_before on real sessions). Include the context prefix pairs:
+		// they survive compaction verbatim, so the post-compaction context is
+		// summary + prefix + kept pairs.
+		const tokensAfter =
+			estimateMessageTokens({
+				role: "compactionSummary",
+				summary,
+				tokensBefore,
+				timestamp: Date.now(),
+			}) +
+			prefixPairs.reduce((sum, pair) => sum + estimateMessageTokens(pair.message), 0) +
+			keptPairs.reduce((sum, pair) => sum + estimateMessageTokens(pair.message), 0);
 
 		return {
 			summary,
@@ -419,49 +434,65 @@ function findLastAssistantUsage(messages: AgentMessage[]): { totalTokens: number
 	return undefined;
 }
 
+/**
+ * Estimate tokens in a string. ASCII-heavy content is ~4 chars/token, but
+ * CJK and emoji run close to 1-2 chars/token — a plain chars/4 halves or
+ * thirds the real count on CJK-heavy sessions, which makes compaction's
+ * tokens_after report wildly low.
+ */
+export function estimateMessageStringTokens(text: string): number {
+	let ascii = 0;
+	let nonAscii = 0;
+	for (let i = 0; i < text.length; i++) {
+		if (text.charCodeAt(i) < 0x80) ascii++;
+		else nonAscii++;
+	}
+	return Math.ceil(ascii / 4 + nonAscii / 1.5);
+}
+
 function estimateMessageTokens(message: AgentMessage): number {
-	let chars = 0;
+	let tokens = 0;
 	switch (message.role) {
 		case "user":
 		case "custom":
 		case "toolResult":
-			chars = estimateContentChars(message.content);
+			tokens = estimateContentTokens(message.content);
 			break;
 		case "assistant":
 			for (const block of message.content) {
 				if (block.type === "text") {
-					chars += block.text.length;
+					tokens += estimateMessageStringTokens(block.text);
 				} else if (block.type === "thinking") {
-					chars += block.thinking.length;
+					tokens += estimateMessageStringTokens(block.thinking);
 				} else if (block.type === "toolCall") {
-					chars += block.name.length + JSON.stringify(block.arguments).length;
+					tokens += estimateMessageStringTokens(block.name) + estimateMessageStringTokens(JSON.stringify(block.arguments));
 				}
 			}
 			break;
 		case "bashExecution":
-			chars = message.command.length + message.output.length;
+			tokens = estimateMessageStringTokens(message.command) + estimateMessageStringTokens(message.output);
 			break;
 		case "branchSummary":
 		case "compactionSummary":
-			chars = message.summary.length;
+			tokens = estimateMessageStringTokens(message.summary);
 			break;
 	}
-	return Math.ceil(chars / 4);
+	return tokens;
 }
 
-function estimateContentChars(content: unknown): number {
-	if (typeof content === "string") return content.length;
+function estimateContentTokens(content: unknown): number {
+	if (typeof content === "string") return estimateMessageStringTokens(content);
 	if (!Array.isArray(content)) return 0;
-	let chars = 0;
+	let tokens = 0;
 	for (const block of content) {
 		if (!block || typeof block !== "object" || !("type" in block)) continue;
 		if (block.type === "text" && "text" in block && typeof block.text === "string") {
-			chars += block.text.length;
+			tokens += estimateMessageStringTokens(block.text);
 		} else if (block.type === "image") {
-			chars += 4800;
+			tokens += 1200;
 		}
 	}
-	return chars;
+	return tokens;
 }
 
 function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {

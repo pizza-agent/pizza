@@ -188,7 +188,22 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // ============================================================================
 
 /**
- * Estimate token count for a message using chars/4 heuristic.
+ * Estimate tokens in a string. ASCII is ~4 chars/token; CJK/emoji run
+ * close to 1-2 chars/token, so a flat chars/4 halves or thirds the real
+ * count on CJK-heavy sessions. Shared rule with the compaction engine.
+ */
+export function estimateStringTokens(text: string): number {
+	let ascii = 0;
+	let nonAscii = 0;
+	for (let i = 0; i < text.length; i++) {
+		if (text.charCodeAt(i) < 0x80) ascii++;
+		else nonAscii++;
+	}
+	return Math.ceil(ascii / 4 + nonAscii / 1.5);
+}
+
+/**
+ * Estimate token count for a message using a chars/token heuristic.
  * This is conservative (overestimates tokens).
  */
 export function estimateTokens(message: AgentMessage): number {
@@ -198,53 +213,54 @@ export function estimateTokens(message: AgentMessage): number {
 		case "user": {
 			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
 			if (typeof content === "string") {
-				chars = content.length;
+				return estimateStringTokens(content);
 			} else if (Array.isArray(content)) {
+				let tokens = 0;
 				for (const block of content) {
 					if (block.type === "text" && block.text) {
-						chars += block.text.length;
+						tokens += estimateStringTokens(block.text);
 					}
 				}
+				return tokens;
 			}
-			return Math.ceil(chars / 4);
+			return 0;
 		}
 		case "assistant": {
 			const assistant = message as AssistantMessage;
+			let tokens = 0;
 			for (const block of assistant.content) {
 				if (block.type === "text") {
-					chars += block.text.length;
+					tokens += estimateStringTokens(block.text);
 				} else if (block.type === "thinking") {
-					chars += block.thinking.length;
+					tokens += estimateStringTokens(block.thinking);
 				} else if (block.type === "toolCall") {
-					chars += block.name.length + JSON.stringify(block.arguments).length;
+					tokens += estimateStringTokens(block.name) + estimateStringTokens(JSON.stringify(block.arguments));
 				}
 			}
-			return Math.ceil(chars / 4);
+			return tokens;
 		}
 		case "custom":
 		case "toolResult": {
 			if (typeof message.content === "string") {
-				chars = message.content.length;
-			} else {
-				for (const block of message.content) {
-					if (block.type === "text" && block.text) {
-						chars += block.text.length;
-					}
-					if (block.type === "image") {
-						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
-					}
+				return estimateStringTokens(message.content);
+			}
+			let tokens = 0;
+			for (const block of message.content) {
+				if (block.type === "text" && block.text) {
+					tokens += estimateStringTokens(block.text);
+				}
+				if (block.type === "image") {
+					tokens += 1200;
 				}
 			}
-			return Math.ceil(chars / 4);
+			return tokens;
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length;
-			return Math.ceil(chars / 4);
+			return estimateStringTokens(message.command) + estimateStringTokens(message.output);
 		}
 		case "branchSummary":
 		case "compactionSummary": {
-			chars = message.summary.length;
-			return Math.ceil(chars / 4);
+			return estimateStringTokens(message.summary);
 		}
 	}
 

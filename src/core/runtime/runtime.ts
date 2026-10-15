@@ -208,6 +208,15 @@ export class EventSourcedRuntime {
 				retryPolicy: this.config.retryPolicy,
 				retryAssistantErrorCompletions: this.config.retryAssistantErrorCompletions,
 				compactionPolicy: this._buildCompactionPolicy(projection),
+			onObservedContextTokens: (tokens) => {
+				// Self-correct an understated contextBudget: if the provider
+				// demonstrably served a prompt larger than our configured
+				// window, the catalog value was wrong — widen so truncation
+				// and the compaction threshold stop firing early.
+				if (typeof tokens === "number" && tokens > (this.config.contextBudget ?? 0)) {
+					this.config.contextBudget = tokens;
+				}
+			},
 			sessionManager: this.sessionManager,
 			refreshSystemPrompt: this.config.refreshSystemPrompt,
 			beforeAgentStart: this.config.beforeAgentStart,

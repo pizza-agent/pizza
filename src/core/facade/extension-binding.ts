@@ -50,10 +50,15 @@ function splitUserContent(
 
 export function estimateContextUsage(model: Model<any> | undefined, messages: AgentMessage[]): ContextUsage | undefined {
 	if (!model) return undefined;
-	const contextWindow = model.contextWindow ?? 0;
+	const estimate = estimateContextTokens(messages);
+	// The catalog window can be understated (e.g. a provider field that isn't
+	// actually the context limit). When the observed/estimated usage already
+	// exceeds it, the catalog value is provably wrong — report the observed
+	// size as the effective window instead of a misleading >100% (or, after
+	// clamping, a stuck 100%).
+	const contextWindow = Math.max(model.contextWindow ?? 0, estimate.tokens);
 	if (contextWindow <= 0) return undefined;
 
-	const estimate = estimateContextTokens(messages);
 	return {
 		tokens: estimate.tokens,
 		contextWindow,

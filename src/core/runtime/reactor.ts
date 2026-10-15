@@ -89,6 +89,14 @@ export interface ReactorConfig {
 	 */
 	refreshSystemPrompt?: () => string;
 	/**
+	 * Reports the provider-observed prompt size for each successful LLM call
+	 * (input + cache_read + cache_write — the tokens actually present in the
+	 * context). Lets the runtime self-correct a too-small contextBudget when
+	 * the model catalog understates the window (observed: swe-2 catalog says
+	 * 262k but serves 440k+ prompts without error).
+	 */
+	onObservedContextTokens?: (tokens: number) => void;
+	/**
 	 * Run at the start of each user-prompt turn, before the first LLM round.
 	 * Lets the caller fire extension before_agent_start hooks (system-prompt
 	 * injection, context messages) with the canonical base prompt. Return the
@@ -822,6 +830,11 @@ export class Reactor {
 			});
 			msgStartEventId = started.event_id;
 		}
+
+		// Report the provider-observed context size so an understated model
+		// contextWindow can self-correct (see ReactorConfig.onObservedContextTokens).
+		const observedContextTokens = response.usage.input + response.usage.cache_read + response.usage.cache_write;
+		if (observedContextTokens > 0) this.config.onObservedContextTokens?.(observedContextTokens);
 
 		// Emit message end (the chunking is optional; for now we skip to end for simplicity)
 		const toolCalls = extractToolCalls(response.content);

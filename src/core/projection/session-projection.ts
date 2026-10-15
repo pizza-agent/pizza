@@ -13,6 +13,7 @@ import type { TimelineEntry, TimelineEntryKind } from "./timeline-projection.js"
 import { eventsToMessages } from "./event-to-message.js";
 import { sanitizeToolPairing } from "./context-sanitizer.js";
 import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolResultEvents } from "../compaction/tool-result-masking.js";
+import { estimateTokens } from "../compaction/compaction.js";
 
 // ============================================================================
 // Constants
@@ -120,6 +121,7 @@ export class SessionProjection {
 			messages,
 			events: [...(sourceContext?.events ?? []), ...(parentContext?.events ?? []), ...events],
 			descriptor: this.descriptor,
+			contextPrefixEventCount: (sourceContext?.events.length ?? 0) + (parentContext?.events.length ?? 0),
 		};
 	}
 
@@ -282,25 +284,32 @@ export class SessionProjection {
 	}
 
 	private _truncateByTokens(messages: AgentMessage[], maxTokens: number): AgentMessage[] {
-		// Simple truncation: keep recent messages up to token limit
-		// In production, use proper token counting
-		const estimatedTokensPerMessage = 100; // rough estimate
-		const maxMessages = Math.floor(maxTokens / estimatedTokensPerMessage);
-
-		if (messages.length <= maxMessages) {
-			return messages;
+		// Keep system-equivalent messages (summaries) plus the most recent
+		// messages that fit the token budget — measured with the shared
+		// CJK-aware per-message estimator rather than a flat per-message
+		// guess, which used to silently keep ~10x too much context.
+		const systemMessages: AgentMessage[] = [];
+		const otherMessages: AgentMessage[] = [];
+		for (const m of messages) {
+			if (m.role === "compactionSummary" || m.role === "branchSummary") {
+				systemMessages.push(m);
+			} else {
+				otherMessages.push(m);
+			}
 		}
 
-		// Keep system-equivalent messages + most recent messages
-		const systemMessages = messages.filter(
-			(m) => m.role === "compactionSummary" || m.role === "branchSummary",
-		);
-		const otherMessages = messages.filter(
-			(m) => m.role !== "compactionSummary" && m.role !== "branchSummary",
-		);
-
-		const recentMessages = otherMessages.slice(-maxMessages);
-		return [...systemMessages, ...recentMessages];
+		// Walk back from the tail until the budget is exhausted. The last
+		// message is always kept so the context never becomes empty.
+		const kept: AgentMessage[] = [];
+		let budget = maxTokens;
+		for (let i = otherMessages.length - 1; i >= 0; i--) {
+			const cost = estimateTokens(otherMessages[i]!);
+			if (budget - cost < 0 && kept.length > 0) break;
+			budget -= cost;
+			kept.push(otherMessages[i]!);
+		}
+		kept.reverse();
+		return [...systemMessages, ...kept];
 	}
 
 	private _eventTypeToKind(type: EventType): TimelineEntryKind {

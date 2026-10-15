@@ -109,6 +109,10 @@ function toModelConfig(config: DevinClientModelConfig): ProviderModelConfig | un
 		reasoning: supportsThinking(config),
 		input: supportsImages ? ["text", "image"] : ["text"],
 		cost: modelCost(config),
+		// modelInfo.maxTokens is the catalog's declared context window. It can
+		// lag the real serving limit (observed: swe-2 declared 262k but serves
+		// 440k+ prompts), so the runtime additionally widens the effective
+		// budget when provider usage exceeds it.
 		contextWindow:
 			(config.modelInfo?.maxTokens ?? 0) > 0
 				? config.modelInfo!.maxTokens!
@@ -154,7 +158,7 @@ export const DEVIN_FALLBACK_MODELS: ProviderModelConfig[] = [
 		reasoning: true,
 		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 262000,
+		contextWindow: 524288,
 		maxTokens: 128000,
 	},
 	{
@@ -163,7 +167,7 @@ export const DEVIN_FALLBACK_MODELS: ProviderModelConfig[] = [
 		reasoning: true,
 		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 262000,
+		contextWindow: 524288,
 		maxTokens: 128000,
 	},
 	{
@@ -172,7 +176,7 @@ export const DEVIN_FALLBACK_MODELS: ProviderModelConfig[] = [
 		reasoning: true,
 		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 262000,
+		contextWindow: 524288,
 		maxTokens: 128000,
 	},
 	{

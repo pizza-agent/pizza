@@ -111,4 +111,12 @@ export interface BuiltContext {
 	events: EventBase[];
 	/** Session descriptor */
 	descriptor: SessionDescriptor;
+	/**
+	 * Number of leading entries in `events` that belong to the source/parent
+	 * context (fork / session-split prefixes), not to this session's own event
+	 * range. Compaction uses this to never "summarize away" prefix events —
+	 * they are always injected verbatim by buildContext regardless of the
+	 * compaction boundary — while still counting them in token accounting.
+	 */
+	contextPrefixEventCount: number;
 }
