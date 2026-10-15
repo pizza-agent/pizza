@@ -364,7 +364,11 @@ function AppInner() {
 					typed.type === "AGENT_TURN_START" ||
 					typed.type === "SESSION_CREATED" ||
 					typed.type === "SESSION_FORKED" ||
-					typed.type === "SESSION_JUMPED"
+					typed.type === "SESSION_JUMPED" ||
+					// Compaction rewrites the context — refetch so the context-usage
+					// indicator reflects the post-compact size immediately instead
+					// of waiting for the next turn boundary.
+					typed.type === "COMPACTION_END"
 				) {
 					void sendCommandAwait<RpcSessionState>({ type: "get_state" }, 5000)
 						.then((r) => setState(r.data ?? null))

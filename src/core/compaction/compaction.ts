@@ -125,17 +125,18 @@ const STALE_USAGE_RATIO = 1.5;
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
-	// A compaction/branch summary newer than the last assistant message means
-	// that assistant's usage was recorded BEFORE the compaction — its
-	// totalTokens describe the pre-compaction context, not the current one.
-	// The kept assistant messages sit after the summary in the flattened list,
-	// so index comparisons can't see this; timestamps can. Fall back to full
-	// estimation (summary text + prefix + kept pairs) so the UI stops
+	// A compaction/branch summary whose timestamp is >= the last assistant
+	// message's means that usage was recorded BEFORE the summary was written
+	// — its totalTokens describe the pre-compaction context, not the current
+	// one. The kept assistant messages sit after the summary in the flattened
+	// list, so index comparisons can't see this; timestamps can (>= because
+	// same-millisecond appends are common in fast sequences). Fall back to
+	// full estimation (summary + prefix + kept pairs) so the UI stops
 	// reporting the pre-compaction size after a compact.
 	if (usageInfo) {
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const m = messages[i];
-			if ((m.role === "compactionSummary" || m.role === "branchSummary") && m.timestamp > messages[usageInfo.index]!.timestamp) {
+		const usageTs = messages[usageInfo.index]!.timestamp;
+		for (const m of messages) {
+			if ((m.role === "compactionSummary" || m.role === "branchSummary") && m.timestamp >= usageTs) {
 				let estimated = 0;
 				for (const msg of messages) estimated += estimateTokens(msg);
 				return { tokens: estimated, usageTokens: 0, trailingTokens: estimated, lastUsageIndex: null };
