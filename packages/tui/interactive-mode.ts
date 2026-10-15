@@ -94,6 +94,7 @@ import {
   KeybindingsManager,
 } from "../../src/core/commands/keybindings.js";
 import { computeMessageStats } from "../../src/core/session/session-stats.js";
+import { EventStoreExtensionSessionManager } from "../../src/core/extensions/session-context.js";
 import { createCompactionSummaryMessage } from "../../src/core/context/messages.js";
 import {
   defaultModelPerProvider,
@@ -680,8 +681,6 @@ export class InteractiveMode {
     return this.facade.settingsManager;
   }
   private getExtensionSessionManager() {
-    const { EventStoreExtensionSessionManager } =
-      require("../../src/core/extensions/session-context.js") as typeof import("../../src/core/extensions/session-context.js");
     return new EventStoreExtensionSessionManager({
       store: this.facade.runtime.store,
       projection: this.facade.getProjection(),
