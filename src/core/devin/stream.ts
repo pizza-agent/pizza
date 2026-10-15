@@ -435,8 +435,22 @@ export function devinStreamSimple(model: Model<Api>, context: Context, options?:
 				stream.push({ type: "toolcall_end", contentIndex: blockIndices.get(block)!, toolCall: block, partial: output });
 			}
 
+			// Error stop reasons must not be masked by partial toolCall blocks —
+			// the reactor only retries on "error"/"aborted", not on toolUse.
+			const isErrorStop = !!latestStopReason && /error|aborted|fail/i.test(latestStopReason);
+			if (isErrorStop) {
+				output.stopReason = "error";
+				output.errorMessage = `Stream ended with ${latestStopReason}`;
+				stream.push({ type: "error", reason: "error", error: output });
+				stream.end();
+				return;
+			}
 			const doneReason =
-				toolBlocks.size > 0 ? "toolUse" : latestStopReason === "STOP_REASON_MAX_TOKENS" ? "length" : "stop";
+				toolBlocks.size > 0
+					? "toolUse"
+					: latestStopReason === "STOP_REASON_MAX_TOKENS"
+						? "length"
+						: "stop";
 			output.stopReason = doneReason;
 			stream.push({ type: "done", reason: doneReason, message: output });
 			stream.end();
