@@ -274,8 +274,12 @@ export class SqliteEventStore implements EventStore, SessionStore {
 
 	getCausalChain(event_id: string): EventBase[] {
 		const chain: EventBase[] = [];
+		const visited = new Set<string>();
 		let currentId: string | undefined = event_id;
 		while (currentId) {
+			// A caused_by cycle (corrupted log) would loop forever — bail.
+			if (visited.has(currentId)) break;
+			visited.add(currentId);
 			const event = this.get(currentId);
 			if (!event) break;
 			chain.unshift(event);

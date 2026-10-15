@@ -143,10 +143,17 @@ export class ChannelRuntime {
 	async start(): Promise<void> {
 		if (this.connected) return;
 		this.unsubEvents = this.bridge.onEvent((event, workspace) => {
-			const buf = this.recentEvents.get(workspace) ?? [];
-			buf.push(event);
-			if (buf.length > 128) buf.shift();
-			this.recentEvents.set(workspace, buf);
+			// Only buffer events correlation can possibly use. A single
+			// streaming turn emits hundreds of AGENT_MESSAGE_CHUNKs (and tool
+			// updates): letting them into the 128-slot ring buffer evicts the
+			// USER_MESSAGE a waiter needs to find on replay, hanging the
+			// deliver forever (tellTimeoutMs defaults to 0).
+			if (event.type !== "AGENT_MESSAGE_CHUNK" && event.type !== "TOOL_EXECUTION_UPDATE") {
+				const buf = this.recentEvents.get(workspace) ?? [];
+				buf.push(event);
+				if (buf.length > 128) buf.shift();
+				this.recentEvents.set(workspace, buf);
+			}
 			for (const waiter of this.replyWaiters) waiter(event, workspace);
 		});
 		this.connected = true;
