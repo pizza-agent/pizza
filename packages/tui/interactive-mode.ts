@@ -310,6 +310,10 @@ export class InteractiveMode {
   private _isCompacting = false;
   private _retryAttempt = 0;
   private _streamingText = "";
+  /** Markdown rebuilds are O(content) — throttle streaming repaints so a
+   * fast LLM stream doesn't spend all of main-thread time re-parsing. */
+  private _streamRenderAt = 0;
+  private _streamRenderPending: ReturnType<typeof setTimeout> | undefined;
   private ui!: TUI;
   private chatContainer!: Container;
   private pendingMessagesContainer!: Container;
@@ -3062,6 +3066,25 @@ export class InteractiveMode {
   ): Promise<void> {
     return this.facade.prompt(text, images as any);
   }
+  /** Render the accumulated streaming text into the streaming component. */
+  private _renderStreamingText(): void {
+    if (!this.streamingComponent) return;
+    const streamingMsg = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: this._streamingText }],
+      stopReason: null as any,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: { total: 0 },
+      },
+    } as AssistantMessage;
+    this.streamingComponent.updateContent(streamingMsg);
+    this.ui.requestRender();
+  }
+
   private subscribeToAgent(): void {
     this.subscribeToFacade();
   }
@@ -3167,6 +3190,10 @@ export class InteractiveMode {
           this.updatePendingMessagesDisplay();
         } else if (msg.role === "assistant") {
           if (this.streamingComponent) {
+            if (this._streamRenderPending) {
+              clearTimeout(this._streamRenderPending);
+              this._streamRenderPending = undefined;
+            }
             this.streamingMessage = msg as AssistantMessage;
             this.streamingComponent.updateContent(this.streamingMessage);
 
@@ -3242,21 +3269,20 @@ export class InteractiveMode {
       case "streaming_message_updated": {
         if (event.delta) {
           this._streamingText += event.delta;
-          // Re-render the streaming component with accumulated text
-          if (this.streamingComponent) {
-            const streamingMsg = {
-              role: "assistant" as const,
-              content: [{ type: "text" as const, text: this._streamingText }],
-              stopReason: null as any,
-              usage: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                cost: { total: 0 },
-              },
-            } as AssistantMessage;
-            this.streamingComponent.updateContent(streamingMsg);
+          // Re-render the streaming component with accumulated text —
+          // throttled: updateContent() rebuilds the whole Markdown tree per
+          // call (O(content length) → O(n²) per response). ~30fps is
+          // indistinguishable to the eye but bounds the cost.
+          const now = Date.now();
+          if (this.streamingComponent && now - this._streamRenderAt >= 33) {
+            this._streamRenderAt = now;
+            this._renderStreamingText();
+          } else if (this.streamingComponent && !this._streamRenderPending) {
+            this._streamRenderPending = setTimeout(() => {
+              this._streamRenderPending = undefined;
+              this._streamRenderAt = Date.now();
+              this._renderStreamingText();
+            }, 33);
           }
         }
         this.ui.requestRender();
