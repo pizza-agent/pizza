@@ -211,6 +211,15 @@ export class Reactor {
 	 */
 	private _streamIdleTimeoutMs = 10 * 60_000;
 	private _streamIdleTimer: ReturnType<typeof setTimeout> | undefined;
+	/**
+	 * Rate-limit TOOL_EXECUTION_UPDATE emissions per tool call. The update
+	 * event is persisted to the store, so an unthrottled onUpdate means one
+	 * SQLite insert (+ full tail-string JSON) per output chunk — chatty
+	 * commands wrote thousands of rows per call. UI consumers only need the
+	 * latest state; intermediate updates inside this window are dropped.
+	 */
+	private _lastToolUpdateAt = new Map<string, number>();
+	private static readonly TOOL_UPDATE_MIN_INTERVAL_MS = 120;
 	constructor(config: ReactorConfig) {
 		this.config = config;
 		this.retryPolicy = config.retryPolicy ?? new DefaultRetryPolicy();
@@ -278,11 +287,17 @@ export class Reactor {
 	stop(): void {
 		this._isRunning = false;
 		this.abortController?.abort();
+		this._stopStreamIdleWatchdog();
 		for (const { timeout } of this.retryTimers.values()) {
 			clearTimeout(timeout);
 		}
 		this.retryTimers.clear();
 		this._drainPendingApprovals();
+		// Trackers for tool batches aborted mid-flight can never complete —
+		// clear them so the shared TurnState does not leak entries across
+		// reactor restarts (this instance is discarded after each prompt cycle).
+		this.turnTrackers.clear();
+		this._lastToolUpdateAt.clear();
 		for (const unsub of this.unsubscribers) unsub();
 		this.unsubscribers = [];
 	}
@@ -454,7 +469,25 @@ export class Reactor {
 
 	private async _onUserMessage(event: EventBase): Promise<void> {
 		const payload = event.payload as { content: unknown; images?: unknown };
-		if (this._shouldInterrupt()) return;
+		if (this._shouldInterrupt()) {
+			// The controller is aborted but no turn has settled yet (message
+			// landed in the abort→completion window). Queue it so the turn-
+			// completion drain delivers it after the abort unwinds — dropping
+			// it would lose a user message that is already in the log.
+			this._emit({
+				actor_id: "user",
+				type: "USER_FOLLOWUP_QUEUED",
+				payload: {
+					content: payload.content,
+					images: payload.images,
+					reason: "abort_in_flight",
+					user_message_event_id: event.event_id,
+					run_id: this.turnState.runId,
+				},
+				caused_by: event.event_id,
+			});
+			return;
+		}
 
 		// A turn is already in flight (LLM streaming, tool running, retry
 		// pending, or compaction): starting another reactor turn here would
@@ -1024,9 +1057,11 @@ export class Reactor {
 					this._emitToolExecutionUpdate(tool_call_id, partial, causedBy);
 				},
 			});
+			this._lastToolUpdateAt.delete(tool_call_id);
 			this._emitToolExecutionEnd(tool_call_id, tool_name, result, causedBy, startTime);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
+			this._lastToolUpdateAt.delete(tool_call_id);
 			this._emitToolExecutionEnd(tool_call_id, tool_name, {
 				content: [{ type: "text", text: msg }],
 				is_error: true,
@@ -1040,6 +1075,13 @@ export class Reactor {
 		partial: ToolExecutionUpdate,
 		causedBy: string,
 	): void {
+		// Drop updates that arrive faster than the throttle window (per tool
+		// call). The final tool result always goes out via TOOL_EXECUTION_END,
+		// so no state is lost — only intermediate redraws/persists coalesce.
+		const now = Date.now();
+		const last = this._lastToolUpdateAt.get(tool_call_id);
+		if (last !== undefined && now - last < Reactor.TOOL_UPDATE_MIN_INTERVAL_MS) return;
+		this._lastToolUpdateAt.set(tool_call_id, now);
 		this._emit({
 			actor_id: "runtime",
 			type: "TOOL_EXECUTION_UPDATE",
@@ -1134,6 +1176,11 @@ export class Reactor {
 		const tracker = assistantMessageEventId ? this.turnTrackers.get(assistantMessageEventId) : undefined;
 
 		if (!tracker || !assistantMessageEventId) return;
+		// Ignore END events for tool calls that do not belong to this turn
+		// (duplicate ids across providers, or a compensating crash-recovery END
+		// arriving after the turn already aggregated): counting them would push
+		// `received` past expectedCount with foreign results.
+		if (!tracker.expectedToolCallIds.has(payload.tool_call_id)) return;
 		if (tracker.received.some((result) => result.tool_call_id === payload.tool_call_id)) return;
 
 		tracker.received.push({

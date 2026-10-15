@@ -42,11 +42,28 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 		"utf-8",
 	);
 
+	// `packages` in project settings.json is a dead key: installed plugins are
+	// recorded in <agentDir>/extensions.json (user-level registry). The fake
+	// npm command still lives in the merged settings (project scope wins).
+	writeFileSync(
+		join(agentDir, "extensions.json"),
+		JSON.stringify(
+			{
+				version: 1,
+				extensions: {
+					"npm:fake-package": { source: "npm:fake-package", enabled: true, installed: true },
+				},
+			},
+			null,
+			2,
+		),
+		"utf-8",
+	);
+
 	writeFileSync(
 		join(projectConfigDir, "settings.json"),
 		JSON.stringify(
 			{
-				packages: ["npm:fake-package"],
 				npmCommand: [process.execPath, fakeNpmPath],
 			},
 			null,

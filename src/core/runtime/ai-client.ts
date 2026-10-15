@@ -212,9 +212,16 @@ export function buildLlmClientFromStreamFn(
 					total: finalMessage.usage.totalTokens,
 					cost: finalMessage.usage.cost.total,
 				},
-				stopReason: content.some((block: any) => block.type === "tool_call")
-					? "tool_use"
-					: finalMessage.stopReason === "toolUse"
+				// Only promote to tool_use when the stream actually ENDED in
+				// toolUse (or the stop reason is missing). A partial tool_call
+				// block inside an errored/aborted message must not mask the real
+				// stop reason — otherwise the reactor treats a failed call as a
+				// normal tool round (no retry, no error surfaced).
+				stopReason:
+					finalMessage.stopReason === "toolUse" ||
+					(content.some((block: any) => block.type === "tool_call") &&
+						finalMessage.stopReason !== "error" &&
+						finalMessage.stopReason !== "aborted")
 						? "tool_use"
 						: (finalMessage.stopReason as any),
 				errorMessage: annotateVagueError(finalMessage.errorMessage),

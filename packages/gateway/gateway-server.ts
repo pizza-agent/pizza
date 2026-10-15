@@ -1183,7 +1183,8 @@ function nextMessageId(): string {
 					// Re-check: if the agent became busy while we were waiting,
 					// it's healthy — don't tear it down.
 					if (entry.busy) continue;
-					emitter.emit("agentClosed", entry.cwd as never);
+					// teardownAgent emits agentClosed itself — a second emit here
+					// would double-count the same eviction.
 					void teardownAgent(entry.cwd, "health-check failed").catch(() => {});
 				}
 			}
