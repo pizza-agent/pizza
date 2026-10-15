@@ -356,6 +356,15 @@ function requirePet(ctx: ExtensionContext): boolean {
 // ---------------------------------------------------------------------------
 
 export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
+	// The extension may be re-created on session reload while the process
+	// keeps running: the module-level frame timer from the previous instance
+	// would keep pushing frames into a stale UI context. Always clear it and
+	// re-mount via the fresh UI context.
+	if (frameTimer) {
+		clearInterval(frameTimer);
+		frameTimer = null;
+	}
+	runtime.widgetMounted = false;
 	// Load save + species once per extension load (session start reload).
 	runtime.save = loadPetSave();
 	runtime.species = runtime.save ? findSpecies(runtime.save.speciesId) : undefined;
@@ -455,6 +464,9 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 
 	pizza.on("session_shutdown", () => {
 		persist();
+		// Stop the animation loop — the next session re-creates it via
+		// mountWidget(). Without this the interval outlives the session.
+		unmountWidget();
 	});
 
 	// /settings integration: a "Pet" submenu + a visibility toggle.

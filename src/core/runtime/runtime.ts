@@ -602,10 +602,17 @@ export class EventSourcedRuntime {
 		return this.config.systemPrompt;
 	}
 
-	setSystemPrompt(prompt: string): void {
+	/**
+	 * Replace the system prompt. `silent: true` skips the USER_CONFIG_CHANGE
+	 * event — use it for per-turn transient injections (beforeAgentStart
+	 * hooks rebuild the prompt every turn), otherwise each turn persists the
+	 * full old+new prompt (~40KB) to the event log as fake user config churn.
+	 */
+	setSystemPrompt(prompt: string, options?: { silent?: boolean }): void {
 		const old_value = this.config.systemPrompt;
 		if (old_value === prompt) return;
 		this.config.systemPrompt = prompt;
+		if (options?.silent) return;
 		this.store.append({
 			actor_id: "user",
 			type: "USER_CONFIG_CHANGE",

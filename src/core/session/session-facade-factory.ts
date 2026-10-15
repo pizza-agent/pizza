@@ -432,7 +432,10 @@ export async function createSessionFacade(
 			);
 			const systemPrompt = combined?.systemPrompt;
 			if (systemPrompt) {
-				runtime?.setSystemPrompt(systemPrompt);
+				// Silent: before_agent_start injections are per-turn and
+				// ephemeral — persisting them as USER_CONFIG_CHANGE writes the
+				// full prompt (~40KB) into the log on every single turn.
+				runtime?.setSystemPrompt(systemPrompt, { silent: true });
 				return { systemPrompt };
 			}
 			return { systemPrompt: base };

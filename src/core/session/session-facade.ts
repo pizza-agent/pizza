@@ -346,8 +346,15 @@ export class SessionFacade {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		// A throwing disposer must not skip the remaining cleanups — the
+		// runtime.dispose() at the end is what actually closes the event
+		// store, and skipping it leaks the SQLite handle.
 		for (const dispose of this.disposers.splice(0)) {
-			dispose();
+			try {
+				dispose();
+			} catch (e) {
+				console.warn(`[pizza] session dispose hook failed: ${e instanceof Error ? e.message : String(e)}`);
+			}
 		}
 		this.runtime.dispose();
 	}

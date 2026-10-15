@@ -140,7 +140,10 @@ export class ToolAssembly {
 	refreshSystemPrompt(): string {
 		this._systemPrompt = this.deps.buildPrompt(this._active);
 		if (this._runtime) {
-			this._runtime.setSystemPrompt(this._systemPrompt);
+			// Silent: this is a rebuild (breadcrumbs/tool docs drift per
+			// turn), not a user config change — applyActiveTools() is the
+			// canonical mutation point that logs USER_CONFIG_CHANGE.
+			this._runtime.setSystemPrompt(this._systemPrompt, { silent: true });
 		}
 		return this._systemPrompt;
 	}
