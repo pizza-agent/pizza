@@ -47,6 +47,43 @@ function AppInner() {
 	// otherwise overwrite the user's choice (observed as "jumps back to the
 	// previous workspace").
 	const initGenerationRef = useRef(0);
+	// get_state responses are unordered across in-flight requests (the rpc
+	// sidecar handles commands concurrently), so an older response landing
+	// late could overwrite newer state — e.g. the COMPACTION_END refetch
+	// updates the context pill, then a get_state issued before the
+	// compaction lands afterwards and re-applies the pre-compaction size.
+	// Latest-issuance-wins: every refetch takes a sequence number; a
+	// response applies only when no newer fetch has already applied.
+	const stateRequestSeqRef = useRef(0);
+	const stateAppliedSeqRef = useRef(0);
+
+	// Issue a get_state whose response applies only if no newer fetch has
+	// already landed (see stateRequestSeqRef above). Reads sidecarReady via
+	// a ref so call sites inside startWithWorkspace/reconnectWorkspace —
+	// where the `sidecarReady` state hasn't flipped yet — still issue the
+	// request, and so this callback's identity stays stable for deps.
+	const sidecarReadyRef = useRef(false);
+	sidecarReadyRef.current = sidecarReady;
+	const fetchState = useCallback((timeoutMs?: number, force = false) => {
+		if (!sidecarReadyRef.current && !force) return;
+		const seq = ++stateRequestSeqRef.current;
+		void sendCommandAwait<RpcSessionState>({ type: "get_state" }, timeoutMs)
+			.then((r) => {
+				if (seq <= stateAppliedSeqRef.current) return;
+				stateAppliedSeqRef.current = seq;
+				setState(r.data ?? null);
+			})
+			.catch(() => {});
+	}, []);
+
+	// Apply a state snapshot obtained out-of-band (init_sidecar payload,
+	// restart_sidecar result). Considered newer than any in-flight get_state
+	// — bumps the applied seq so those responses are dropped.
+	const applyFreshState = useCallback((s: RpcSessionState | null) => {
+		stateAppliedSeqRef.current = stateRequestSeqRef.current;
+		setState(s);
+	}, []);
+
 	// Bumped once per COMPLETED user-visible workspace switch. AgentView keys
 	// its history (re)load on this epoch instead of waitingForWorkspace /
 	// sidecarReady so silent reconnects never reload the conversation.
@@ -139,15 +176,13 @@ function AppInner() {
 			// If empty, the sidecar was already running — state will arrive via rpc_response event.
 			const hasState = initialState && Object.keys(initialState).length > 0;
 			if (hasState) {
-				setState(initialState as unknown as RpcSessionState);
+				applyFreshState(initialState as unknown as RpcSessionState);
 			}
 			setSidecarReady(true);
 			void refreshCustomThemes().catch(() => {});
 			// For already-running sidecar, request state explicitly.
 			if (!hasState) {
-				void sendCommandAwait<RpcSessionState>({ type: "get_state" })
-					.then((r) => setState(r.data ?? null))
-					.catch(() => {});
+				fetchState(undefined, true);
 			}
 			refreshWorkspaces();
 			// Completed a user-visible switch → let AgentView (re)load history.
@@ -173,7 +208,7 @@ function AppInner() {
 		} finally {
 			if (isCurrent()) setWaitingForWorkspace(false);
 		}
-	}, [refreshWorkspaces]);
+	}, [refreshWorkspaces, fetchState, applyFreshState]);
 
 	/**
 	 * Silently re-attach the current workspace after a gateway channel drop.
@@ -188,11 +223,9 @@ function AppInner() {
 		try {
 			const stateFrame = await initSidecar(cwd);
 			if (stateFrame && Object.keys(stateFrame).length > 0) {
-				setState(stateFrame as unknown as RpcSessionState);
+				applyFreshState(stateFrame as unknown as RpcSessionState);
 			} else {
-				void sendCommandAwait<RpcSessionState>({ type: "get_state" }, 5000)
-					.then((r) => setState(r.data ?? null))
-					.catch(() => {});
+				fetchState(5000, true);
 			}
 			// Channel is healthy again — allow future silent reconnects.
 			restartCountRef.current = 0;
@@ -212,7 +245,7 @@ function AppInner() {
 				}, delay);
 			}
 		}
-	}, [startWithWorkspace]);
+	}, [startWithWorkspace, fetchState, applyFreshState])
 
 	useEffect(() => {
 		if (sidecarStartedRef.current) return;
@@ -275,11 +308,8 @@ function AppInner() {
 	// don't emit a dedicated event (e.g. toggling safe mode) so the root
 	// state stays in sync for components that read from it.
 	const refreshState = useCallback(() => {
-		if (!sidecarReady) return;
-		void sendCommandAwait<RpcSessionState>({ type: "get_state" }, 5000)
-			.then((r) => setState(r.data ?? null))
-			.catch(() => {});
-	}, [sidecarReady]);
+		fetchState(5000);
+	}, [fetchState]);
 
 	useEffect(() => {
 		if (!sidecarReady) return;
@@ -370,9 +400,7 @@ function AppInner() {
 					// of waiting for the next turn boundary.
 					typed.type === "COMPACTION_END"
 				) {
-					void sendCommandAwait<RpcSessionState>({ type: "get_state" }, 5000)
-						.then((r) => setState(r.data ?? null))
-						.catch(() => {});
+					fetchState(5000);
 				}
 			});
 			if (cancelled) { un2(); return; }
@@ -382,7 +410,7 @@ function AppInner() {
 			cancelled = true;
 			unlisteners.forEach((fn) => fn());
 		};
-	}, [sidecarReady, workspace, startWithWorkspace, reconnectWorkspace]);
+	}, [sidecarReady, workspace, startWithWorkspace, reconnectWorkspace, fetchState]);
 
 	// Reset the auto-restart counter once a sidecar is healthy, and clean up
 	// any pending restart timer on unmount.
@@ -400,19 +428,15 @@ function AppInner() {
 
 	useEffect(() => {
 		if (!sidecarReady) return;
-		void sendCommandAwait<RpcSessionState>({ type: "get_state" })
-			.then((r) => setState(r.data ?? null))
-			.catch(() => {});
+		fetchState();
 		// Delayed re-fetch: the sidecar may emit MODEL_CHANGED before our
 		// event listener is registered, leaving state.model stale. This
 		// catches any missed events shortly after sidecar ready / workspace switch.
 		const timer = setTimeout(() => {
-			void sendCommandAwait<RpcSessionState>({ type: "get_state" })
-				.then((r) => setState(r.data ?? null))
-				.catch(() => {});
+			fetchState();
 		}, 800);
 		return () => clearTimeout(timer);
-	}, [sidecarReady, workspace]);
+	}, [sidecarReady, workspace, fetchState]);
 
 	// First-run / unconfigured-key detection: when the sidecar comes up but
 	// `state.model` is undefined, no provider has an API key configured yet.
@@ -616,7 +640,7 @@ function AppInner() {
 										const parsed = JSON.parse(newStateJson);
 										const data = parsed?.data ?? parsed;
 										if (data && typeof data === "object" && Object.keys(data).length > 0) {
-											setState(data as unknown as RpcSessionState);
+											applyFreshState(data as unknown as RpcSessionState);
 										}
 									} catch {
 										// Best-effort: if parsing fails, the sidecar's
