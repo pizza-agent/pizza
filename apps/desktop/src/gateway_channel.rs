@@ -674,7 +674,9 @@ pub fn ensure_gateway(
 /// Dev takes over: let busy production agents finish (up to 30s), then stop
 /// the production gateway gracefully.
 fn take_over_from_production_gateway(dev_socket: &PathBuf) {
-	let Some(prod) = socket_path_for(false) else { return };
+	let Some(prod) = socket_path_for(false) else {
+		return;
+	};
 	if &prod == dev_socket || !gateway_ready(&prod) {
 		return;
 	}
@@ -1116,7 +1118,10 @@ mod tests {
 	#[test]
 	fn compaction_deadline_exceeds_agent_deadline_without_slowing_regular_rpc() {
 		assert!(rpc_timeout(&json!({"type": "compact"})) > std::time::Duration::from_secs(310));
-		assert_eq!(rpc_timeout(&json!({"type": "get_state"})), std::time::Duration::from_secs(60));
+		assert_eq!(
+			rpc_timeout(&json!({"type": "get_state"})),
+			std::time::Duration::from_secs(60)
+		);
 	}
 
 	#[test]
