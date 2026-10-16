@@ -13,6 +13,7 @@ import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
 import { cn, samePath } from "@/lib/utils";
+import { StreamDeltaBuffer } from "@/lib/stream-deltas";
 import { parseAgentMessage } from "@/lib/agent-messages";
 import type { LayoutOutletContext } from "@/components/Layout";
 
@@ -352,6 +353,14 @@ export default function AgentView({
 	stateRef.current = state;
 	queuedMsgsRef.current = queuedMsgs;
 	const prevWsRef = useRef<string | null>(null);
+	const deltaBufferRef = useRef<StreamDeltaBuffer<TimelineItem> | null>(null);
+	if (!deltaBufferRef.current) {
+		deltaBufferRef.current = new StreamDeltaBuffer((ws, update) => {
+			if (samePath(ws, prevWsRef.current ?? "")) setItems(update);
+			else itemsByWs.current.set(ws, update(itemsByWs.current.get(ws) ?? []));
+		});
+	}
+	useEffect(() => () => deltaBufferRef.current?.clear(), []);
 
 	// Keep latest t in a ref so closures created in effects can read it
 	// without re-subscribing on every language change.
@@ -386,6 +395,7 @@ export default function AgentView({
 	const sessionSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const reloadForSessionSwitch = useCallback(() => {
 		const ws = workspace ?? "";
+		deltaBufferRef.current?.discard(ws);
 		// Clear the per-workspace cache so a later workspace switch doesn't
 		// restore the stale (pre-switch) conversation.
 		itemsByWs.current.delete(ws);
@@ -609,34 +619,6 @@ export default function AgentView({
 			if (!existing) activeAssistantByWs.current.set(eventCwd, inflightId);
 			return existing ?? inflightId;
 		};
-		// Streaming-delta buffer: append chunk text here and flush into React
-		// state at ~30fps instead of once per chunk. Each flush rebuilds the
-		// streaming bubble's Markdown (O(text length)); unthrottled that's
-		// O(response²) for a fast LLM stream.
-		const pendingDeltas = new Map<string, { text: string; thinking: string }>();
-		let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
-		const flushDeltas = () => {
-			deltaFlushTimer = null;
-			if (pendingDeltas.size === 0) return;
-			updateItems((prev) =>
-				prev.map((it) => {
-					const d = pendingDeltas.get(it.id);
-					if (!d) return it;
-					pendingDeltas.delete(it.id);
-					return { ...it, text: it.text + d.text, thinking: (it.thinking ?? "") + d.thinking };
-				}),
-			);
-		};
-		const queueDelta = (id: string, kind: "text" | "thinking", delta: string) => {
-			const d = pendingDeltas.get(id) ?? { text: "", thinking: "" };
-			d[kind] += delta;
-			pendingDeltas.set(id, d);
-			if (!deltaFlushTimer) deltaFlushTimer = setTimeout(flushDeltas, 33);
-		};
-		const flushAllDeltas = () => {
-			if (deltaFlushTimer) { clearTimeout(deltaFlushTimer); deltaFlushTimer = null; }
-			flushDeltas();
-		};
 
 		const ensureStreamingBubble = (id: string) => {
 			updateItems((prev) =>
@@ -773,16 +755,16 @@ export default function AgentView({
 				const id = activeRef.current ?? adoptInflightId();
 				if (!hadPointer) ensureStreamingBubble(id);
 				if (chunk.kind === "text_delta" && typeof chunk.delta === "string") {
-					queueDelta(id, "text", chunk.delta);
+					deltaBufferRef.current!.queue(eventCwd, id, "text", chunk.delta);
 				} else if (chunk.kind === "thinking_delta" && typeof chunk.delta === "string") {
-					queueDelta(id, "thinking", chunk.delta);
+					deltaBufferRef.current!.queue(eventCwd, id, "thinking", chunk.delta);
 				}
 				break;
 			}
 			case "AGENT_MESSAGE_END": {
-				// Flush any buffered stream deltas first — the final text write
-				// below would otherwise overwrite deltas that never rendered.
-				flushAllDeltas();
+				// Drain and cancel this workspace's batch before finalizing,
+				// including thinking-only or partial error responses.
+				deltaBufferRef.current!.flush(eventCwd);
 				// Fall back to the inflight id when the matching START wasn't
 				// seen, so a message we joined mid-stream still gets finalized.
 				const id = activeRef.current ?? adoptInflightId();
@@ -849,6 +831,7 @@ export default function AgentView({
 					break;
 				}
 				case "AGENT_TURN_COMPLETED": {
+				deltaBufferRef.current!.flush(eventCwd);
 				// Adopt the inflight id if the START wasn't seen, so the
 				// turn-end also finalizes a message we joined mid-stream.
 				const id = activeRef.current ?? adoptInflightId();
@@ -1133,6 +1116,7 @@ export default function AgentView({
 	// that already accumulated text.
 	useEffect(() => {
 		if (!state || state.isStreaming) return;
+		deltaBufferRef.current?.flush(prevWsRef.current ?? "");
 		setItems((prev) => {
 			let changed = false;
 			const next = prev
@@ -1220,6 +1204,7 @@ export default function AgentView({
 					// setState lives in App.tsx — we can't call it directly, but
 					// the App-level event listener will also catch any turn-completed
 					// event. As a fallback, mark the active assistant item as done.
+					deltaBufferRef.current?.flush(prevWsRef.current ?? "");
 					setItems((prev) =>
 						prev.map((it) =>
 							it.role === "assistant" && it.streaming

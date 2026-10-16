@@ -218,7 +218,9 @@ export class ChannelRuntime {
 		// object-identical events the live listener may have seen.
 		const seen = new Set<ChannelEvent>();
 		const process = (event: ChannelEvent): void => {
-			if (seen.has(event) || settled) return;
+			// Before the tell ack we cannot correlate the event yet. Leave it
+			// eligible for replay once setMessageId() supplies that identity.
+			if (messageId === null || seen.has(event) || settled) return;
 			seen.add(event);
 			// The gateway broadcasts this when a queued tell could not be
 			// delivered — without it we'd hang forever waiting for a

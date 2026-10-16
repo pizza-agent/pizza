@@ -33,6 +33,8 @@
  *   onCompactionRequested  — compaction orchestration
  */
 
+import { compactWithDeadline } from "./compaction-deadline.js";
+
 import type { EventBase, EventType } from "../event-store/types.js";
 import { generateRunId, TurnState, type FollowUpEntry, type TurnTracker } from "./turn-state.js";
 import type { EventStore, EventAppendInput } from "../event-store/store.js";
@@ -71,6 +73,8 @@ export interface ReactorConfig {
 	systemPrompt: string;
 	model: { provider: string; model_id: string; thinking_level?: string };
 	contextBudget: number;
+	/** Dynamic budget for all LLM rounds in a live reactor. */
+	getContextBudget?: () => number;
 	/** Tool definitions exposed to the LLM */
 	tools: ToolDefinition[];
 	/** Retry policy (default: DefaultRetryPolicy). */
@@ -707,7 +711,7 @@ export class Reactor {
 
 		// Build context from projection
 		let context = this.config.projection.buildContext({
-			max_tokens: this.config.contextBudget,
+			max_tokens: this.config.getContextBudget?.() ?? this.config.contextBudget,
 		});
 
 		// An empty-answer retry gets a transient nudge appended to the context.
@@ -750,7 +754,7 @@ export class Reactor {
 	private async _onLlmCallRequested(event: EventBase): Promise<void> {
 		if (this._shouldInterrupt()) return;
 
-		const context = this._pendingContext ?? this.config.projection.buildContext({ max_tokens: this.config.contextBudget });
+		const context = this._pendingContext ?? this.config.projection.buildContext({ max_tokens: this.config.getContextBudget?.() ?? this.config.contextBudget });
 		this._pendingContext = undefined;
 
 		// Emit AGENT_MESSAGE_START up front so chunks have a parent in the causal chain.
@@ -773,29 +777,35 @@ export class Reactor {
 			const callAbort = new AbortController();
 			this._llmCallAbort = callAbort;
 			const parentSignal = this.abortController?.signal;
+			const abortCall = () => callAbort.abort();
 			if (parentSignal) {
 				if (parentSignal.aborted) callAbort.abort();
-				else parentSignal.addEventListener("abort", () => callAbort.abort(), { once: true });
+				else parentSignal.addEventListener("abort", abortCall, { once: true });
 			}
-			const response = await this.config.llmClient.complete({
-				messages: context.messages,
-				systemPrompt: this.config.systemPrompt,
-				model: this.config.model,
-				tools: this.config.tools,
-				signal: callAbort.signal,
-				onChunk: (chunk: LLMChunk) => {
-					// Reset the idle timer on each chunk — the stream is alive.
-					this._resetStreamIdleWatchdog();
-					// Translate LLMChunk into an AGENT_MESSAGE_CHUNK event so projections / UI
-					// can render the streaming response in real time.
-					this._emit({
-						actor_id: "coder_agent",
-						type: "AGENT_MESSAGE_CHUNK",
-						payload: { chunk: chunk as any },
-						caused_by: msgStart.event_id,
-					});
-				},
-			});
+			let response: LLMResponse;
+			try {
+				response = await this.config.llmClient.complete({
+					messages: context.messages,
+					systemPrompt: this.config.systemPrompt,
+					model: this.config.model,
+					tools: this.config.tools,
+					signal: callAbort.signal,
+					onChunk: (chunk: LLMChunk) => {
+						// Reset the idle timer on each chunk — the stream is alive.
+						this._resetStreamIdleWatchdog();
+						// Translate LLMChunk into an AGENT_MESSAGE_CHUNK event so projections / UI
+						// can render the streaming response in real time.
+						this._emit({
+							actor_id: "coder_agent",
+							type: "AGENT_MESSAGE_CHUNK",
+							payload: { chunk: chunk as any },
+							caused_by: msgStart.event_id,
+						});
+					},
+				});
+			} finally {
+				parentSignal?.removeEventListener("abort", abortCall);
+			}
 
 			this._stopStreamIdleWatchdog();
 			this._llmCallAbort = undefined;
@@ -1624,7 +1634,7 @@ export class Reactor {
 		});
 
 		try {
-			const outcome = await this.compactionPolicy.compact(payload.reason, abortController.signal);
+			const outcome = await compactWithDeadline(this.compactionPolicy, payload.reason, abortController);
 			this._emit({
 				actor_id: "compactor",
 				type: "COMPACTION_END",
@@ -1638,7 +1648,7 @@ export class Reactor {
 					actor_id: "compactor",
 					type: "COMPACTION_ABORTED",
 					payload: {
-						reason: "user_cancelled",
+						reason: abortController.signal.reason?.name === "TimeoutError" ? "timeout" : "user_cancelled",
 						message: msg,
 						token_count: payload.token_count,
 					},

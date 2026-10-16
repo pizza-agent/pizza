@@ -115,6 +115,14 @@ pub struct GatewayChannel {
 	closer: Arc<dyn Fn() + Send + Sync>,
 }
 
+/// Long model calls need room beyond the agent's own five-minute deadline.
+pub(crate) fn rpc_timeout(frame: &Value) -> std::time::Duration {
+	std::time::Duration::from_secs(match frame.get("type").and_then(Value::as_str) {
+		Some("compact") => 320,
+		_ => 60,
+	})
+}
+
 impl GatewayChannel {
 	/// Connect to the gateway socket/pipe. Spawns a background reader thread
 	/// that parses JSONL and dispatches responses (by id) to pending waiters
@@ -366,7 +374,7 @@ impl GatewayChannel {
 			.unwrap()
 			.insert(id.clone(), Arc::clone(&slot));
 		// The deadline covers the write too (bounded by WRITE_TIMEOUT).
-		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+		let deadline = std::time::Instant::now() + rpc_timeout(&frame);
 		if let Err(e) =
 			self.write_line(&json!({ "type": "rpc", "workspace": workspace, "frame": frame }))
 		{
@@ -1104,6 +1112,12 @@ mod _unsupported_stub {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn compaction_deadline_exceeds_agent_deadline_without_slowing_regular_rpc() {
+		assert!(rpc_timeout(&json!({"type": "compact"})) > std::time::Duration::from_secs(310));
+		assert_eq!(rpc_timeout(&json!({"type": "get_state"})), std::time::Duration::from_secs(60));
+	}
 
 	#[test]
 	fn dispatch_routes_response_by_id_and_events_to_inbox() {

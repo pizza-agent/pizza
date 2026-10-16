@@ -4,6 +4,8 @@
  * Spawns the agent in RPC mode and provides a typed API for all operations.
  */
 
+import { COMPACTION_RPC_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
+
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
@@ -545,7 +547,7 @@ export class RpcClient {
 	 * gateway multiplexer can forward arbitrary frames without a per-command
 	 * typed wrapper.
 	 */
-	async sendCommand(command: RpcCommand, timeoutMs = 30_000): Promise<RpcResponse> {
+	async sendCommand(command: RpcCommand, timeoutMs = command.type === "compact" ? COMPACTION_RPC_TIMEOUT_MS : 30_000): Promise<RpcResponse> {
 		if (!this.process?.stdin) {
 			throw new Error("Client not started");
 		}

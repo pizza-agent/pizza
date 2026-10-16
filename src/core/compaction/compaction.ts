@@ -5,6 +5,7 @@
  * and after compaction the session is reloaded.
  */
 
+import { estimateStringTokens } from "./token-estimation.js";
 import type { AgentMessage } from "../agent/types.js";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai/compat";
 import type { SessionEntry } from "../types/session-types.js";
@@ -226,15 +227,7 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
  * close to 1-2 chars/token, so a flat chars/4 halves or thirds the real
  * count on CJK-heavy sessions. Shared rule with the compaction engine.
  */
-export function estimateStringTokens(text: string): number {
-	let ascii = 0;
-	let nonAscii = 0;
-	for (let i = 0; i < text.length; i++) {
-		if (text.charCodeAt(i) < 0x80) ascii++;
-		else nonAscii++;
-	}
-	return Math.ceil(ascii / 4 + nonAscii / 1.5);
-}
+export { estimateStringTokens } from "./token-estimation.js";
 
 /**
  * Estimate token count for a message using a chars/token heuristic.

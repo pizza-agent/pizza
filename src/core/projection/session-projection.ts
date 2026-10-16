@@ -58,10 +58,10 @@ export class SessionProjection {
 	 * buildContext() re-scans the whole session event range and re-parses every
 	 * payload — for a long session that is MBs of work, repeated per footer
 	 * render, per get_state, and per turn. Events are append-only, so the built
-	 * result is valid until store.head_sequence advances or the descriptor is
+	 * result is valid until the persisted store head changes or the descriptor is
 	 * mutated. Cache the last result keyed on both.
 	 */
-	private _contextCache: { head: number; maxTokens: number | undefined; value: BuiltContext } | undefined;
+	private _contextCache: { head: string | undefined; maxTokens: number | undefined; value: BuiltContext } | undefined;
 	/** Frozen parent/source contexts are immutable; cache them per descriptor. */
 	private _parentContextCache: { key: string; value: BuiltContext | undefined } | undefined;
 	private _sourceContextCache: { key: string; value: BuiltContext | undefined } | undefined;
@@ -85,7 +85,9 @@ export class SessionProjection {
 	 * 4. Apply token budget truncation if needed
 	 */
 	buildContext(options?: BuildContextOptions): BuiltContext {
-		const cacheKey = this.store.head_sequence;
+		// head is read from SQLite: the local sequence allocator does not advance
+		// when another process writes to the same workspace.
+		const cacheKey = this.store.head;
 		if (this._contextCache && this._contextCache.head === cacheKey && this._contextCache.maxTokens === options?.max_tokens) {
 			return this._contextCache.value;
 		}

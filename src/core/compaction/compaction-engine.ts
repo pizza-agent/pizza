@@ -6,6 +6,7 @@
  * on COMPACTION_END so projections can ignore the summarized prefix.
  */
 
+import { estimateStringTokens as estimateMessageStringTokens } from "./token-estimation.js";
 import type { AgentMessage } from "../agent/types.js";
 import type { EventBase } from "../event-store/types.js";
 import type { EventStore } from "../event-store/store.js";
@@ -53,6 +54,8 @@ export interface CompactionEngineConfig {
 	model: ModelConfig;
 	systemPrompt?: string;
 	settings?: CompactionEngineSettings;
+	/** Read the current window when runtime usage corrects the initial budget. */
+	getContextWindow?: () => number;
 }
 
 type EventMessagePair = {
@@ -151,7 +154,7 @@ export class CompactionEngine implements CompactionPolicy {
 	}
 
 	contextWindow(): number {
-		return this.config.settings?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+		return this.config.getContextWindow?.() ?? this.config.settings?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
 	}
 
 	threshold(): number {
@@ -434,21 +437,7 @@ function findLastAssistantUsage(messages: AgentMessage[]): { totalTokens: number
 	return undefined;
 }
 
-/**
- * Estimate tokens in a string. ASCII-heavy content is ~4 chars/token, but
- * CJK and emoji run close to 1-2 chars/token — a plain chars/4 halves or
- * thirds the real count on CJK-heavy sessions, which makes compaction's
- * tokens_after report wildly low.
- */
-export function estimateMessageStringTokens(text: string): number {
-	let ascii = 0;
-	let nonAscii = 0;
-	for (let i = 0; i < text.length; i++) {
-		if (text.charCodeAt(i) < 0x80) ascii++;
-		else nonAscii++;
-	}
-	return Math.ceil(ascii / 4 + nonAscii / 1.5);
-}
+export { estimateStringTokens as estimateMessageStringTokens } from "./token-estimation.js";
 
 function estimateMessageTokens(message: AgentMessage): number {
 	let tokens = 0;

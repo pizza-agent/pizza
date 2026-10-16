@@ -87,6 +87,8 @@ export class TurnState {
 	readonly retryTimers = new Map<string, RetryTimer>();
 	readonly turnTrackers = new Map<string, TurnTracker>();
 	readonly pendingApprovals = new Map<string, PendingApproval>();
+	/** Stable log boundary for this run, including across replay pages. */
+	private replayRunStartSequence: number | undefined;
 
 	/** Turn loop-detection signatures for the current prompt cycle. */
 	toolRoundSignatures: string[][] = [];
@@ -266,8 +268,18 @@ export class TurnState {
 		// the newest STARTED for the undated-entry cutoff.
 		const startedEvents = store.query({ types: ["RUNTIME_STARTED"], reverse: true, limit: 100 });
 		const lastStarted = startedEvents[0];
-		const ourStarted = startedEvents.find((e) => runIdOf(e) === this.runId);
-		const runStartSeq = ourStarted?.sequence ?? lastStarted?.sequence ?? 0;
+		if (this.replayRunStartSequence === undefined) {
+			let page = startedEvents;
+			let ourStarted = page.find((e) => runIdOf(e) === this.runId);
+			// Other live runtimes may have produced more than one page of boot
+			// events. Never substitute their start for ours and strand our queue.
+			while (!ourStarted && page.length === 100) {
+				page = store.query({ types: ["RUNTIME_STARTED"], reverse: true, limit: 100, before_sequence: page[page.length - 1]!.sequence });
+				ourStarted = page.find((e) => runIdOf(e) === this.runId);
+			}
+			if (ourStarted) this.replayRunStartSequence = ourStarted.sequence;
+		}
+		const runStartSeq = this.replayRunStartSequence ?? 0;
 		const scope = { after_sequence: runStartSeq } as const;
 
 		const followups = store.query({ types: ["USER_FOLLOWUP_QUEUED"], ...scope });

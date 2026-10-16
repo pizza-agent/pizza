@@ -930,26 +930,27 @@ export async function runRpcModeWithFacade(
 	};
 	const waitForCompactionEnd = (): Promise<{ summary: string; first_kept_event_id: string; tokens_before: number; tokens_after?: number }> => {
 		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				unsub();
-				reject(new Error("Compaction timed out"));
-			}, 120000);
+			// The reactor owns the deadline and emits ABORTED on timeout. A separate
+			// response timer can report failure while the operation still succeeds.
 			const unsub = facade.subscribe((event) => {
 				if (event.type === "COMPACTION_END") {
-					clearTimeout(timer);
 					unsub();
 					resolve(event.payload as { summary: string; first_kept_event_id: string; tokens_before: number; tokens_after?: number });
 				} else if (event.type === "COMPACTION_ABORTED") {
 					// A failed/aborted compaction emits ABORTED, not END — surface
 					// the real reason ("Nothing to compact", user cancelled, ...)
-					// instead of hanging until the timeout.
-					clearTimeout(timer);
+					// instead of leaving the caller waiting.
 					unsub();
 					const payload = event.payload as { message?: string; reason?: string };
 					reject(new Error(payload.message ?? payload.reason ?? "Compaction aborted"));
 				}
 			});
-			facade.compact({ reason: "manual" });
+			try {
+				facade.compact({ reason: "manual" });
+			} catch (error) {
+				unsub();
+				reject(error);
+			}
 		});
 	};
 

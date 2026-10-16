@@ -1493,8 +1493,8 @@ pub async fn rpc_command(
 	let cwd = cwd.ok_or("No active workspace for this window")?;
 
 	// Gateway-mode: forward via the channel instead of the sidecar stdin.
-	// channel.rpc() blocks until the response arrives (up to 60s). gateway_rpc runs it on
-	// a blocking thread so we don't freeze the Tauri main thread / webview
+	// channel.rpc() waits up to 320s for compaction, 60s otherwise.
+	// gateway_rpc runs it on a blocking thread so we don't freeze the Tauri main thread / webview
 	// event loop — the frontend needs the main thread free to receive the
 	// rpc_response event we emit after the call returns.
 	let channel_opt = lock_ok(&state.channels).get(&cwd).cloned();
@@ -1593,12 +1593,11 @@ fn gateway_mode_enabled() -> bool {
 }
 
 /// Async-side ceiling for one gateway rpc. `GatewayChannel` bounds its own
-/// I/O (write timeout + 60s response deadline that also covers the write), so
+/// I/O (command-specific response deadline that also covers the write), so
 /// this only fires if the blocking task itself never completes — a backstop
 /// guaranteeing the Tauri invoke always settles.
-const GATEWAY_RPC_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(70);
-
-/// Run `channel.rpc` on the blocking pool under `GATEWAY_RPC_WATCHDOG`. If
+///
+/// Run `channel.rpc` with ten seconds of watchdog headroom. If
 /// the watchdog fires the connection is closed: its reader exits, pending
 /// waiters are released and the drainer's disconnect path evicts it, so the
 /// next init/retry builds a fresh connection instead of reusing a wedged one.
@@ -1609,8 +1608,9 @@ async fn gateway_rpc(
 ) -> Result<Value, String> {
 	let ch = channel.clone();
 	let cwd_owned = cwd.to_string();
+	let watchdog = gateway_channel::rpc_timeout(&frame) + std::time::Duration::from_secs(10);
 	match tokio::time::timeout(
-		GATEWAY_RPC_WATCHDOG,
+		watchdog,
 		tauri::async_runtime::spawn_blocking(move || ch.rpc(&cwd_owned, frame)),
 	)
 	.await
@@ -1621,7 +1621,7 @@ async fn gateway_rpc(
 			channel.close();
 			Err(format!(
 				"gateway rpc timed out after {}s; the connection was reset",
-				GATEWAY_RPC_WATCHDOG.as_secs()
+				watchdog.as_secs()
 			))
 		}
 	}

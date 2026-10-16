@@ -4,13 +4,18 @@
  * provenance mapping without needing a gateway or agent.
  */
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, afterAll } from "vitest";
+import { Agent, MockAgent, fetch, getGlobalDispatcher, setGlobalDispatcher, type RequestInit, type Response } from "undici";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createWebhookServer, listenAddress } from "../packages/channels/webhook.js";
 import type { MessageSource } from "../packages/channels/runtime.js";
 
 const servers: Server[] = [];
+// CLI imports install a process-wide proxy dispatcher. Loopback fixtures must
+// stay direct regardless of test order or the developer's proxy environment.
+const direct = new Agent();
+afterAll(() => direct.close());
 
 afterEach(async () => {
 	for (const s of servers.splice(0)) {
@@ -40,13 +45,29 @@ async function start(opts: { token?: string } = {}): Promise<{ port: number; cal
 }
 
 async function post(port: number, init?: RequestInit, query = ""): Promise<Response> {
-	return fetch(`http://127.0.0.1:${port}/${query}`, { method: "POST", ...init });
+	return fetch(`http://127.0.0.1:${port}/${query}`, { method: "POST", ...init, dispatcher: direct });
 }
 
 describe("webhook channel adapter", () => {
+
+	it("keeps loopback fixtures independent of a rejecting global dispatcher", async () => {
+		const previous = getGlobalDispatcher();
+		const blocked = new MockAgent();
+		blocked.disableNetConnect();
+		setGlobalDispatcher(blocked);
+		try {
+			const { port } = await start();
+			const res = await post(port, { body: JSON.stringify({ message: "direct" }) });
+			expect(res.status).toBe(200);
+			expect(await res.json()).toEqual({ reply: "pong" });
+		} finally {
+			setGlobalDispatcher(previous);
+			await blocked.close();
+		}
+	});
 	it("rejects non-POST methods", async () => {
 		const { port } = await start();
-		const res = await fetch(`http://127.0.0.1:${port}/`);
+		const res = await fetch(`http://127.0.0.1:${port}/`, { dispatcher: direct });
 		expect(res.status).toBe(405);
 	});
 

@@ -1,3 +1,4 @@
+import { COMPACTION_UI_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight, Search } from "lucide-react";
@@ -863,12 +864,11 @@ ${insert}`;
 					return;
 				}
 				case "compact": {
-					// The agent waits for COMPACTION_END internally (120s cap) —
-					// summarizing a large context is a full LLM call and routinely
-					// runs past 30s. Show a working hint while it does.
+					// Keep waiting until the reactor reports completion or cancels at its
+					// five-minute deadline, with room for the gateway response.
 					setCompacting(true);
 					try {
-						await sendCommandAwait({ type: "compact" }, 125000);
+						await sendCommandAwait({ type: "compact" }, COMPACTION_UI_TIMEOUT_MS);
 					} catch (e) {
 						void alertDialog({
 							title: t("slash.compactFailed"),

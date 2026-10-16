@@ -869,3 +869,8 @@ export type RpcCommandType = RpcCommand["type"];
 // ============================================================================
 
 export const PROTOCOL_VERSION = 1;
+
+/** Compaction is a full model call. Outer transports allow time to report its terminal event. */
+export const COMPACTION_TIMEOUT_MS = 300_000;
+export const COMPACTION_RPC_TIMEOUT_MS = COMPACTION_TIMEOUT_MS + 10_000;
+export const COMPACTION_UI_TIMEOUT_MS = COMPACTION_TIMEOUT_MS + 40_000;
