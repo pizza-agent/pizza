@@ -130,7 +130,10 @@ function petMeta(): Record<string, unknown> | undefined {
 		xp: runtime.state.xp,
 		mood,
 		busy: runtime.agentBusy,
-		floating: runtime.save.floating ?? null,
+		// The desktop app owns `floating` (written on window open/close). Read it
+		// fresh from disk — the in-memory save may predate a Hide, and a stale
+		// `true` here makes the bridge reopen the window right after it closes.
+		floating: loadPetSave()?.floating ?? null,
 		scale: typeof runtime.save.scale === "number" ? runtime.save.scale : 1,
 		subtitle: typeof runtime.save.subtitle === "string" ? runtime.save.subtitle : "",
 	};
@@ -179,6 +182,10 @@ function ensurePetLoaded(): void {
 		runtime.species = findSpecies(save.speciesId);
 		runtime.state.xp = save.xp;
 		runtime.state.level = levelForXp(save.xp);
+	} else {
+		// The desktop app writes `floating` directly to pet.json when the
+		// floating window opens/closes — keep the in-memory copy in sync.
+		runtime.save.floating = loadPetSave()?.floating;
 	}
 	// The UI context may not have been installed yet at session_start (e.g.
 	// RPC mode binds it later) — retry mounting whenever a turn begins.
@@ -500,7 +507,7 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 						level: runtime.state.level,
 						mood: effectiveMood(runtime.state, { agentBusy: runtime.agentBusy }),
 						busy: runtime.agentBusy,
-						floating: runtime.save.floating ?? null,
+						floating: loadPetSave()?.floating ?? null,
 						scale: typeof runtime.save.scale === "number" ? runtime.save.scale : 1,
 						subtitle: typeof runtime.save.subtitle === "string" ? runtime.save.subtitle : "",
 						adoptedAt: runtime.save.adoptedAt,

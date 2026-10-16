@@ -67,7 +67,10 @@ export function savePet(save: PetSave): void {
 	} catch {
 		/* first save */
 	}
-	writeFileSync(petSavePath(), JSON.stringify({ ...onDisk, ...save }, null, 2), "utf-8");
+	// `floating` is owned by the desktop app (written on window open/close); the
+	// extension's in-memory copy can be stale — strip it so we never clobber it.
+	const { floating: _floating, ...rest } = save;
+	writeFileSync(petSavePath(), JSON.stringify({ ...onDisk, ...rest }, null, 2), "utf-8");
 }
 
 export function deletePetSave(): void {
