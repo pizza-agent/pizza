@@ -2272,6 +2272,7 @@ export class InteractiveMode {
    */
   private createExtensionUIContext(): ExtensionUIContext {
     return {
+      surface: "tui",
       select: (title, options, opts) =>
         this.showExtensionSelector(title, options, opts),
       confirm: (title, message, opts) =>

@@ -17,8 +17,6 @@ export interface PetSave {
 	speciesId: string;
 	xp: number;
 	adoptedAt: number;
-	/** Whether the widget is shown below the editor (default true). */
-	visible?: boolean;
 	/** Written by the desktop app: floating window open across restarts. */
 	floating?: boolean;
 	[key: string]: unknown;
@@ -50,7 +48,6 @@ export function loadPetSave(): PetSave | undefined {
 			speciesId: data.speciesId,
 			xp: typeof data.xp === "number" ? data.xp : 0,
 			adoptedAt: typeof data.adoptedAt === "number" ? data.adoptedAt : Date.now(),
-			visible: data.visible !== false,
 		};
 	} catch {
 		return undefined;

@@ -108,7 +108,7 @@ describe("pet store", () => {
 });
 
 describe("pet extension factory", () => {
-	it("registers command, builtin command, settings items and event handlers", () => {
+	it("registers command, builtin command, menu and event handlers (no TUI settings)", () => {
 		const commands: string[] = [];
 		const builtins: string[] = [];
 		const events: string[] = [];
@@ -125,7 +125,8 @@ describe("pet extension factory", () => {
 		createPetExtension(fakeApi);
 		expect(commands).toContain("pet");
 		expect(builtins).toContain("_pet");
-		expect(settings).toEqual(expect.arrayContaining(["pet", "pet-visible"]));
+		// The pet is a desktop-GUI companion — no TUI /settings entries.
+		expect(settings).toHaveLength(0);
 		expect(menus).toContain("pet");
 		expect(events).toEqual(
 			expect.arrayContaining(["session_start", "turn_start", "turn_end", "agent_end", "tool_execution_end", "session_compact", "session_shutdown"]),

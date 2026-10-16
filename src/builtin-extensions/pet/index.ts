@@ -1,11 +1,11 @@
 /**
  * Built-in extension: pet
  *
- * A small tamagotchi-style companion living in the TUI, in the spirit of
+ * A small tamagotchi-style companion for the desktop GUI, in the spirit of
  * codex's pet. The pet is a pure extension — it only uses public API:
  *
  *   pizza.on(agent events)      -> mood/XP state machine (state.ts)
- *   ctx.ui.setWidget()          -> animated widget below the editor (component.ts)
+ *   ctx.ui.setWidget()          -> animated frames for the floating desktop window
  *   ctx.ui.page()               -> species picker page (Level-2 picker)
  *   pizza.registerCommand("pet")-> /pet manage command
  *   pizza.registerBuiltinCommand("_pet") -> agent-side cli access
@@ -16,13 +16,6 @@
  * sessions and projects.
  */
 
-import {
-	Container,
-	SelectList,
-	Spacer,
-	Text,
-	type Component,
-} from "@earendil-works/pi-tui";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -141,7 +134,10 @@ function petMeta(): Record<string, unknown> | undefined {
 
 function mountWidget(): void {
 	if (!runtime.ui || !runtime.save || !runtime.species) return;
-	if (runtime.save.visible === false) return;
+	// Widget/status frames only make sense over RPC: the desktop app routes
+	// them into the floating pet window. The TUI shows no pet UI — /pet
+	// commands still work there for managing the shared save.
+	if (runtime.ui.surface !== "rpc") return;
 	lastPushedMood = undefined;
 	pushFrame();
 	if (!frameTimer) frameTimer = setInterval(pushFrame, FRAME_TICK_MS);
@@ -476,16 +472,6 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 		unmountWidget();
 	});
 
-	// /settings integration: a "Pet" submenu + a visibility toggle.
-	pizza.registerSettingsItem({
-		id: "pet",
-		label: "Pet",
-		description: "Your terminal companion (adopt with /pet adopt)",
-		getValue: () =>
-			runtime.save ? `${runtime.save.name} · Lv.${runtime.state.level}` : "none",
-		open: (_currentValue, done, ctx) => buildPetSettingsPage(done, ctx),
-	});
-
 	// GUI menu contribution: the desktop renders this as an app menu; items
 	// steer slash commands into the session or invoke desktop commands.
 	const menuHasPet = () => {
@@ -538,89 +524,6 @@ export const createPetExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 		],
 	});
 
-	pizza.registerSettingsItem({
-		id: "pet-visible",
-		label: "Pet widget",
-		description: "Show the pet below the input editor",
-		getValue: () => (runtime.save?.visible === false ? "hidden" : "shown"),
-		values: ["shown", "hidden"],
-		onChange: (value) => {
-			if (!runtime.save) return;
-			runtime.save.visible = value === "shown";
-			persist();
-			if (runtime.save.visible) mountWidget();
-			else unmountWidget();
-		},
-	});
 };
 
-/** Submenu component for the "Pet" settings row: quick actions list. */
-function buildPetSettingsPage(
-	done: (selectedValue?: string) => void,
-	ctx: ExtensionContext,
-): Component {
-	const container = new Container();
-	container.addChild(new Text("Pet", 0, 0));
-	container.addChild(new Spacer(1));
 
-	const hasPet = !!runtime.save;
-	const options = hasPet
-		? [
-				{ value: "status", label: "Show status" },
-				{ value: "feed", label: "Feed" },
-				{ value: "play", label: "Play" },
-				{ value: "release", label: "Release (delete pet)" },
-			]
-		: [{ value: "adopt", label: "Adopt a pet" }];
-
-	const list = new SelectList(options, Math.min(options.length, 6), {
-		selectedPrefix: (t) => `→ ${t}`,
-		selectedText: (t) => t,
-		description: (t) => t,
-		scrollInfo: (t) => t,
-		noMatch: (t) => t,
-	});
-	list.onSelect = (item) => {
-		const value = item.value;
-		done();
-		void runPetSettingsAction(value, ctx);
-	};
-	list.onCancel = () => done();
-	container.addChild(list);
-	return container;
-}
-
-async function runPetSettingsAction(action: string, ctx: ExtensionContext): Promise<void> {
-	switch (action) {
-		case "adopt":
-			await adoptFlow(ctx);
-			return;
-		case "status": {
-			if (!runtime.save || !runtime.species) return;
-			const mood = effectiveMood(runtime.state, { agentBusy: runtime.agentBusy });
-			ctx.ui.notify(
-				`${runtime.save.name} the ${runtime.species.name} — Lv.${runtime.state.level} (${runtime.state.xp} XP), mood: ${mood}`,
-				"info",
-			);
-			return;
-		}
-		case "feed":
-		case "play":
-			if (!runtime.save) return;
-			dispatch(action);
-			ctx.ui.notify(`${runtime.save.name} ${action === "feed" ? "eats happily" : "plays with you"}!`, "info");
-			return;
-		case "release": {
-			if (!runtime.save) return;
-			const ok = await ctx.ui.confirm("Release pet?", `${runtime.save.name} will be gone forever.`);
-			if (!ok) return;
-			deletePetSave();
-			runtime.save = undefined;
-			runtime.species = undefined;
-			runtime.state = initialPetState();
-			unmountWidget();
-			ctx.ui.notify("Pet released. You can /pet adopt a new one anytime.", "info");
-			return;
-		}
-	}
-}

@@ -834,6 +834,7 @@ export async function runRpcModeWithFacade(
 	};
 
 	const rpcUiContext: ExtensionUIContext = {
+	surface: "rpc",
 		select: async (title, options, opts) => {
 			const res = await requestUi({ method: "select", title, options, timeout: opts?.timeout }, opts?.timeout ? opts.timeout + 5000 : undefined);
 			return "value" in res ? res.value : undefined;

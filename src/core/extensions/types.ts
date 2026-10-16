@@ -163,6 +163,12 @@ export interface WorkingIndicatorOptions {
  * Each mode (interactive, RPC, print) provides its own implementation.
  */
 export interface ExtensionUIContext {
+	/**
+	 * Which front-end surface is hosting the extension UI:
+	 * "tui" for the interactive terminal, "rpc" for remote/GUI clients
+	 * (e.g. the desktop app). Undefined in headless contexts.
+	 */
+	surface?: "tui" | "rpc";
 	/** Show a selector and return the user's choice. */
 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
