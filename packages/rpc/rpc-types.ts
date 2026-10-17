@@ -65,6 +65,7 @@ export interface RpcSlashCommand {
 }
 
 export type RpcResponse =
+	| { id?: string; type: "response"; command: "mcp_command"; success: true; data: { text: string } }
 	// Prompting (async - events follow)
 	| { id?: string; type: "response"; command: "prompt"; success: true }
 	| { id?: string; type: "response"; command: "steer"; success: true }

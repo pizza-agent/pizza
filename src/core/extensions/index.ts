@@ -100,6 +100,12 @@ export type {
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	LsToolResultEvent,
+	McpExposure,
+	McpHttpServerConfig,
+	McpOAuthConfig,
+	McpServerConfig,
+	McpServersChangeEvent,
+	McpStdioServerConfig,
 	// Events - Message
 	MessageEndEvent,
 	// Message Rendering
@@ -117,6 +123,7 @@ export type {
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	RegisteredMcpServer,
 	ReplacedSessionContext,
 	ResolvedCommand,
 	// Events - Resources

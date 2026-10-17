@@ -25,6 +25,7 @@ import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec/exec.js";
 import { execCommand } from "../exec/exec.js";
 import { createSyntheticSourceInfo } from "../skills/source-info.js";
+import { type McpServerConfig, McpServerRegistry, mcpNamespace, validateMcpServerConfig } from "../mcp/servers.js";
 import type {
 	BuiltinCommandDefinition,
 	Extension,
@@ -214,6 +215,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setThinkingLevel: notInitialized,
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
+		mcpServers: new McpServerRegistry(),
 		assertActive,
 		invalidate: (message) => {
 			state.staleMessage ??=
@@ -406,6 +408,33 @@ function createExtensionAPI(
 		unregisterProvider(name: string) {
 			runtime.assertActive();
 			runtime.unregisterProvider(name, extension.path);
+		},
+
+		registerMcpServer(name: string, config: McpServerConfig) {
+			runtime.assertActive();
+			const validated = validateMcpServerConfig(name, config);
+			if (typeof validated === "string") {
+				throw new Error(`Invalid MCP server registered by extension "${extension.path}": ${validated}`);
+			}
+			const owner = runtime.mcpServers.get(name)?.extensionPath;
+			if (owner !== undefined && owner !== extension.path) {
+				throw new Error(`MCP server "${name}" is already registered by extension "${owner}"`);
+			}
+			const clash = runtime.mcpServers
+				.list()
+				.find((server) => server.name !== name && mcpNamespace(server.name) === mcpNamespace(name));
+			if (clash) throw new Error(`MCP server "${name}" conflicts with registered server "${clash.name}"`);
+			runtime.mcpServers.register({ name, config: structuredClone(validated), extensionPath: extension.path });
+		},
+
+		unregisterMcpServer(name: string) {
+			runtime.assertActive();
+			runtime.mcpServers.unregister(name, extension.path);
+		},
+
+		getMcpServers() {
+			runtime.assertActive();
+			return runtime.mcpServers.list();
 		},
 
 		events: eventBus,

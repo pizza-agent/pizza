@@ -46,6 +46,7 @@ import { handleUpdateCommand } from "./update-cli.js";
 import { checkForUpdate, formatUpdateNotice } from "./core/ops/update-checker.js";
 import { handleGatewayCommand } from "./gateway-cli.js";
 import { handleAuthCommand } from "./auth-cli.js";
+import { handleMcpCliCommand } from "./builtin-extensions/mcp/cli.js";
 import { isLocalPath } from "./utils/paths.js";
 
 function supportsXhigh(model: Model<Api>): boolean {
@@ -457,6 +458,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleAuthCommand(args)) {
+		return;
+	}
+
+	if (await handleMcpCliCommand(args)) {
 		return;
 	}
 

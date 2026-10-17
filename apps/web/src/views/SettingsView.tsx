@@ -1428,13 +1428,13 @@ export default function SettingsView({
 
 				{/* Page content — centered column; the plugins page keeps the
 				    wider card-grid layout it was designed for. */}
-				<div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
+				<div data-settings-content className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
 					<div className={cn("mx-auto px-10 pb-16 pt-8", page === "plugins" ? "max-w-5xl" : "max-w-4xl")}>
 						<h1 className="mb-6 text-xl font-semibold tracking-tight text-fg">
-							{isSetupMode ? t("settings.setup.title") : pageTitle}
+							{isSetupMode && page === "provider" ? t("settings.setup.title") : pageTitle}
 						</h1>
 
-						{isSetupMode && (
+						{isSetupMode && page === "provider" && (
 							<div className="mb-6">
 								<SetupBanner state={state} />
 								{restarting && (

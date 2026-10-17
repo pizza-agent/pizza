@@ -236,6 +236,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} plugin uninstall <src> [-l] Alias for remove
   ${APP_NAME} plugin update [source]     Update installed extensions (skips pinned sources)
   ${APP_NAME} plugin list                List installed extensions from settings
+  ${APP_NAME} mcp add|remove|list|login|logout  Manage MCP servers (see ${APP_NAME} mcp --help)
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} update [check]            Check npm registry / GitHub releases for a newer version
   ${APP_NAME} update enable|disable     Turn the automatic startup update check on or off

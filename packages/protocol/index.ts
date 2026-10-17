@@ -356,6 +356,7 @@ export type RpcCommand =
 	| { id?: string; type: "set_skill_enabled"; skillName: string; enabled: boolean }
 	| { id?: string; type: "delete_skill"; skillName: string }
 	| { id?: string; type: "install_skill"; source: string; slug: string }
+	| { id?: string; type: "mcp_command"; args: string[] }
 	| { id?: string; type: "get_extensions" }
 	| { id?: string; type: "get_extension_menus" }
 	| { id?: string; type: "get_themes" }
@@ -567,6 +568,8 @@ export interface RpcExtensionPermissionState {
 // ============================================================================
 
 export interface RpcSessionState {
+	/** Backend features used to reject incompatible desktop/backend combinations early. */
+	capabilities?: { mcpManagement?: boolean };
 	model?: ModelInfo;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
@@ -697,6 +700,7 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "delete_skill"; success: true; data: { name: string } }
 	| { id?: string; type: "response"; command: "install_skill"; success: true; data: { name: string; path: string } }
+	| { id?: string; type: "response"; command: "mcp_command"; success: true; data: { text: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
 	| { id?: string; type: "response"; command: "get_extension_menus"; success: true; data: { menus: RpcExtensionMenu[] } }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }

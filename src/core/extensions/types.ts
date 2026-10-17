@@ -58,6 +58,7 @@ import type { SourceInfo } from "../skills/source-info.js";
 import type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
+import type { McpExposure, McpHttpServerConfig, McpOAuthConfig, McpServerConfig, McpServerRegistry, McpStdioServerConfig, RegisteredMcpServer } from "../mcp/servers.js";
 import type {
 	BashToolDetails,
 	BashToolInput,
@@ -77,6 +78,7 @@ export type { ExecOptions, ExecResult } from "../exec/exec.js";
 export type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
 export type { AppKeybinding, KeybindingsManager } from "../commands/keybindings.js";
+export type { McpExposure, McpHttpServerConfig, McpOAuthConfig, McpServerConfig, McpStdioServerConfig, RegisteredMcpServer };
 
 // ============================================================================
 // UI Context
@@ -814,6 +816,16 @@ export type InputEventResult =
 	| { action: "handled" };
 
 // ============================================================================
+// MCP Server Events
+// ============================================================================
+
+/** Fired when an extension registers or unregisters an MCP server via pizza.registerMcpServer(). */
+export interface McpServersChangeEvent {
+	type: "mcp_servers_change";
+	servers: RegisteredMcpServer[];
+}
+
+// ============================================================================
 // Tool Events
 // ============================================================================
 
@@ -1018,7 +1030,8 @@ export type ExtensionEvent =
 	| UserBashEvent
 	| InputEvent
 	| ToolCallEvent
-	| ToolResultEvent;
+	| ToolResultEvent
+	| McpServersChangeEvent;
 
 // ============================================================================
 // Event Results
@@ -1168,6 +1181,7 @@ export interface ExtensionAPI {
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
+	on(event: "mcp_servers_change", handler: ExtensionHandler<McpServersChangeEvent>): void;
 
 	// =========================================================================
 	// Tool Registration
@@ -1378,6 +1392,14 @@ export interface ExtensionAPI {
 	 */
 	unregisterProvider(name: string): void;
 
+	/** Register an MCP server for the current session. */
+	registerMcpServer(name: string, config: McpServerConfig): void;
+
+	/** Unregister an MCP server registered by this extension. */
+	unregisterMcpServer(name: string): void;
+
+	/** Get MCP servers registered by extensions in the current session. */
+	getMcpServers(): RegisteredMcpServer[];
 	/** Shared event bus for extension communication. */
 	events: EventBus;
 }
@@ -1543,6 +1565,7 @@ export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
+	mcpServers: McpServerRegistry;
 	/** Throws when this extension instance is stale after runtime replacement. */
 	assertActive: () => void;
 	/** Marks this extension instance as stale after runtime replacement or reload. */

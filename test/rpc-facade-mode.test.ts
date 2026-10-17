@@ -172,6 +172,40 @@ describe("runRpcModeWithFacade", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("returns backend capabilities and preserves the request ID on unsupported commands", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		rpcIo.lineHandler!(JSON.stringify({ id: "capabilities", type: "get_state" }));
+		rpcIo.lineHandler!(JSON.stringify({ id: "unsupported", type: "unknown_future_command" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "capabilities", data: expect.objectContaining({ capabilities: { mcpManagement: true } }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "unsupported", success: false, error: "Unknown command: unknown_future_command" }));
+		});
+	});
+
+	it("routes desktop MCP commands to the active internal command and reports disabled extensions", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-off", type: "mcp_command", args: ["server", "list"] }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-off", success: false })));
+		const execute = vi.fn(async () => ({ content: [{ type: "text", text: '{"ok":true,"data":[]}' }] }));
+		const parseArguments = vi.fn((args: string[]) => ({ args }));
+		const ctx = { cwd: "/workspace" };
+		Object.defineProperty(facade, "extensionRunner", { value: {
+			getAllRegisteredBuiltinCommands: () => [{ name: "_agentcli", parseArguments, execute }],
+			createContext: () => ctx,
+		} });
+		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-list", type: "mcp_command", args: ["server", "list", "--include-config"] }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-list", success: true, data: { text: '{"ok":true,"data":[]}' } })));
+		expect(parseArguments).toHaveBeenCalledWith(["server", "list", "--include-config"]);
+		expect(execute).toHaveBeenCalledWith(expect.any(String), { args: ["server", "list", "--include-config"] }, undefined, undefined, ctx);
+		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-invalid", type: "mcp_command", args: [42] }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-invalid", success: false })));
+		expect(execute).toHaveBeenCalledTimes(1);
+	});
+
 	it("emits command responses and typed events over JSONL", async () => {
 		const facade = createFacade();
 		void runRpcModeWithFacade(facade);

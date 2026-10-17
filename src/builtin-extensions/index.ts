@@ -32,6 +32,7 @@ import {
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
 import { createPetExtension, PET_EXTENSION_ID } from "./pet/index.js";
+import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -126,6 +127,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		name: "pet",
 		description: "Tamagotchi-style terminal companion widget (adopt, feed, and grow a pet across sessions).",
 		factory: createPetExtension,
+	},
+	{
+		id: MCP_EXTENSION_ID,
+		name: "mcp",
+		description: "Model Context Protocol (MCP) client and _agentcli dynamic CLI runtime.",
+		factory: createMcpExtension(),
 	},
 ];
 

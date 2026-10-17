@@ -1,3 +1,4 @@
+import { McpTab } from "./McpTab";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, Badge, Button, MoreMenu, type ContextMenuItem } from "@/components/ui";
@@ -39,7 +40,7 @@ import {
 	type ChannelInfo,
 } from "@/lib/channels";
 
-type PluginTab = "skills" | "extensions" | "channels";
+type PluginTab = "skills" | "mcp" | "extensions" | "channels";
 const PERMISSION_CHECK_SLOW_MS = 6000;
 const PERMISSION_OPEN_BUSY_MS = 3000;
 
@@ -50,6 +51,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
 	{ key: "skills", icon: BookOpen },
+	{ key: "mcp", icon: Monitor },
 	{ key: "extensions", icon: Puzzle },
 	{ key: "channels", icon: Radio },
 ];
@@ -1414,6 +1416,7 @@ export function PluginsContent() {
 			</div>
 
 			{tab === "skills" && <SkillsTab />}
+			{tab === "mcp" && <McpTab />}
 			{tab === "extensions" && <ExtensionsTab />}
 			{tab === "channels" && <ChannelsTab />}
 		</>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, EllipsisVertical, X } from "lucide-react";
@@ -250,6 +250,7 @@ export function Modal({
 	footer,
 	size = "lg",
 	backdrop = true,
+	anchor,
 }: {
 	open: boolean;
 	onClose: () => void;
@@ -258,10 +259,12 @@ export function Modal({
 	footer?: ReactNode;
 	size?: "sm" | "md" | "lg" | "xl" | "full";
 	backdrop?: boolean;
+	/** Center a floating dialog within a content pane rather than the window. */
+	anchor?: HTMLElement | null;
 }) {
 	if (!backdrop) {
 		return (
-			<FloatingDialog open={open} onClose={onClose} title={title} footer={footer} size={size}>
+			<FloatingDialog open={open} onClose={onClose} title={title} footer={footer} size={size} anchor={anchor}>
 				{children}
 			</FloatingDialog>
 		);
@@ -283,6 +286,7 @@ function FloatingDialog({
 	children,
 	footer,
 	size = "md",
+	anchor,
 }: {
 	open: boolean;
 	onClose: () => void;
@@ -290,8 +294,24 @@ function FloatingDialog({
 	children: ReactNode;
 	footer?: ReactNode;
 	size?: "sm" | "md" | "lg" | "xl" | "full";
+	anchor?: HTMLElement | null;
 }) {
 	useEscape(onClose, open);
+	const [bounds, setBounds] = useState<DOMRect | null>(null);
+	useLayoutEffect(() => {
+		if (!open || !anchor) return;
+		const measure = () => setBounds(anchor.getBoundingClientRect());
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(anchor);
+		window.addEventListener("resize", measure);
+		window.addEventListener("scroll", measure, true);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener("resize", measure);
+			window.removeEventListener("scroll", measure, true);
+		};
+	}, [open, anchor]);
 	if (!open) return null;
 
 	const maxW =
@@ -301,8 +321,12 @@ function FloatingDialog({
 		size === "full" ? "max-w-[95vw]" :
 		"max-w-md";
 
-	return (
-		<div className={cn("fixed inset-0 flex items-start justify-center p-4 pt-[15vh]", Z.modal)} onClick={onClose}>
+	const dialog = (
+		<div
+			className={cn("fixed flex justify-center p-4", anchor ? "items-center" : "inset-0 items-start pt-[15vh]", Z.modal)}
+			style={anchor && bounds ? { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height } : undefined}
+			onClick={onClose}
+		>
 			<div
 				className={cn(
 					"relative w-full rounded-lg border border-border bg-surface shadow-2xl",
@@ -330,6 +354,7 @@ function FloatingDialog({
 			</div>
 		</div>
 	);
+	return anchor ? createPortal(dialog, document.body) : dialog;
 }
 
 export function MiniSwitch({
