@@ -40,7 +40,7 @@ import {
 	type ChannelInfo,
 } from "@/lib/channels";
 
-type PluginTab = "skills" | "mcp" | "extensions" | "channels";
+type PluginTab = "skills" | "mcps" | "extensions" | "channels";
 const PERMISSION_CHECK_SLOW_MS = 6000;
 const PERMISSION_OPEN_BUSY_MS = 3000;
 
@@ -51,7 +51,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
 	{ key: "skills", icon: BookOpen },
-	{ key: "mcp", icon: Monitor },
+	{ key: "mcps", icon: Monitor },
 	{ key: "extensions", icon: Puzzle },
 	{ key: "channels", icon: Radio },
 ];
@@ -1416,7 +1416,7 @@ export function PluginsContent() {
 			</div>
 
 			{tab === "skills" && <SkillsTab />}
-			{tab === "mcp" && <McpTab />}
+			{tab === "mcps" && <McpTab />}
 			{tab === "extensions" && <ExtensionsTab />}
 			{tab === "channels" && <ChannelsTab />}
 		</>

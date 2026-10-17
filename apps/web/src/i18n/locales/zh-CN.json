@@ -470,7 +470,7 @@
       "skills": "技能",
       "extensions": "扩展",
       "channels": "渠道",
-      "mcp": "MCP"
+      "mcps": "MCP"
     },
     "skills": {
       "type": "技能",

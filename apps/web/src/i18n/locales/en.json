@@ -470,7 +470,7 @@
       "skills": "Skills",
       "extensions": "Extensions",
       "channels": "Channels",
-      "mcp": "MCP"
+      "mcps": "MCPs"
     },
     "skills": {
       "type": "Skill",
