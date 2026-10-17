@@ -12,6 +12,7 @@ export {
 	type TypedEvent,
 	type StdoutLine,
 	type ModelInfo,
+	type ModelTestResult,
 	type ThinkingLevel,
 	type RpcHistoryTreeNode,
 	type RpcHistorySessionView,
@@ -38,6 +39,7 @@ import type {
 	SessionTarget,
 	ConcurrencyPolicy,
 	SchedulerPolicy,
+	ModelTestResult,
 } from "@tomsun28/pizza-protocol";
 
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
@@ -80,6 +82,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_model"; success: true; data: Model<any> }
 	| { id?: string; type: "response"; command: "cycle_model"; success: true; data: { model: Model<any>; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }
 	| { id?: string; type: "response"; command: "get_available_models"; success: true; data: { models: Model<any>[] } }
+	| { id?: string; type: "response"; command: "test_model"; success: true; data: ModelTestResult }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }

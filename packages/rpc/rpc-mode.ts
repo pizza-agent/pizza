@@ -18,6 +18,7 @@ import type { AgentMessage } from "../../src/core/agent/types.js";
 import { estimateContextUsage } from "../../src/core/facade/extension-binding.js";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { computeMessageStats, type SessionStats } from "../../src/core/session/session-stats.js";
+import { testModel } from "../../src/core/models/model-test.js";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -1102,6 +1103,16 @@ export async function runRpcModeWithFacade(
 					}))
 					.filter((m) => !command.authOnly || m.hasAuth);
 				return success(id, "get_available_models", { models, total: all.length });
+			}
+
+			case "test_model": {
+				const registry = facade.modelRegistry;
+				const model = registry?.find(command.provider, command.modelId);
+				if (!model) {
+					return error(id, "test_model", `Model not found: ${command.provider}/${command.modelId}`);
+				}
+				const result = await testModel(registry!, model);
+				return success(id, "test_model", result);
 			}
 
 			case "cycle_model": {

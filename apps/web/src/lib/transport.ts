@@ -12,6 +12,8 @@ import type {
 	RpcHistoryTreeNode,
 	RpcHistorySessionView,
 	RpcForensicEvent,
+	ModelInfo,
+	ModelTestResult,
 } from "./types";
 
 import { isTauri, samePath } from "./platform";
@@ -1189,6 +1191,35 @@ export async function listProviders(): Promise<ProviderInfo[]> {
 	}
 	const core = await import("@tauri-apps/api/core");
 	return core.invoke<ProviderInfo[]>("list_providers");
+}
+
+/**
+ * Live model registry contents from the sidecar, grouped by consumers via
+ * `model.provider`. Goes through the regular RPC command channel, so it works
+ * identically in Tauri and browser deployments. Returns an empty list when the
+ * sidecar hasn't reported ready yet.
+ */
+export async function getAvailableModels(): Promise<{ models: ModelInfo[]; total: number }> {
+	const r = await sendCommandAwait<{ models: ModelInfo[]; total: number }>(
+		{ type: "get_available_models" },
+		30000,
+	);
+	return r.data ?? { models: [], total: 0 };
+}
+
+/**
+ * One-shot connectivity test for a single model. Runs on the sidecar through
+ * the real auth/compat pipeline, so OAuth refresh, per-credential baseUrl and
+ * compat fixes all apply. Transport-level failures (sidecar gone, timeout)
+ * reject; provider-level failures come back as `{ ok: false, error }`.
+ */
+export async function testModel(provider: string, modelId: string): Promise<ModelTestResult> {
+	const r = await sendCommandAwait<ModelTestResult>(
+		{ type: "test_model", provider, modelId },
+		60000,
+	);
+	if (!r.data) throw new Error("test_model returned no data");
+	return r.data;
 }
 
 /** Auth login option kinds surfaced to the GUI. */

@@ -269,6 +269,18 @@ export interface ModelInfo {
 	hasAuth?: boolean;
 }
 
+/** Result of a one-shot model connectivity test (test_model RPC). */
+export interface ModelTestResult {
+	ok: boolean;
+	provider: string;
+	modelId: string;
+	/** First text snippet from the reply on success, else null. */
+	response?: string | null;
+	/** Human-readable failure reason. Absent/null on success. */
+	error?: string | null;
+	latencyMs: number;
+}
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -292,6 +304,10 @@ export type RpcCommand =
 	| { id?: string; type: "cycle_model" }
 	/** authOnly: return only models with configured auth (the registry holds ~1.6k models, ~260KB). */
 	| { id?: string; type: "get_available_models"; authOnly?: boolean }
+	/** One-shot connectivity test: send a tiny "hi" through the real auth/compat
+	 *  pipeline and report latency + reply snippet. Used by the settings UI's
+	 *  per-model test buttons. */
+	| { id?: string; type: "test_model"; provider: string; modelId: string }
 
 	// Thinking
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
@@ -641,6 +657,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_model"; success: true; data: ModelInfo }
 	| { id?: string; type: "response"; command: "cycle_model"; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }
 	| { id?: string; type: "response"; command: "get_available_models"; success: true; data: { models: ModelInfo[]; total: number } }
+	| { id?: string; type: "response"; command: "test_model"; success: true; data: ModelTestResult }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }

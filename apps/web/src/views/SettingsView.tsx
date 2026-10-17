@@ -36,12 +36,15 @@ import {
 	type CustomProviderInput,
 	type CustomProviderTestResult,
 	type ProviderInfo,
+	getAvailableModels,
+	testModel,
 } from "@/lib/transport";
+import type { ModelInfo, ModelTestResult } from "@/lib/types";
 import type { RpcSessionState } from "@/lib/types";
 import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { PluginsContent } from "@/views/PluginsView";
 import { PetSettingsPage } from "@/components/PetSettingsPage";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
 import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
@@ -561,13 +564,43 @@ function AccountLoginDialog({
 	);
 }
 
-function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefresh: () => void }) {
+type ModelTestState = { status: "running" } | { status: "done"; result: ModelTestResult };
+
+function formatContextWindow(size: number | undefined): string {
+	if (!size || size <= 0) return "";
+	const k = Math.round(size / 1000);
+	return `${k}k`;
+}
+
+/**
+ * One configured provider. The header shows identity + auth state; expanding
+ * it lists the provider's models (merged from the sidecar's live registry)
+ * with a per-model connectivity test that goes through the real auth
+ * pipeline, so what passes here is what will work in chat.
+ */
+function ProviderRow({
+	provider,
+	models,
+	modelsAvailable,
+	expanded,
+	onToggle,
+	onRefresh,
+}: {
+	provider: ProviderInfo;
+	models: ModelInfo[];
+	modelsAvailable: boolean;
+	expanded: boolean;
+	onToggle: () => void;
+	onRefresh: (expandId?: string) => void;
+}) {
 	const { t } = useTranslation();
 	const [editing, setEditing] = useState(false);
 	const [keyValue, setKeyValue] = useState("");
 	const [showKey, setShowKey] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState("");
+	const [testStates, setTestStates] = useState<Record<string, ModelTestState>>({});
+	const [batchRunning, setBatchRunning] = useState(false);
 
 	const handleSave = useCallback(async () => {
 		if (!keyValue.trim()) {
@@ -581,7 +614,9 @@ function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefres
 			setEditing(false);
 			setKeyValue("");
 			setShowKey(false);
-			onRefresh();
+			// Expand so the model list and its test buttons are right there —
+			// the natural next step after (re)entering a key.
+			onRefresh(provider.id);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
@@ -609,13 +644,54 @@ function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefres
 		}
 	}, [provider, onRefresh, t]);
 
+	const runTest = useCallback(async (modelId: string) => {
+		setTestStates((prev) => ({ ...prev, [modelId]: { status: "running" } }));
+		try {
+			const result = await testModel(provider.id, modelId);
+			setTestStates((prev) => ({ ...prev, [modelId]: { status: "done", result } }));
+		} catch (e) {
+			setTestStates((prev) => ({
+				...prev,
+				[modelId]: {
+					status: "done",
+					result: {
+						ok: false,
+						provider: provider.id,
+						modelId,
+						error: e instanceof Error ? e.message : String(e),
+						latencyMs: 0,
+					},
+				},
+			}));
+		}
+	}, [provider.id]);
+
+	const testableModels = models.filter((m) => m.hasAuth !== false);
+
+	const runAllTests = useCallback(async () => {
+		if (testableModels.length === 0) return;
+		setBatchRunning(true);
+		try {
+			// Sequential — kinder to provider rate limits, and the progress is
+			// readable top to bottom as each row settles.
+			for (const m of testableModels) {
+				await runTest(m.id);
+			}
+		} finally {
+			setBatchRunning(false);
+		}
+	}, [testableModels, runTest]);
+
 	const label = providerLabel(provider);
+	const testResults = Object.values(testStates).filter((s) => s.status === "done");
+	const passCount = testResults.filter((s) => s.result.ok).length;
+	const anyRunning = batchRunning || Object.values(testStates).some((s) => s.status === "running");
 
 	return (
 		<div className="border-b border-border/60 py-3 last:border-0">
 			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-2">
-					<Key className={cn("h-4 w-4", provider.has_api_key ? "text-success" : "text-muted")} />
+				<div className="flex min-w-0 items-center gap-2">
+					<Key className={cn("h-4 w-4 shrink-0", provider.has_api_key ? "text-success" : "text-muted")} />
 					<span className="text-sm font-medium text-fg">{label}</span>
 					{provider.has_api_key ? (
 						<Badge tone={provider.auth_type === "oauth" ? "accent" : "success"}>
@@ -631,11 +707,16 @@ function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefres
 								: t("settings.provider.protocolOpenAI")}
 						</Badge>
 					)}
-					{provider.is_custom && provider.model_count ? (
-						<span className="font-mono text-[10px] text-muted">
-							{t("settings.provider.modelCount", { count: provider.model_count })}
-						</span>
-					) : null}
+					{models.length > 0 && (
+						<button
+							onClick={onToggle}
+							className="flex items-center gap-0.5 font-mono text-[10px] text-muted transition-colors hover:text-fg"
+							title={t("settings.provider.modelListTitle")}
+						>
+							<ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
+							{t("settings.provider.modelCount", { count: models.length })}
+						</button>
+					)}
 				</div>
 				<div className="flex items-center gap-2">
 					{!editing && provider.auth_type !== "oauth" && (
@@ -654,6 +735,89 @@ function ProviderRow({ provider, onRefresh }: { provider: ProviderInfo; onRefres
 					)}
 				</div>
 			</div>
+			{expanded && (
+				<div className="mt-2 rounded-lg border border-border/60 bg-bg/60 px-3 py-2">
+					<div className="mb-1 flex items-center justify-between border-b border-border/40 pb-1.5">
+						<span className="text-[11px] text-muted">
+							{t("settings.provider.modelListTitle")}
+							{testResults.length > 0 && (
+								<span className={cn("ml-2", passCount === testResults.length ? "text-success" : "text-danger")}>
+									{passCount}/{testResults.length}
+								</span>
+							)}
+						</span>
+						{testableModels.length > 0 && (
+							<Button size="sm" tone="neutral" onClick={runAllTests} disabled={anyRunning}>
+								{batchRunning ? t("settings.provider.testing") : t("settings.provider.testAll")}
+							</Button>
+						)}
+					</div>
+					{models.length === 0 ? (
+						<p className="py-2 text-xs text-muted">
+							{modelsAvailable
+								? t("settings.provider.noModels")
+								: t("settings.provider.modelsUnavailable")}
+						</p>
+					) : (
+						<div className="divide-y divide-border/30">
+							{models.map((m) => {
+								const state = testStates[m.id];
+								const running = state?.status === "running";
+								const done = state?.status === "done" ? state.result : null;
+								return (
+									<div key={m.id} className="py-1.5">
+										<div className="flex items-center justify-between gap-3">
+											<div className="flex min-w-0 items-center gap-2">
+												<span className="truncate font-mono text-xs text-fg" title={m.name !== m.id ? m.name : undefined}>
+													{m.id}
+												</span>
+												{m.reasoning && (
+													<span className="shrink-0 rounded border border-border px-1 py-px text-[9px] text-muted">
+														{t("settings.provider.reasoning")}
+													</span>
+												)}
+												{formatContextWindow(m.contextWindow) && (
+													<span className="shrink-0 font-mono text-[10px] text-muted">
+														{t("settings.provider.contextWindow", { size: formatContextWindow(m.contextWindow) })}
+													</span>
+												)}
+												{m.hasAuth === false && (
+													<span className="shrink-0 text-[10px] text-muted">{t("settings.provider.notConfigured")}</span>
+												)}
+											</div>
+											<div className="flex shrink-0 items-center gap-2">
+												{done && done.ok && (
+													<span className="font-mono text-[10px] text-success">
+														✓ {t("settings.provider.testDuration", { ms: done.latencyMs })}
+													</span>
+												)}
+												{done && !done.ok && (
+													<span className="font-mono text-[10px] text-danger">✗ {t("settings.provider.testFailedShort")}</span>
+												)}
+												{m.hasAuth !== false && (
+													<Button size="sm" tone="neutral" onClick={() => runTest(m.id)} disabled={anyRunning}>
+														{running ? t("settings.provider.testing") : t("settings.provider.testModelBtn")}
+													</Button>
+												)}
+											</div>
+										</div>
+										{done && (done.response || done.error) && (
+											<div
+												className={cn(
+													"select-text mt-1 break-all font-mono text-[10px] leading-4",
+													done.ok ? "text-muted" : "text-danger/80",
+												)}
+											>
+												{done.ok ? done.response : done.error}
+											</div>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					)}
+				</div>
+			)}
 			{editing && (
 				<div className="mt-3 space-y-2">
 					<div className="flex items-center gap-2">
@@ -696,7 +860,7 @@ function AddProviderInline({
 }: {
 	available: ProviderInfo[];
 	existingIds: Set<string>;
-	onSaved: () => void;
+	onSaved: (providerId: string) => void;
 	onCancel: () => void;
 }) {
 	const { t } = useTranslation();
@@ -779,7 +943,7 @@ function AddProviderInline({
 			setError("");
 			try {
 				await saveCustomProvider(input);
-				onSaved();
+				onSaved(input.id);
 			} catch (e) {
 				setError(e instanceof Error ? e.message : String(e));
 			} finally {
@@ -800,7 +964,7 @@ function AddProviderInline({
 		setError("");
 		try {
 			await setProviderApiKey(selected, keyValue.trim());
-			onSaved();
+			onSaved(selected);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
@@ -987,6 +1151,12 @@ function ProviderTab({
 	const [showAddInline, setShowAddInline] = useState(isSetupMode);
 	const [loginProvider, setLoginProvider] = useState<{ id: string; name: string } | null>(null);
 	const [authCategory, setAuthCategory] = useState<"account" | "apiKey" | null>(null);
+	// Models merged from the sidecar's live registry, keyed per provider for
+	// the expandable rows. `modelsLoaded` distinguishes "provider really has no
+	// models" from "sidecar data unavailable (not ready yet)".
+	const [models, setModels] = useState<ModelInfo[]>([]);
+	const [modelsLoaded, setModelsLoaded] = useState(false);
+	const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
 	const refresh = useCallback(async () => {
 		try {
@@ -998,6 +1168,14 @@ function ProviderTab({
 		} finally {
 			setLoading(false);
 		}
+		// Best-effort: until the sidecar is ready (first-run setup, restart)
+		// this rejects and rows show a hint instead of a model list.
+		getAvailableModels()
+			.then((r) => {
+				setModels(r.models);
+				setModelsLoaded(true);
+			})
+			.catch(() => setModelsLoaded(false));
 	}, []);
 
 	useEffect(() => {
@@ -1009,6 +1187,19 @@ function ProviderTab({
 			.then((options) => setAccountOptions(options.filter((o) => o.kind === "account")))
 			.catch(() => setAccountOptions([]));
 	}, []);
+
+	const expandProvider = useCallback((id: string) => {
+		setExpandedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+	}, []);
+	const toggleExpanded = useCallback((id: string) => {
+		setExpandedIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	}, []);
+	const modelsFor = useCallback((id: string) => models.filter((m) => m.provider === id), [models]);
 
 	if (loading) {
 		return (
@@ -1033,6 +1224,14 @@ function ProviderTab({
 		providers.filter((p) => p.has_api_key && p.auth_type === "oauth").map((p) => p.id),
 	);
 
+	// Leave for chat only in the first-run setup flow. Everywhere else we stay
+	// so the user can see the provider's model list and run connectivity tests;
+	// the bridge's reload_providers broadcast keeps the sidecar registry fresh
+	// without a restart.
+	const handleConfiguredInSetup = () => {
+		if (isSetupMode && onConfigured) void onConfigured();
+	};
+
 	return (
 		<div className="space-y-6">
 			{loginProvider && (
@@ -1040,10 +1239,12 @@ function ProviderTab({
 					provider={loginProvider.id}
 					providerName={loginProvider.name}
 					onDone={(ok, message) => {
+						const id = loginProvider.id;
 						setLoginProvider(null);
 						refresh();
 						if (!ok && message) setError(message);
-						if (ok && onConfigured) void onConfigured();
+						if (ok) expandProvider(id);
+						if (ok) handleConfiguredInSetup();
 					}}
 					onCancel={() => setLoginProvider(null)}
 				/>
@@ -1130,10 +1331,11 @@ function ProviderTab({
 					<AddProviderInline
 						available={available}
 						existingIds={new Set(providers.map((p) => p.id))}
-						onSaved={() => {
+						onSaved={(providerId) => {
 							setShowAddInline(false);
 							refresh();
-							if (onConfigured) void onConfigured();
+							expandProvider(providerId);
+							handleConfiguredInSetup();
 						}}
 						onCancel={() => setShowAddInline(false)}
 					/>
@@ -1150,9 +1352,13 @@ function ProviderTab({
 					<ProviderRow
 						key={p.id}
 						provider={p}
-						onRefresh={() => {
+						models={modelsFor(p.id)}
+						modelsAvailable={modelsLoaded}
+						expanded={expandedIds.has(p.id)}
+						onToggle={() => toggleExpanded(p.id)}
+						onRefresh={(expandId) => {
 							refresh();
-							if (onConfigured) void onConfigured();
+							if (expandId) expandProvider(expandId);
 						}}
 					/>
 				))}

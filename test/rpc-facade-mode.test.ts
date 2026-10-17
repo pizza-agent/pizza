@@ -6,6 +6,8 @@ import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import type { ContentBlock, EventBase } from "../src/core/event-store/types.js";
 import type { ToolRegistry } from "../src/core/intent/types.js";
 import type { ModelRegistry } from "../src/core/models/model-registry.js";
+import type { Model } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { AuthStorage } from "../src/core/auth/auth-storage.js";
 import { ModelRegistry as RealModelRegistry } from "../src/core/models/model-registry.js";
 import { SessionManager } from "../src/core/projection/session-manager.js";
@@ -843,6 +845,112 @@ describe("runRpcModeWithFacade", () => {
 			expect(full.total).toBe(3);
 			expect(authed.models).toEqual([expect.objectContaining({ id: "m1", hasAuth: true })]);
 			expect(authed.total).toBe(3);
+		});
+
+		facade.dispose();
+	});
+
+	it("test_model probes through pi-ai and reports ok with the reply snippet", async () => {
+		const faux = registerFauxProvider({
+			api: "faux-test-model-ok",
+			models: [{ id: "faux-probe", name: "Faux Probe" }],
+		});
+		faux.setResponses([fauxAssistantMessage("pong")]);
+		const model = { ...faux.models[0], provider: "faux-provider" } as unknown as Model<any>;
+		const modelRegistry = {
+			getAll: () => [model],
+			getAvailable: () => [model],
+			find: (provider: string, modelId: string) =>
+				provider === "faux-provider" && modelId === "faux-probe" ? model : undefined,
+			hasConfiguredAuth: () => true,
+			getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "sk-test" }),
+			getCacheRetention: () => undefined,
+		} as unknown as ModelRegistry;
+		const facade = createFacade(undefined, modelRegistry);
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		rpcIo.lineHandler!(JSON.stringify({ id: "probe-1", type: "test_model", provider: "faux-provider", modelId: "faux-probe" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({
+					id: "probe-1",
+					type: "response",
+					command: "test_model",
+					success: true,
+					data: expect.objectContaining({ ok: true, provider: "faux-provider", modelId: "faux-probe", response: "pong" }),
+				}),
+			);
+		});
+
+		facade.dispose();
+		faux.unregister();
+	});
+
+	it("test_model reports provider errors and missing auth as ok:false", async () => {
+		const faux = registerFauxProvider({
+			api: "faux-test-model-err",
+			models: [{ id: "faux-probe", name: "Faux Probe" }],
+		});
+		faux.setResponses([fauxAssistantMessage("ignored", { stopReason: "error", errorMessage: "upstream 401" })]);
+		const model = { ...faux.models[0], provider: "faux-provider" } as unknown as Model<any>;
+		let authOk = true;
+		const modelRegistry = {
+			getAll: () => [model],
+			getAvailable: () => [model],
+			find: () => model,
+			hasConfiguredAuth: () => authOk,
+			getApiKeyAndHeaders: async () =>
+				authOk ? { ok: true as const, apiKey: "sk-test" } : { ok: false as const, error: "No API key found for provider" },
+			getCacheRetention: () => undefined,
+		} as unknown as ModelRegistry;
+		const facade = createFacade(undefined, modelRegistry);
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		// Provider-level failure surfaces on the message (stopReason "error").
+		rpcIo.lineHandler!(JSON.stringify({ id: "probe-err", type: "test_model", provider: "faux-provider", modelId: "faux-probe" }));
+		await vi.waitFor(() => {
+			const resp = parseOutputLines().find((r) => r.id === "probe-err") as { data?: { ok: boolean; error?: string } } | undefined;
+			expect(resp?.data?.ok).toBe(false);
+			expect(resp?.data?.error).toBe("upstream 401");
+		});
+
+		// Unresolved auth short-circuits before any request is sent.
+		authOk = false;
+		rpcIo.lineHandler!(JSON.stringify({ id: "probe-auth", type: "test_model", provider: "faux-provider", modelId: "faux-probe" }));
+		await vi.waitFor(() => {
+			const resp = parseOutputLines().find((r) => r.id === "probe-auth") as { data?: { ok: boolean; error?: string } } | undefined;
+			expect(resp?.data?.ok).toBe(false);
+			expect(resp?.data?.error).toBe("No API key found for provider");
+		});
+
+		facade.dispose();
+		faux.unregister();
+	});
+
+	it("test_model fails when the model does not resolve in the registry", async () => {
+		const modelRegistry = {
+			getAll: () => [],
+			getAvailable: () => [],
+			find: () => undefined,
+			hasConfiguredAuth: () => false,
+		} as unknown as ModelRegistry;
+		const facade = createFacade(undefined, modelRegistry);
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		rpcIo.lineHandler!(JSON.stringify({ id: "probe-missing", type: "test_model", provider: "nope", modelId: "nope" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({
+					id: "probe-missing",
+					type: "response",
+					command: "test_model",
+					success: false,
+					error: "Model not found: nope/nope",
+				}),
+			);
 		});
 
 		facade.dispose();

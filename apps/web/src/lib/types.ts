@@ -15,6 +15,7 @@ export {
 	type TypedEvent,
 	type StdoutLine,
 	type ModelInfo,
+	type ModelTestResult,
 	type ThinkingLevel,
 	type RpcSlashCommand,
 	type RpcHistoryTreeNode,
