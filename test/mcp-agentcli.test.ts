@@ -406,7 +406,7 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 		const payloadFile = join(dir, "payload.json");
 		writeFileSync(payloadFile, JSON.stringify({ spec: { fromFile: true } }));
 		const res4 = JSON.parse(
-			getTextOutput(await cliTool.execute("c4", { command: `_agentcli demo complex --input @${payloadFile}` })),
+			getTextOutput(await cliTool.execute("c4", { command: `_agentcli demo complex --input '@${payloadFile}'` })),
 		);
 		expect(res4.data).toEqual({ received: { fromFile: true } });
 
