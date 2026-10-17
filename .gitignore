@@ -13,6 +13,7 @@ packages/*/dist-chrome/
 packages/*/dist-firefox/
 *.cpuprofile
 *.tgz
+output/
 
 # Environment
 .env
