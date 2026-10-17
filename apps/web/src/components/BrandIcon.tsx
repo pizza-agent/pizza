@@ -6,13 +6,9 @@ export function BrandIcon({
 	className?: string;
 }) {
 	return (
-		<img
-			src="/pizza-icon.png"
-			width={size}
-			height={size}
-			className={className}
-			alt="Pizza"
-			draggable={false}
-		/>
+		<span className={className} style={{ display: "inline-flex", width: size, height: size }}>
+			<img src="/pizza-icon.png" width={size} height={size} className="block dark:hidden" alt="Pizza" draggable={false} />
+			<img src="/pizza-icon-dark.png" width={size} height={size} className="hidden dark:block" alt="Pizza" draggable={false} />
+		</span>
 	);
 }

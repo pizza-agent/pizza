@@ -83,6 +83,13 @@ async function syncWindowChrome(custom: CustomTheme | undefined): Promise<void> 
 			const base64 = custom.icon.slice(custom.icon.indexOf(",") + 1);
 			const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 			await win.setIcon(await Image.fromBytes(bytes));
+		} else {
+			const { Image } = await import("@tauri-apps/api/image");
+			const path = getTheme() === "dark" ? "/pizza-icon-dark.png" : "/pizza-icon.png";
+			const response = await fetch(path);
+			if (response.ok) {
+				await win.setIcon(await Image.fromBytes(new Uint8Array(await response.arrayBuffer())));
+			}
 		}
 	} catch {
 		// ignore
@@ -91,6 +98,8 @@ async function syncWindowChrome(custom: CustomTheme | undefined): Promise<void> 
 
 /** Point the favicon at the theme icon (data: URI); removes it when the theme has none. */
 function applyFavicon(icon: string | undefined): void {
+	const defaultLink = document.getElementById("pizza-default-favicon") as HTMLLinkElement | null;
+	if (defaultLink) defaultLink.href = getTheme() === "dark" ? "/pizza-icon-dark.png" : "/pizza-icon.png";
 	let link = document.getElementById(FAVICON_ID) as HTMLLinkElement | null;
 	if (!icon) {
 		link?.remove();
