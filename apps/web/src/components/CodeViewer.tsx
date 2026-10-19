@@ -1,18 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { loadHljs } from "@/lib/hljs";
 
 /**
- * highlight.js is loaded lazily (and only once) so it lands in its own chunk
- * instead of the main bundle. `lib/common` covers ~40 popular languages; an
- * unknown language falls back to plain text.
+ * highlight.js is loaded lazily (and only once, via lib/hljs) so it lands in
+ * its own chunk instead of the main bundle. `lib/common` covers ~40 popular
+ * languages; an unknown language falls back to plain text.
  */
-type Hljs = typeof import("highlight.js/lib/common")["default"];
-let hljsPromise: Promise<Hljs> | null = null;
-
-function loadHljs(): Promise<Hljs> {
-	hljsPromise ??= import("highlight.js/lib/common").then((m) => m.default);
-	return hljsPromise;
-}
 
 /**
  * Highlighting a very large file blocks the main thread, so above these

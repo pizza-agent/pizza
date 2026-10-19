@@ -1,10 +1,11 @@
-import { memo, useMemo, useState, type ReactNode, type ReactElement, createElement } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode, type ReactElement, createElement } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { highlightNodes } from "@/lib/highlight";
+import { loadHljs } from "@/lib/hljs";
 import { splitBlocks } from "@/lib/markdown-blocks";
 
 import { isTauri } from "@/lib/utils";
@@ -17,14 +18,38 @@ function CodeBlock({
 	lang,
 	highlight,
 	highlightActive,
+	defer,
 }: {
 	code: string;
 	lang?: string;
 	highlight?: string;
 	highlightActive?: boolean;
+	/** True while the message is still streaming — highlighting is deferred. */
+	defer?: boolean;
 }) {
 	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
+	const [html, setHtml] = useState<string | null>(null);
+	// Syntax highlighting is deferred while the message streams (the tail
+	// block re-renders every flush, so per-flush hljs work is wasted) and
+	// disabled while a search highlight is active (the two cannot compose).
+	// Huge blocks stay plain — highlighting them would jank the main thread.
+	const shouldHighlight = !!lang && !defer && !highlight && code.length < 100_000;
+	useEffect(() => {
+		if (!shouldHighlight) {
+			setHtml(null);
+			return;
+		}
+		let cancelled = false;
+		void loadHljs()
+			.then((hljs) => {
+				if (cancelled) return;
+				if (!hljs.getLanguage(lang!)) { setHtml(null); return; }
+				setHtml(hljs.highlight(code, { language: lang!, ignoreIllegals: true }).value);
+			})
+			.catch(() => undefined);
+		return () => { cancelled = true; };
+	}, [code, lang, shouldHighlight]);
 	const copy = () => {
 		void navigator.clipboard.writeText(code);
 		setCopied(true);
@@ -47,9 +72,13 @@ function CodeBlock({
 				</button>
 			</div>
 			<pre className="overflow-x-auto px-3 py-2.5">
-				<code className="font-mono text-xs leading-relaxed text-fg">
-					{highlight ? highlightNodes(code, highlight, highlightActive) : code}
-				</code>
+				{html !== null ? (
+					<code className="hljs font-mono text-xs leading-relaxed text-fg" dangerouslySetInnerHTML={{ __html: html }} />
+				) : (
+					<code className="font-mono text-xs leading-relaxed text-fg">
+						{highlight ? highlightNodes(code, highlight, highlightActive) : code}
+					</code>
+				)}
 			</pre>
 		</div>
 	);
@@ -84,7 +113,7 @@ function makeHighlightComponents(highlight: string, active: boolean): Components
  * memoizes this so its identity stays stable across streaming flushes — an
  * unstable map would defeat the per-block memo.
  */
-function makeComponents(highlight: string | undefined, highlightActive: boolean): Components {
+function makeComponents(highlight: string | undefined, highlightActive: boolean, defer: boolean): Components {
 	const highlightComponents: Components = highlight ? makeHighlightComponents(highlight, highlightActive) : {};
 	return {
 		...highlightComponents,
@@ -100,7 +129,7 @@ function makeComponents(highlight: string | undefined, highlightActive: boolean)
 					</code>
 				);
 			}
-			return <CodeBlock code={raw.replace(/\n$/, "")} lang={match?.[1]} highlight={highlight} highlightActive={highlightActive} />;
+			return <CodeBlock code={raw.replace(/\n$/, "")} lang={match?.[1]} highlight={highlight} highlightActive={highlightActive} defer={defer} />;
 		},
 		a: ({ children: c, href }) => {
 			const openExternal = (e: React.MouseEvent) => {
@@ -151,15 +180,18 @@ function MarkdownImpl({
 	className,
 	highlight,
 	highlightActive,
+	streaming,
 }: {
 	children: string;
 	className?: string;
 	highlight?: string;
 	highlightActive?: boolean;
+	/** True while the parent message streams — code blocks defer hljs work. */
+	streaming?: boolean;
 }) {
 	const components = useMemo(
-		() => makeComponents(highlight, !!highlightActive),
-		[highlight, highlightActive],
+		() => makeComponents(highlight, !!highlightActive, !!streaming),
+		[highlight, highlightActive, streaming],
 	);
 	const blocks = splitBlocks(children);
 	return (
