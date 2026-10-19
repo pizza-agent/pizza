@@ -441,7 +441,7 @@ const ToolCard = memo(function ToolCard({
 					)}
 					onClick={() => hasBody && toggleCollapsed()}
 				>
-					<span className="flex items-center gap-2 text-[13px] font-medium text-fg">
+					<span className="flex min-w-0 max-w-[60%] items-center gap-2 text-[13px] font-medium text-fg">
 						{tellInfo ? (
 							<>
 								<Waypoints className="h-3.5 w-3.5 shrink-0 text-muted" />
@@ -467,7 +467,7 @@ const ToolCard = memo(function ToolCard({
 								) : (
 									<Terminal className="h-3.5 w-3.5 text-muted" />
 								)}
-								{toolTitle}
+								<span className="shrink-0">{toolTitle}</span>
 								{commandFirstLine && (
 									<span className="min-w-0 truncate font-mono text-xs font-normal text-muted/70">
 										{commandFirstLine}
