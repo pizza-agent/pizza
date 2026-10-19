@@ -375,11 +375,15 @@ const ToolCard = memo(function ToolCard({
 	onResolveApproval,
 	highlight,
 	highlightActive,
+	/** True when the previous timeline row is also a tool card — tighten
+	 * the gap so a run of calls reads as one group. */
+	compact,
 }: {
 	item: TimelineItem;
 	onResolveApproval?: (intentEventId: string, toolCallId: string, approved: boolean) => void;
 	highlight?: string;
 	highlightActive?: boolean;
+	compact?: boolean;
 }) {
 	const { t } = useTranslation();
 	const [argsExpanded, setArgsExpanded] = useState(false);
@@ -427,7 +431,7 @@ const ToolCard = memo(function ToolCard({
 		(running && !item.toolResult)
 	);
 	return (
-		<div className="my-4 flex justify-start">
+		<div className={cn("flex justify-start", compact ? "my-1" : "my-2")}>
 			<div
 				className={cn(
 					"w-full max-w-full overflow-hidden rounded-2xl border",
@@ -1113,7 +1117,7 @@ export function Conversation({
 
 	return (
 		<div className="mx-auto max-w-3xl px-6 pb-32 pt-4">
-			{visibleItems.map((item) => {
+			{visibleItems.map((item, i) => {
 				const isActive = item.id === activeMatchId;
 				let content: React.ReactNode;
 				if (item.role === "user") {
@@ -1125,7 +1129,7 @@ export function Conversation({
 				} else if (item.role === "system") {
 					content = <SystemNotice item={item} />;
 				} else if (item.role === "tool") {
-					content = <ToolCard item={item} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
+					content = <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
 				} else if (!item.streaming && !item.text && !item.thinking && !(item.images && item.images.length > 0)) {
 					// Skip empty assistant bubbles (turns that produced only tool calls).
 					return null;
