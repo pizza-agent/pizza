@@ -244,6 +244,12 @@ function buildTimelineFromMessages(
 					streaming: false,
 					toolName: call.name,
 					toolArgs: call.args,
+					// Rehydrate timing from message timestamps: the call carries the
+					// assistant message's ts (≈ dispatch time); when the matching
+					// toolResult arrives, result.ts − call.ts gives the duration.
+					// Without this, history cards show no start time/duration.
+					toolStartedAt: ts,
+					timestamp: ts,
 				};
 				history.push(card);
 				if (call.id) toolCardById.set(call.id, card);
@@ -269,12 +275,15 @@ function buildTimelineFromMessages(
 			const resultImages = messageImages(msg);
 			if (existing) {
 				existing.toolResult = resultText;
+				if (typeof msg.timestamp === "number" && existing.toolStartedAt !== undefined && existing.toolDurationMs === undefined) {
+					existing.toolDurationMs = Math.max(0, msg.timestamp - existing.toolStartedAt);
+				}
 				if (resultImages.length > 0) existing.toolImages = resultImages;
 				existing.isError = isError;
 				existing.status = isError ? "ERROR" : "DONE";
 			} else {
 				// Orphan result (no matching call) — still show it.
-				history.push({ id: `hist-${history.length}`, role: "tool", title: String(msg.toolName ?? msg.name ?? "tool"), text: "", status: isError ? "ERROR" : "DONE", streaming: false, toolName: String(msg.toolName ?? msg.name ?? "tool"), toolResult: resultText, ...(resultImages.length > 0 ? { toolImages: resultImages } : {}), isError });
+				history.push({ id: `hist-${history.length}`, role: "tool", title: String(msg.toolName ?? msg.name ?? "tool"), text: "", status: isError ? "ERROR" : "DONE", streaming: false, toolName: String(msg.toolName ?? msg.name ?? "tool"), toolResult: resultText, ...(resultImages.length > 0 ? { toolImages: resultImages } : {}), isError, timestamp: ts });
 				// (title intentionally uses raw tool name, not translated)
 			}
 		}
