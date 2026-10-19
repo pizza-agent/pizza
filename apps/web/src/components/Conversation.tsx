@@ -463,9 +463,9 @@ const ToolCard = memo(function ToolCard({
 						) : (
 							<>
 								{awaitingApproval ? (
-									<ShieldAlert className="h-3.5 w-3.5 text-warning" />
+									<ShieldAlert className="h-3.5 w-3.5 shrink-0 text-warning" />
 								) : (
-									<Terminal className="h-3.5 w-3.5 text-muted" />
+									<Terminal className="h-3.5 w-3.5 shrink-0 text-muted" />
 								)}
 								<span className="shrink-0">{toolTitle}</span>
 								{commandFirstLine && (
