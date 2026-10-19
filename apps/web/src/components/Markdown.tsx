@@ -1,10 +1,11 @@
-import { memo, useState, type ReactNode, type ReactElement, createElement } from "react";
+import { memo, useMemo, useState, type ReactNode, type ReactElement, createElement } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { highlightNodes } from "@/lib/highlight";
+import { splitBlocks } from "@/lib/markdown-blocks";
 
 import { isTauri } from "@/lib/utils";
 
@@ -78,6 +79,73 @@ function makeHighlightComponents(highlight: string, active: boolean): Components
 	return out as unknown as Components;
 }
 
+/**
+ * Build the react-markdown component map shared by all blocks. The caller
+ * memoizes this so its identity stays stable across streaming flushes — an
+ * unstable map would defeat the per-block memo.
+ */
+function makeComponents(highlight: string | undefined, highlightActive: boolean): Components {
+	const highlightComponents: Components = highlight ? makeHighlightComponents(highlight, highlightActive) : {};
+	return {
+		...highlightComponents,
+		pre: ({ children }) => <>{children}</>,
+		code: ({ className: cls, children: c }) => {
+			const raw = String(c ?? "");
+			const match = /language-(\w+)/.exec(cls || "");
+			const isBlock = !!match || raw.includes("\n");
+			if (!isBlock) {
+				return (
+					<code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-fg">
+						{highlight ? highlightNodes(c as ReactNode, highlight, highlightActive) : (c as ReactNode)}
+					</code>
+				);
+			}
+			return <CodeBlock code={raw.replace(/\n$/, "")} lang={match?.[1]} highlight={highlight} highlightActive={highlightActive} />;
+		},
+		a: ({ children: c, href }) => {
+			const openExternal = (e: React.MouseEvent) => {
+				// Tauri's webview can't navigate to external origins; route the click
+				// through the shell plugin so the URL opens in the system browser.
+				if (isTauri() && href && OPENABLE_SCHEME.test(href)) {
+					e.preventDefault();
+					void import("@tauri-apps/plugin-shell").then(({ open }) => open(href));
+				}
+				// Otherwise fall through to the default <a target="_blank"> behavior
+				// (used when running as a plain web app).
+			};
+			return (
+				<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-link underline underline-offset-2 hover:opacity-80">
+					{highlight ? highlightNodes(c as ReactNode, highlight, !!highlightActive) : (c as ReactNode)}
+				</a>
+			);
+		},
+	};
+}
+
+/**
+ * One memoized markdown block. During streaming, earlier blocks' `children`
+ * and `components` are referentially stable, so only the growing tail block
+ * pays the parse+render cost — ChatGPT-style incremental rendering.
+ *
+ * Boundary caveat: each block is parsed standalone, so constructs split by a
+ * blank line (a footnote reference + its definition, a setext underline) get
+ * parsed per-block rather than document-wide. Accepted approximation, same
+ * as every blockwise streaming renderer.
+ */
+const Block = memo(function Block({
+	children,
+	components,
+}: {
+	children: string;
+	components: Components;
+}) {
+	return (
+		<ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+			{children}
+		</ReactMarkdown>
+	);
+});
+
 function MarkdownImpl({
 	children,
 	className,
@@ -89,51 +157,18 @@ function MarkdownImpl({
 	highlight?: string;
 	highlightActive?: boolean;
 }) {
-	// When a search query is active, inline matches are highlighted inside
-	// text-bearing elements via makeHighlightComponents. The custom renderers
-	// (CodeBlock, inline code, links) read `highlight`/`highlightActive` here.
-	const highlightComponents: Components = highlight ? makeHighlightComponents(highlight, !!highlightActive) : {};
+	const components = useMemo(
+		() => makeComponents(highlight, !!highlightActive),
+		[highlight, highlightActive],
+	);
+	const blocks = splitBlocks(children);
 	return (
 		<div className={cn("md select-text", className)}>
-			<ReactMarkdown
-				remarkPlugins={[remarkGfm]}
-				components={{
-					...highlightComponents,
-					pre: ({ children }) => <>{children}</>,
-					code: ({ className: cls, children: c }) => {
-						const raw = String(c ?? "");
-						const match = /language-(\w+)/.exec(cls || "");
-						const isBlock = !!match || raw.includes("\n");
-						if (!isBlock) {
-							return (
-								<code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-fg">
-									{highlight ? highlightNodes(c as ReactNode, highlight, !!highlightActive) : (c as ReactNode)}
-								</code>
-							);
-						}
-						return <CodeBlock code={raw.replace(/\n$/, "")} lang={match?.[1]} highlight={highlight} highlightActive={highlightActive} />;
-					},
-					a: ({ children: c, href }) => {
-						const openExternal = (e: React.MouseEvent) => {
-							// Tauri's webview can't navigate to external origins; route the click
-							// through the shell plugin so the URL opens in the system browser.
-							if (isTauri() && href && OPENABLE_SCHEME.test(href)) {
-								e.preventDefault();
-								void import("@tauri-apps/plugin-shell").then(({ open }) => open(href));
-							}
-							// Otherwise fall through to the default <a target="_blank"> behavior
-							// (used when running as a plain web app).
-						};
-						return (
-							<a href={href} target="_blank" rel="noreferrer" onClick={openExternal} className="text-link underline underline-offset-2 hover:opacity-80">
-								{highlight ? highlightNodes(c as ReactNode, highlight, !!highlightActive) : (c as ReactNode)}
-							</a>
-						);
-					},
-				}}
-			>
-				{children}
-			</ReactMarkdown>
+			{blocks.map((block, i) => (
+				// Index keys are safe: block boundaries are append-stable, so a
+				// block's index and content never shift underneath it.
+				<Block key={i} components={components}>{block}</Block>
+			))}
 		</div>
 	);
 }
