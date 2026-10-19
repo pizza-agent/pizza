@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { highlightText } from "@/lib/highlight";
+import { loadHljs } from "@/lib/hljs";
 import { INTERNAL_MESSAGE_KINDS, parseTellCommand, splitVoiceSegments, workspaceNameFrom, type AgentMessageInfo } from "@/lib/agent-messages";
 import { VoiceClipChip } from "./VoiceClip";
 import { CHANNEL_TYPES } from "@/lib/channels";
@@ -157,11 +158,29 @@ function useCopy(): [boolean, (text: string) => void] {
 	return [copied, copy];
 }
 
+/** Diff-shaped output (git diff, _edit previews) gets colored via hljs. */
+const DIFF_RE = /^(diff --git |@@ |--- |\+\+\+ )/m;
+
 /** Long monospace block that collapses to a preview by default. */
 function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: string; isError?: boolean; highlight?: string; highlightActive?: boolean }) {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
+	const [html, setHtml] = useState<string | null>(null);
 	const { shown, clamped } = clampForDisplay(text, expanded);
+	// Colorize unified diffs (git diff, patch output); everything else stays
+	// plain so stdout noise never gets false colors. Search highlight wins.
+	const isDiff = !highlight && !isError && DIFF_RE.test(text) && shown.length < 100_000;
+	useEffect(() => {
+		if (!isDiff) {
+			setHtml(null);
+			return;
+		}
+		let cancelled = false;
+		void loadHljs()
+			.then((hljs) => { if (!cancelled) setHtml(hljs.highlight(shown, { language: "diff", ignoreIllegals: true }).value); })
+			.catch(() => undefined);
+		return () => { cancelled = true; };
+	}, [shown, isDiff]);
 	return (
 		<div className="relative">
 			<pre
@@ -170,7 +189,11 @@ function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: 
 					isError ? "text-danger" : "text-muted",
 				)}
 			>
-				{highlight ? highlightText(shown, highlight, highlightActive) : shown}
+				{html !== null ? (
+					<code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />
+				) : (
+					highlight ? highlightText(shown, highlight, highlightActive) : shown
+				)}
 				{clamped && !expanded && <span className="text-muted/60">{"\n…"}</span>}
 			</pre>
 			{clamped && (
@@ -393,8 +416,11 @@ const ToolCard = memo(function ToolCard({
 	}, [item.streaming, running, awaitingApproval]);
 	// Tool name + title are matched by search too; highlight them when active.
 	const toolTitle = highlight ? highlightText(item.toolName || item.title, highlight, highlightActive) : (item.toolName || item.title);
+	// A collapsed card with a multi-line command still needs a body: the
+	// header only shows the first line, so expanding is the only way to
+	// reach the rest. Single-line commands are fully visible in the header.
 	const hasBody = !!(
-		(command && (!collapsed || commandClamped)) ||
+		(command && (!collapsed || commandClamped || command.includes("\n"))) ||
 		approval ||
 		(item.toolImages && item.toolImages.length > 0) ||
 		item.toolResult ||
@@ -1056,6 +1082,10 @@ export function Conversation({
 	const firstItemId = items.length > 0 ? items[0].id : "";
 	useEffect(() => {
 		isFirstRenderRef.current = true;
+		// The previous conversation may have been scrolled up; the new one
+		// starts pinned, so reset the mirror before the first scroll event.
+		atBottomRef.current = true;
+		setAtBottom(true);
 	}, [firstItemId]);
 
 	// Refs to each rendered item wrapper, keyed by item id. Used to scroll the
@@ -1105,6 +1135,7 @@ export function Conversation({
 				return (
 					<div
 						key={item.id}
+						className="[content-visibility:auto] [contain-intrinsic-size:auto_180px]"
 						ref={(el) => {
 							if (el) itemRefs.current.set(item.id, el);
 							else itemRefs.current.delete(item.id);
