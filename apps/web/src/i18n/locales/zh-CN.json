@@ -309,6 +309,7 @@
     "thinking": "思考中…",
     "thoughtProcess": "思考过程",
     "running": "运行中…",
+    "backToBottom": "回到底部",
     "queued": "排队中…",
     "cancelQueued": "删除 — 从队列移除，不发送",
     "steerQueued": "立即发送 — 打断当前运行，立刻投递",

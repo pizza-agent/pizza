@@ -309,6 +309,7 @@
     "thinking": "Thinking…",
     "thoughtProcess": "Thought process",
     "running": "Running…",
+    "backToBottom": "Back to bottom",
     "queued": "Queued…",
     "cancelQueued": "Remove — delete from queue, won't be sent",
     "steerQueued": "Send now — interrupts the current run",

@@ -22,6 +22,7 @@ import {
 	ShieldAlert,
 	Waypoints,
 	ArrowUpRight,
+	ArrowDown,
 } from "lucide-react";
 
 export interface TimelineItem {
@@ -359,7 +360,19 @@ const ToolCard = memo(function ToolCard({
 }) {
 	const { t } = useTranslation();
 	const [argsExpanded, setArgsExpanded] = useState(false);
-	const [collapsed, setCollapsed] = useState(false);
+	// Cards that load already finished (conversation history) start collapsed —
+	// the tool run is over, so they read as one quiet line like ChatGPT's
+	// used-tool rows. Pending approvals are excluded: they must stay visible.
+	const [collapsed, setCollapsed] = useState(
+		() => !item.streaming && item.pendingApproval?.status !== "pending",
+	);
+	// Once the user toggles a card by hand, auto-collapse must never fire —
+	// otherwise expanding a live card to watch it would be undone when it ends.
+	const userToggledRef = useRef(false);
+	const toggleCollapsed = () => {
+		userToggledRef.current = true;
+		setCollapsed((c) => !c);
+	};
 	const [copied, copy] = useCopy();
 	const command = formatToolArgs(item.toolArgs);
 	// Routed `_tell` commands get a dedicated header ("tell → <workspace>") so
@@ -367,9 +380,17 @@ const ToolCard = memo(function ToolCard({
 	const tellInfo = item.toolName === "cli" ? parseTellCommand(command) : null;
 	const tellToName = tellInfo?.to ? workspaceNameFrom(tellInfo.to) : undefined;
 	const { shown: commandShown, clamped: commandClamped } = clampForDisplay(command, argsExpanded);
+	const commandFirstLine = command.split("\n", 1)[0] ?? "";
 	const running = item.streaming && !item.toolResult;
 	const approval = item.pendingApproval;
 	const awaitingApproval = approval?.status === "pending";
+	// Auto-collapse the card the moment its run ends. Approval cards stay open:
+	// the user still has an action to take inside them.
+	useEffect(() => {
+		if (item.streaming && !running && !awaitingApproval && !userToggledRef.current) {
+			setCollapsed(true);
+		}
+	}, [item.streaming, running, awaitingApproval]);
 	// Tool name + title are matched by search too; highlight them when active.
 	const toolTitle = highlight ? highlightText(item.toolName || item.title, highlight, highlightActive) : (item.toolName || item.title);
 	const hasBody = !!(
@@ -392,7 +413,7 @@ const ToolCard = memo(function ToolCard({
 						"flex items-center justify-between gap-3 px-3.5 py-2.5",
 						hasBody && "cursor-pointer select-none",
 					)}
-					onClick={() => hasBody && setCollapsed((c) => !c)}
+					onClick={() => hasBody && toggleCollapsed()}
 				>
 					<span className="flex items-center gap-2 text-[13px] font-medium text-fg">
 						{tellInfo ? (
@@ -421,6 +442,11 @@ const ToolCard = memo(function ToolCard({
 									<Terminal className="h-3.5 w-3.5 text-muted" />
 								)}
 								{toolTitle}
+								{commandFirstLine && (
+									<span className="min-w-0 truncate font-mono text-xs font-normal text-muted/70">
+										{commandFirstLine}
+									</span>
+								)}
 							</>
 						)}
 					</span>
@@ -468,7 +494,7 @@ const ToolCard = memo(function ToolCard({
 								type="button"
 								onClick={(e) => {
 									e.stopPropagation();
-									setCollapsed((c) => !c);
+									toggleCollapsed();
 								}}
 								className="flex h-6 w-6 items-center justify-center rounded-md text-muted/70 transition-colors hover:bg-surface-2 hover:text-fg"
 								title={collapsed ? t("conversation.showMore") : t("conversation.showLess")}
@@ -868,6 +894,7 @@ export function Conversation({
 	/** Item id of the currently-focused search match, for highlight + scroll. */
 	activeMatchId?: string | null;
 }) {
+	const { t } = useTranslation();
 	// When a search is active we must render every item (otherwise matches in
 	// the progressive-render tail wouldn't exist in the DOM to scroll to), so
 	// treat the list as fully rendered up-front. Searching a huge conversation
@@ -920,6 +947,9 @@ export function Conversation({
 	// (NOT by render cycles — the user can scroll between renders, and a stale
 	// render-time snapshot would wrongly pin or release the follow behavior).
 	const atBottomRef = useRef(true);
+	// Mirror of atBottomRef as state, solely to drive the jump-to-bottom
+	// button's visibility (the ref itself must stay event-driven).
+	const [atBottom, setAtBottom] = useState(true);
 	useEffect(() => {
 		const anchor = bottomAnchorRef.current;
 		if (!anchor) return;
@@ -936,7 +966,9 @@ export function Conversation({
 		// to its heuristic anchor right after we set scrollTop — so disable it.
 		el.style.overflowAnchor = "none";
 		const onScroll = () => {
-			atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_BOTTOM_THRESHOLD_PX;
+			const at = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_BOTTOM_THRESHOLD_PX;
+			atBottomRef.current = at;
+			setAtBottom(at);
 		};
 		el.addEventListener("scroll", onScroll, { passive: true });
 		return () => el.removeEventListener("scroll", onScroll);
@@ -1082,6 +1114,22 @@ export function Conversation({
 					</div>
 				);
 			})}
+			{!atBottom && (
+				<div className="pointer-events-none sticky bottom-4 z-10 -mb-9 flex justify-center">
+					<button
+						type="button"
+						onClick={() => {
+							const container = getScrollContainer();
+							container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+						}}
+						className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted shadow-md transition-colors hover:text-fg"
+						title={t("conversation.backToBottom")}
+					>
+						<ArrowDown className="h-3.5 w-3.5" />
+						{t("conversation.backToBottom")}
+					</button>
+				</div>
+			)}
 			<div ref={bottomAnchorRef} />
 		</div>
 	);
