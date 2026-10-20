@@ -27,21 +27,24 @@ import type {
 	ExtensionCommandContext,
 	ExtensionFactory,
 } from "../../core/extensions/types.js";
+import { BROWSER_USE_PROMPT_HINT, browserBuiltinCommand } from "./browser-builtin.js";
 
 /**
  * Short hint injected into the system prompt at the start of every agent turn.
- * The model can run `agent-browser --help` for the full command reference.
+ * Leads with the in-process `_browser` engine (managed Chromium, works in
+ * GUI/RPC sessions) and keeps the external agent-browser CLI as the fallback
+ * for print-mode sessions.
  */
-const AGENT_BROWSER_PROMPT_HINT = `## agent-browser (built-in)
+const AGENT_BROWSER_PROMPT_HINT = `## browser automation (built-in)
 
-For web automation, use the \`agent-browser\` CLI via the \`cli\` tool (not a separate tool). If \`agent-browser --version\` fails, tell the user to run \`/browser install\` first.
+For web automation prefer the \`_browser\` cli command — it drives Pizza's managed Chromium in-process (works in desktop/web sessions, no external CLI needed):
 
-  agent-browser open <url>     # open a page
-  agent-browser snapshot -i    # interactive elements as @e1, @e2... refs
-  agent-browser click @e3      # act on a ref — re-snapshot after any page change (refs go stale)
-  agent-browser close          # close when done
+  _browser open <url>     # open a page (reuses same-site tab)
+  _browser snapshot       # ARIA tree with [ref=eN] refs — read pages with this
+  _browser click @e3      # act on a ref (refs go stale after page changes: re-snapshot)
+  _browser type @e5 "text"# fill inputs; _browser key Enter to submit
 
-Full reference: \`agent-browser --help\`.`;
+Fallback (print/CLI sessions without the managed engine): the \`agent-browser\` CLI via \`cli\` — if \`agent-browser --version\` fails, tell the user to run \`/browser install\`.`;
 
 /** Stable id used as this extension's key in extensions.json. */
 export const AGENT_BROWSER_EXTENSION_ID = "agent-browser";
@@ -195,9 +198,14 @@ const USAGE = `Usage:
   /browser help        Show this help`;
 
 export const createAgentBrowserExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
+	// The in-process managed-browser engine: one dynamic command, registered
+	// like computer-use's `_computer_use` (intercepted by the cli tool before
+	// shell fallback; no extra tool schemas in the model context).
+	pizza.registerBuiltinCommand(browserBuiltinCommand);
+
 	// Inject a short hint into the system prompt at the start of every agent turn.
 	// The full command reference is left for the model to discover via
-	// `agent-browser --help` on demand, rather than burning ~700 tokens per turn.
+	// `_browser` (no args) on demand, rather than burning tokens per turn.
 	pizza.on("before_agent_start", (event) => {
 		const sep = event.systemPrompt.endsWith("\n") ? "\n" : "\n\n";
 		return { systemPrompt: event.systemPrompt + sep + AGENT_BROWSER_PROMPT_HINT };
@@ -227,14 +235,19 @@ export const createAgentBrowserExtension: ExtensionFactory = (pizza: ExtensionAP
 				}
 				case "status": {
 					const { getBuiltinInstallState } = await import("../index.js");
+					const { getBrowserController } = await import("../../core/browser/controller.js");
+					const { chromiumStatusLine } = await import("../../core/browser/chromium.js");
 					const registry = SettingsManager.create(cwd, getAgentDir()).extensions;
 					const available = await getBuiltinInstallState(registry, AGENT_BROWSER_EXTENSION_ID, cwd);
+					const engineState = getBrowserController().getState();
 					const lines = [
 						`Built-in extension: ${AGENT_BROWSER_EXTENSION_ID} (enabled)`,
 						`CLI installed: ${available.installed ? "yes" : "no"}${available.version ? ` (${available.version})` : ""}`,
+						await chromiumStatusLine(),
+						`_browser engine: ${engineState.available ? "running" : "idle (launches on first use)"}; tabs: ${engineState.tabs.length > 0 ? engineState.tabs.map((t) => t.id).join(", ") : "none"}`,
 					];
 					if (!available.installed) {
-						lines.push("Run /browser install to install it.");
+						lines.push("Run /browser install to install the agent-browser CLI + Chrome for Testing.");
 					}
 					notify(ctx, lines.join("\n"), "info");
 					return;

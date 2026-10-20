@@ -873,5 +873,50 @@
   },
   "tools": {
     "startedAt": "Started {{time}}"
+  },
+  "browser": {
+    "title": "Browser",
+    "noTabs": "No open tabs",
+    "closeTab": "Close tab",
+    "agentActive": "Agent",
+    "agentActiveHint": "The agent is currently operating the browser",
+    "stop": "Emergency stop (closes the managed browser)",
+    "addressPlaceholder": "Enter a URL to open in the managed browser",
+    "go": "Go",
+    "connecting": "Connecting to the managed browser…",
+    "emptyHint": "No page yet. The agent opens pages with the _browser command, or type a URL above.",
+    "connectionError": "Lost the mirror connection. Reconnecting…",
+    "panelHidden": "Mirror paused",
+    "statusIdle": "idle",
+    "engineRunning": "engine running",
+    "engineIdle": "engine idle",
+    "navigationFailed": "Navigation failed",
+    "nativeEngine": "native embedded",
+    "devtools": "Open DevTools",
+    "newTab": "New tab",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "permissionAllow": "Allow",
+    "permissionDeny": "Deny",
+    "permissionAsk": "{{origin}} is requesting {{kind}} (blocked — allow, then retry on the page)",
+    "perm": {
+      "camera": "Camera",
+      "microphone": "Microphone",
+      "display-capture": "Screen capture",
+      "geolocation": "Location",
+      "notifications": "Notifications"
+    },
+    "permissions": "Site permissions",
+    "permissionsHint": "Microphone / camera / screen capture are blocked by default; a bar appears when a site asks. Granted permissions are listed here and can be revoked anytime.",
+    "permissionsEmpty": "No permissions granted this session.",
+    "pick": {
+      "start": "Pick an element and add it to the chat",
+      "added": "Selected — added as a chip above the chat input. Type your question and send.",
+      "color": "Color",
+      "background": "Background",
+      "font": "Font",
+      "remove": "Remove this element"
+    }
   }
 }

@@ -400,7 +400,21 @@ export type RpcCommand =
 	| { id?: string; type: "schedule_delete"; taskId: string; scope: "main" | "workspace"; workspaceId?: string }
 	| { id?: string; type: "schedule_run_now"; taskId: string; scope: "main" | "workspace"; workspaceId?: string }
 	| { id?: string; type: "schedule_reload"; scope?: "main" | "workspace"; workspaceId?: string }
-	| { id?: string; type: "schedule_history"; taskId: string; scope: "main" | "workspace"; workspaceId?: string; limit?: number };
+	| { id?: string; type: "schedule_history"; taskId: string; scope: "main" | "workspace"; workspaceId?: string; limit?: number }
+
+	// Managed browser (browser-use engine). Control commands only — frame and
+	// input traffic travels on the separate loopback WebSocket whose
+	// credentials `browser_get_state` hands out (single-use, never persisted).
+	| { id?: string; type: "browser_get_state" }
+	| { id?: string; type: "browser_activate_tab"; tabId: string }
+	| { id?: string; type: "browser_close_tab"; tabId: string }
+	| { id?: string; type: "browser_navigate"; tabId?: string; url: string }
+	| { id?: string; type: "browser_set_panel_visible"; visible: boolean }
+	| { id?: string; type: "browser_emergency_stop" }
+	// Native embedded browser pane (desktop child webview). The frontend
+	// announces it; `_browser` commands then route through the in-page bridge.
+	| { id?: string; type: "browser_set_native"; enabled: boolean }
+	| { id?: string; type: "browser_native_result"; nonce: string; ok: boolean; result?: unknown; error?: string };
 
 /** Input for schedule_create RPC. Server fills id/createdAt/updatedAt. */
 export interface ScheduledTaskCreateInput {
@@ -609,6 +623,69 @@ export interface RpcSessionState {
 }
 
 export type ApprovalPolicy = "auto" | "on" | "off";
+
+/** Managed-browser tab metadata (mirrors src/core/browser/types.ts BrowserTabInfo). */
+export interface RpcBrowserTab {
+	id: string;
+	url: string;
+	title: string;
+	origin: string;
+	active: boolean;
+	openedAt: number;
+	lastActiveAt: number;
+}
+
+/** Frame-channel credentials for the browser panel mirror. Single-use, short TTL, never persisted in events. */
+export interface RpcBrowserFrameCredentials {
+	wsPort: number;
+	token: string;
+	expiresAt: number;
+}
+
+export interface RpcBrowserState {
+	/** True once the managed Chromium is running. */
+	available: boolean;
+	chromium?: { executablePath: string; source: string; version?: string };
+	tabs: RpcBrowserTab[];
+	activeTabId?: string;
+	panelVisible: boolean;
+	agentActive: boolean;
+	downloads: Array<{ filename: string; path: string; size: number; at: number; tabId?: string }>;
+	/** Present when the frame server is up; rotate per call (previous token is invalidated). */
+	frame?: RpcBrowserFrameCredentials;
+}
+
+/** JSON control messages on the browser frame channel (server → client, text frames). */
+export type RpcBrowserFrameMessage =
+	| { type: "hello"; sessionId: string }
+	| { type: "tabs"; tabs: RpcBrowserTab[] }
+	| { type: "tab_activated"; tabId: string }
+	| { type: "tab_closed"; tabId: string }
+	| { type: "navigated"; tabId: string; url: string; title: string }
+	| { type: "frame_meta"; tabId: string; frameId: number; width: number; height: number }
+	| { type: "agent_active"; active: boolean }
+	| { type: "error"; message: string };
+
+/** Input event forwarded from the panel to the managed browser (client → server, text frames). */
+export interface RpcBrowserInputEvent {
+	kind: "mousedown" | "mouseup" | "mousemove" | "click" | "dblclick" | "wheel" | "keydown" | "keyup";
+	/** CSS pixels in page-viewport coordinates. */
+	x?: number;
+	y?: number;
+	button?: "left" | "right" | "middle";
+	deltaX?: number;
+	deltaY?: number;
+	/** Playwright key name ("a", "Enter", "ArrowDown", "Shift", …). */
+	key?: string;
+	modifiers?: string[];
+}
+
+/** JSON messages a panel may send on the frame channel (client → server). */
+export type RpcBrowserFrameClientMessage =
+	| { type: "select_tab"; tabId: string }
+	/** tabId omitted = the server's active tab. */
+	| { type: "input"; tabId?: string; event: RpcBrowserInputEvent }
+	| { type: "ack_frame"; frameId: number };
 
 /** Per-category approval gates; consulted only when the approval policy is "auto". */
 export interface ApprovalGates {

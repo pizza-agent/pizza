@@ -1,0 +1,10 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "browser-view",
+	"description": "Capabilities for every embedded browser tab webview (labels browser-view-<tabId>). Emit-only: pages report bridge results and lifecycle, nothing else. Remote pages (any http/https origin — this IS a browser pane) get the same single permission.",
+	"windows": ["browser-view*"],
+	"remote": {
+		"urls": ["http://**", "https://**"]
+	},
+	"permissions": ["core:event:allow-emit"]
+}

@@ -249,6 +249,57 @@ describe("runRpcModeWithFacade", () => {
 		facade.dispose();
 	});
 
+	it("serves the managed-browser control commands and keeps frame tokens out of events", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+		rpcIo.lineHandler!(JSON.stringify({ id: "b1", type: "browser_get_state" }));
+		let frameToken: string | undefined;
+		await vi.waitFor(() => {
+			const response = parseOutputLines().find(
+				(record) => (record as { id?: string }).id === "b1",
+			) as unknown as {
+				command: string;
+				success: boolean;
+				data?: { tabs?: unknown[]; frame?: { wsPort: number; token: string } };
+			};
+			expect(response?.command).toBe("browser_get_state");
+			expect(response?.success).toBe(true);
+			expect(Array.isArray(response.data?.tabs)).toBe(true);
+			expect(typeof response.data?.frame?.wsPort).toBe("number");
+			expect(typeof response.data?.frame?.token).toBe("string");
+			frameToken = response.data?.frame?.token;
+		});
+		expect(frameToken).toBeDefined();
+
+		rpcIo.outputLines = [];
+		rpcIo.lineHandler!(JSON.stringify({ id: "b2", type: "browser_set_panel_visible", visible: true }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({ id: "b2", command: "browser_set_panel_visible", success: true }),
+			);
+		});
+
+		rpcIo.lineHandler!(JSON.stringify({ id: "b3", type: "browser_emergency_stop" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(
+				expect.objectContaining({ id: "b3", command: "browser_emergency_stop", success: true }),
+			);
+		});
+
+		// The frame token travels only in the RPC response; it must never
+		// appear in any event line on the stdout stream.
+		for (const line of rpcIo.outputLines) {
+			if (line.includes('"event_id"')) {
+				expect(line).not.toContain(frameToken!);
+				expect(line).not.toMatch(/"token"/);
+			}
+		}
+
+		facade.dispose();
+	});
+
 	it("handles projection-backed session and settings commands", async () => {
 		const facade = createFacade();
 		void runRpcModeWithFacade(facade);

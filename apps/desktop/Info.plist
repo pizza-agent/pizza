@@ -4,5 +4,10 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pizza needs microphone access to transcribe your voice input into text.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

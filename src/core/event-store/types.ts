@@ -134,7 +134,17 @@ export type EventType =
 	| "TASK_FAILED"
 	| "TASK_REWORK_REQUESTED"
 	| "TASK_ACCEPTED"
-	| "TASK_CANCELLED";
+	| "TASK_CANCELLED"
+	// Browser (managed browser-use engine). Audit-only payloads: tab ids,
+	// origins, action classes, outcomes. Never page content, snapshot text,
+	// screenshot bytes, or frame-channel tokens. Excluded from LLM context
+	// (see CONTEXT_RELEVANT_EVENT_TYPES allowlist).
+	| "BROWSER_TAB_OPENED"
+	| "BROWSER_TAB_ACTIVATED"
+	| "BROWSER_TAB_CLOSED"
+	| "BROWSER_NAVIGATED"
+	| "BROWSER_ACTION"
+	| "BROWSER_SESSION_ENDED";
 
 // ============================================================================
 // Supporting Types

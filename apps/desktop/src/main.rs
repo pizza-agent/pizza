@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod browser_view;
 mod gateway_channel;
 mod updater;
 
@@ -14,6 +15,7 @@ fn main() {
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.manage(bridge::BridgeState::default())
+		.manage(browser_view::BrowserViewState::default())
 		.invoke_handler(tauri::generate_handler![
 			bridge::init_sidecar,
 			bridge::main_agent_status,
@@ -59,6 +61,22 @@ fn main() {
 			bridge::oauth_login_cancel,
 			bridge::list_auth_options,
 			bridge::check_app_update,
+			browser_view::browser_view_open_tab,
+			browser_view::browser_view_navigate,
+			browser_view::browser_view_activate_tab,
+			browser_view::browser_view_close_tab,
+			browser_view::browser_view_set_rect,
+			browser_view::browser_view_set_visible,
+			browser_view::browser_view_focus,
+			browser_view::browser_view_exec,
+			browser_view::browser_view_open_devtools,
+			browser_view::browser_view_refresh,
+			browser_view::browser_view_go_back,
+			browser_view::browser_view_go_forward,
+			browser_view::browser_view_reload,
+			browser_view::browser_view_allow_permission,
+			browser_view::browser_view_list_permissions,
+			browser_view::browser_view_focus_main,
 			updater::install_app_update,
 		])
 		.setup(|app| {

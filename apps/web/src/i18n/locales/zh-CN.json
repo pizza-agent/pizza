@@ -873,5 +873,50 @@
   },
   "tools": {
     "startedAt": "开始于 {{time}}"
+  },
+  "browser": {
+    "title": "浏览器",
+    "noTabs": "没有打开的标签页",
+    "closeTab": "关闭标签页",
+    "agentActive": "Agent",
+    "agentActiveHint": "Agent 正在操作浏览器",
+    "stop": "紧急停止（关闭受管浏览器）",
+    "addressPlaceholder": "输入网址在受管浏览器中打开",
+    "go": "打开",
+    "connecting": "正在连接受管浏览器…",
+    "emptyHint": "还没有页面。Agent 会用 _browser 命令打开页面，你也可以在上方输入网址。",
+    "connectionError": "镜像连接已断开，正在重连…",
+    "panelHidden": "镜像已暂停",
+    "statusIdle": "空闲",
+    "engineRunning": "引擎运行中",
+    "engineIdle": "引擎待命",
+    "navigationFailed": "导航失败",
+    "nativeEngine": "原生嵌入",
+    "devtools": "打开开发者工具",
+    "newTab": "新建标签页",
+    "back": "后退",
+    "forward": "前进",
+    "reload": "刷新",
+    "permissionAllow": "允许",
+    "permissionDeny": "拒绝",
+    "permissionAsk": "{{origin}} 请求{{kind}}（已拦截——允许后请在页面上重试）",
+    "perm": {
+      "camera": "摄像头",
+      "microphone": "麦克风",
+      "display-capture": "屏幕捕获",
+      "geolocation": "位置信息",
+      "notifications": "通知"
+    },
+    "permissions": "站点权限",
+    "permissionsHint": "麦克风/摄像头/屏幕捕获默认拦截，站点请求时会在上方弹出询问条。已授权限列在这里，可随时撤销。",
+    "permissionsEmpty": "本次会话还没有授权过任何权限。",
+    "pick": {
+      "start": "选取网页元素加入聊天",
+      "added": "已选取 —— 已作为标签加入聊天输入框上方，输入问题发送即可。",
+      "color": "颜色",
+      "background": "背景",
+      "font": "字体",
+      "remove": "移除此元素"
+    }
   }
 }

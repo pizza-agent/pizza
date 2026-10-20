@@ -86,6 +86,7 @@
 		"marked": "^15.0.12",
 		"minimatch": "^10.2.3",
 		"node-pty": "^1.0.0",
+		"playwright-core": "^1.64.1",
 		"proper-lockfile": "^4.1.2",
 		"strip-ansi": "^7.1.0",
 		"undici": "^7.19.1",

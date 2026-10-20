@@ -44,6 +44,9 @@ import { installSkillFromGitHub } from "../../src/core/skills/skill-install.js";
 import { buildHistoryTreeNodes } from "../../src/core/projection/history-tree.js";
 import { killTrackedDetachedChildren } from "../../src/utils/shell.js";
 import { startPtyServer, type PtyServer } from "../pty/pty-server.js";
+import { getBrowserController } from "../../src/core/browser/controller.js";
+import { BrowserFrameServer } from "../../src/core/browser/frame-server.js";
+import { resolveNativeResult, setNativeBridge } from "../../src/core/browser/native-bridge.js";
 import { type Theme, theme, resolveThemeIcon, resolveThemeVideo, getBuiltinWebThemes } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
 import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "@tomsun28/pizza-protocol";
@@ -664,6 +667,55 @@ export async function runRpcModeWithFacade(
 	const isMain = process.argv.includes("--main");
 	const schedulerScope: "main" | "workspace" = isMain ? "main" : "workspace";
 	const schedulerWorkspaceId = isMain ? undefined : descriptor.workspace_id;
+
+	// ----------------------------------------------------------------------
+	// Managed browser (browser-use engine). The frame server starts lazily on
+	// the first browser command (it only serves the panel mirror); Chromium
+	// itself launches on first use inside the controller. Audit events are
+	// appended to the EventStore with whitelisted payloads and reach the
+	// frontend through the facade subscription registered below.
+	// ----------------------------------------------------------------------
+	let browserFrameServer: BrowserFrameServer | undefined;
+	let browserFrameServerPromise: Promise<BrowserFrameServer | undefined> | undefined;
+	let browserHooksWired = false;
+	const wireBrowserController = (): void => {
+		if (browserHooksWired) return;
+		browserHooksWired = true;
+		const controller = getBrowserController();
+		controller.setHostHooks({
+			emitAuditEvent: (type, payload) => {
+				try {
+					facade.runtime.store.append({
+						actor_id: "runtime",
+						type: type as EventType,
+						payload,
+						thread_id: descriptor.thread_id,
+					});
+				} catch {
+					// Audit is best-effort; never break the action it describes.
+				}
+			},
+			screenshotAllowed: () => !facade.settingsManager.getBlockImages(),
+		});
+	};
+	// Safe-mode "on" gates risky actions => browser policy asks for new /
+	// non-public origins and fails closed without an approval resolver.
+	// "auto"/"off" map to the browser policy's permissive-with-audit mode.
+	const syncBrowserApprovalMode = (): void => {
+		const raw = facade.settingsManager.getSafeModeSetting();
+		getBrowserController().setApprovalMode(raw === true ? "on" : raw === false ? "off" : "auto");
+	};
+	const ensureBrowserFrameServer = (): Promise<BrowserFrameServer | undefined> => {
+		wireBrowserController();
+		syncBrowserApprovalMode();
+		browserFrameServerPromise ??= BrowserFrameServer.start(getBrowserController())
+			.then((server) => {
+				browserFrameServer = server;
+				return server;
+			})
+			.catch(() => undefined);
+		return browserFrameServerPromise;
+	};
 	const schedulerDispatcher: SchedulerDispatcher = {
 		dispatch: async (task): Promise<{ eventId?: string; sessionId?: string; error?: string }> => {
 			try {
@@ -1011,8 +1063,13 @@ export async function runRpcModeWithFacade(
 		}
 		unsubscribe?.();
 		scheduler.dispose();
+		setNativeBridge(undefined);
 		await Promise.resolve(facade.dispose());
 		await ptyServer?.close().catch(() => {});
+		// Tear down the managed browser: stop screencast, drop approvals, kill
+		// Chromium, and close the frame channel before the process exits.
+		await browserFrameServer?.close().catch(() => {});
+		await getBrowserController().emergencyStop().catch(() => {});
 		detachInput();
 		process.stdin.pause();
 		process.exit(exitCode);
@@ -1861,6 +1918,75 @@ export async function runRpcModeWithFacade(
 				}
 				const runs = scheduler.history(command.taskId, command.limit ?? 50);
 				return success(id, "schedule_history", { runs });
+			}
+
+			case "browser_get_state": {
+				const controller = getBrowserController();
+				const frameServer = await ensureBrowserFrameServer();
+				await controller.resolveChromiumInfo().catch(() => undefined);
+				const state = controller.getState();
+				return success(id, "browser_get_state", {
+					...state,
+					frame: frameServer ? frameServer.getCredentials() : undefined,
+				});
+			}
+			case "browser_activate_tab": {
+				const info = await getBrowserController().use(command.tabId);
+				return success(id, "browser_activate_tab", { ...info });
+			}
+			case "browser_close_tab": {
+				const result = await getBrowserController().close(command.tabId);
+				return success(id, "browser_close_tab", result);
+			}
+			case "browser_navigate": {
+				wireBrowserController();
+				syncBrowserApprovalMode();
+				const controller = getBrowserController();
+				// Address-bar semantics: with no tab to navigate (fresh engine,
+				// everything closed), open the URL in a new tab instead of
+				// failing — typing a URL into an empty browser must work.
+				const hasTarget = Boolean(command.tabId ?? controller.getState().activeTabId);
+				const info = hasTarget
+					? await controller.navigate(command.tabId, command.url, "user")
+					: await controller.open(command.url, { source: "user" });
+				return success(id, "browser_navigate", { ...info });
+			}
+			case "browser_set_panel_visible": {
+				getBrowserController().setPanelVisible(command.visible);
+				return success(id, "browser_set_panel_visible", { visible: command.visible });
+			}
+			case "browser_emergency_stop": {
+				await getBrowserController().emergencyStop();
+				return success(id, "browser_emergency_stop");
+			}
+
+			case "browser_set_native": {
+				// The desktop frontend announces the native embedded browser pane;
+				// agent `_browser` commands route to it until disabled (panel closed).
+				if (command.enabled) {
+					setNativeBridge({
+						send: (bridgeCommand) => {
+							writeRawStdout(
+								serializeJsonLine({
+									type: "BROWSER_NATIVE_CMD",
+									event_id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+									payload: bridgeCommand,
+								}),
+							);
+						},
+					});
+				} else {
+					setNativeBridge(undefined);
+				}
+				return success(id, "browser_set_native", { enabled: command.enabled });
+			}
+			case "browser_native_result": {
+				resolveNativeResult(command.nonce, {
+					ok: command.ok,
+					result: command.result,
+					error: command.error,
+				});
+				return success(id, "browser_native_result");
 			}
 
 			default: {

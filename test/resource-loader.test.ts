@@ -623,8 +623,11 @@ export default function(pizza: ExtensionAPI) {
 
 			const result = await runner.emitBeforeAgentStart("open example.com", undefined, "BASE PROMPT", {} as never);
 			expect(result?.systemPrompt).toBeDefined();
+			// The hint leads with the in-process `_browser` engine and keeps
+			// the external agent-browser CLI as the print-mode fallback.
+			expect(result?.systemPrompt).toContain("_browser open <url>");
+			expect(result?.systemPrompt).toContain("_browser snapshot");
 			expect(result?.systemPrompt).toContain("agent-browser");
-			expect(result?.systemPrompt).toContain("snapshot -i");
 		});
 
 		it("skips built-in extensions when noBuiltinExtensions is true", async () => {

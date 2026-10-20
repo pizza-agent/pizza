@@ -1,7 +1,7 @@
 import { COMPACTION_UI_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight, Search } from "lucide-react";
+import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight, Search, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn, isTauri, samePath, pathBasename } from "@/lib/utils";
 import {
@@ -32,9 +32,21 @@ import type { RpcSessionState, RpcContextUsage, RpcTokenUsage, ModelInfo } from 
 import type { WorkspaceMeta, ScheduledTaskSummary } from "@/lib/types";
 import { resolveScheduleScope } from "@/lib/schedule-scope";
 import { COMPOSER_PREFILL_EVENT, type ComposerPrefillDetail } from "@/lib/composer-prefill";
+import {
+	WEB_ELEMENT_CONTEXT_ADD_EVENT,
+	addWebElementContext,
+	buildPromptWithWebElementContexts,
+	clearWebElementContexts,
+	getWebElementContexts,
+	removeWebElementContext,
+	subscribeWebElementContexts,
+	type WebElementContextAttachment,
+} from "@/lib/web-element-contexts";
 import { Z } from "@/lib/z-index";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+const EMPTY_CONTEXTS: import("@/lib/web-element-contexts").WebElementContextAttachment[] = [];
 
 /** Display order of mention categories in the @ popup (files first, like IDE
  *  quick-open). Used as the primary sort key when filtering so category
@@ -284,6 +296,13 @@ export function Composer({
 	const [approvalMenuOpen, setApprovalMenuOpen] = useState(false);
 	const { t } = useTranslation();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	// Transient web-element contexts (browser pane picker) — in-memory only,
+	// cleared on send; never persisted into drafts (ZCode parity).
+	const webElementContexts = useSyncExternalStore(
+		subscribeWebElementContexts,
+		() => getWebElementContexts(workspace),
+		() => EMPTY_CONTEXTS,
+	);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
 	const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1349,6 +1368,18 @@ ${insert}`;
 		return () => window.removeEventListener(COMPOSER_PREFILL_EVENT, onPrefill as EventListener);
 	}, [workspace]);
 
+	// Web-element contexts picked in the browser pane (same workspace guard).
+	useEffect(() => {
+		const onAdd = (e: Event): void => {
+			const detail = (e as CustomEvent<{ workspace: string; payload: WebElementContextAttachment }>).detail;
+			if (!detail || !samePath(detail.workspace, workspace ?? "")) return;
+			addWebElementContext(workspace, detail.payload);
+			requestAnimationFrame(() => textareaRef.current?.focus());
+		};
+		window.addEventListener(WEB_ELEMENT_CONTEXT_ADD_EVENT, onAdd as EventListener);
+		return () => window.removeEventListener(WEB_ELEMENT_CONTEXT_ADD_EVENT, onAdd as EventListener);
+	}, [workspace]);
+
 	// --- Drag-and-drop wiring ----------------------------------------------
 	// We listen on the outer composer wrapper (not the textarea) so users can
 	// drop files anywhere over the prompt area. The textarea still owns its
@@ -1477,12 +1508,16 @@ ${insert}`;
 		// the agent reads back with its own file tools (read, bash, etc.).
 		const outgoingImages = images.length > 0 ? images : undefined;
 		const outgoingFiles = files.length > 0 ? files : undefined;
-		if ((!message && !outgoingImages && !outgoingFiles) || !sidecarReady) return;
+		if ((!message && !outgoingImages && !outgoingFiles && webElementContexts.length === 0) || !sidecarReady) return;
 		if (recording || transcribing) return; // the recording bar owns the input
-		onSend(message, outgoingImages, outgoingFiles);
+		// Splice picked web elements into the outgoing prompt as one Markdown
+		// block — the chips above the input are only their visual shell.
+		const outgoingMessage = buildPromptWithWebElementContexts(message, webElementContexts);
+		onSend(outgoingMessage, outgoingImages, outgoingFiles);
 		setInput("");
 		setImages([]);
 		setFiles([]);
+		if (webElementContexts.length > 0) clearWebElementContexts(workspace);
 		// Sent — drop the stored draft so it does not reappear after a restart.
 		saveDraft(workspace ?? "", { input: "", images: [], files: [] });
 	};
@@ -1662,6 +1697,31 @@ ${insert}`;
 						</div>
 					)}
 					<div className="relative">
+						{webElementContexts.length > 0 && (
+							<div className="mb-1.5 flex flex-wrap items-center gap-1">
+								{webElementContexts.map((context) => (
+									<span
+										key={context.id}
+										className="group flex max-w-64 items-center gap-1.5 rounded-full border border-border bg-surface-2 py-1 pl-2 pr-1 text-xs text-fg"
+										title={`${context.pageTitle || context.pageUrl}\n${context.tagName.toLowerCase()}${context.role ? ` · ${context.role}` : ""}`}
+									>
+										<Globe className="h-3 w-3 shrink-0 text-accent" />
+										<span className="min-w-0 truncate">
+											{context.accessibleName || context.text || context.tagName.toLowerCase()}
+										</span>
+										<span className="shrink-0 text-muted/70">{context.tagName.toLowerCase()}</span>
+										<button
+											type="button"
+											onClick={() => removeWebElementContext(workspace, context.id)}
+											className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-3 hover:text-fg"
+											title={t("browser.pick.remove")}
+										>
+											<X className="h-2.5 w-2.5" />
+										</button>
+									</span>
+								))}
+							</div>
+						)}
 						{recording || transcribing ? (
 							<div className="flex min-h-[2.5rem] items-center gap-3 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2">
 								{recording ? (

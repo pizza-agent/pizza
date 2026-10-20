@@ -9,7 +9,7 @@ rust-version = "1.90"
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.1", features = [] }
+tauri = { version = "2.1", features = ["unstable", "devtools"] }
 tauri-plugin-shell = "2.0"
 tokio = { version = "1", features = ["time"] }
 tauri-plugin-dialog = "2.0"
@@ -20,6 +20,7 @@ log = "0.4"
 env_logger = "0.11"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "multipart"] }
 base64 = "0.22"
+percent-encoding = "2"
 tauri-plugin-updater = "=2.13.1"
 
 [target.'cfg(windows)'.dependencies]

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { GitBranch, Activity, FolderTree, GitCommitHorizontal } from "lucide-react";
+import { GitBranch, Activity, FolderTree, GitCommitHorizontal, Globe } from "lucide-react";
 import { usePersistedState } from "@/lib/usePersistedState";
 import { cn } from "@/lib/utils";
 import { gitStatus } from "@/lib/transport";
@@ -8,8 +8,9 @@ import BranchTreeExplorer from "@/views/BranchTreeExplorer";
 import EventTimeline from "@/views/EventTimeline";
 import FileExplorer from "@/views/FileExplorer";
 import GitStatusView from "@/views/GitStatusView";
+import BrowserPane from "./browser/BrowserPane";
 
-export type RightDockTab = "git" | "files" | "history" | "timeline";
+export type RightDockTab = "git" | "files" | "history" | "timeline" | "browser";
 
 /**
  * The right-hand dock hosting the Git (status/diff), Files, History (branch
@@ -45,6 +46,7 @@ export default function RightDock({ workspace }: { workspace?: string | null }) 
 		...(isGitRepo ? [{ id: "git" as const, label: t("git.title"), icon: GitCommitHorizontal }] : []),
 		{ id: "files", label: t("files.title"), icon: FolderTree },
 		{ id: "timeline", label: t("timeline.title"), icon: Activity },
+		{ id: "browser", label: t("browser.title"), icon: Globe },
 	];
 
 	return (
@@ -77,6 +79,8 @@ export default function RightDock({ workspace }: { workspace?: string | null }) 
 					<FileExplorer workspace={workspace} />
 				) : activeTab === "history" ? (
 					<BranchTreeExplorer workspace={workspace} />
+				) : activeTab === "browser" ? (
+					<BrowserPane workspace={workspace} />
 				) : (
 					<EventTimeline workspace={workspace} />
 				)}

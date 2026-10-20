@@ -501,6 +501,27 @@ export function pizzaRpcBridge() {
 					res.end("Method Not Allowed");
 					return;
 				}
+				// Loopback/Origin guard (DNS-rebinding + cross-site POST): the
+				// command channel drives an agent with shell access and, with the
+				// browser panel, a visible browser — a remote page must not be
+				// able to POST here. Requests without an Origin header (curl,
+				// non-browser tools) are allowed; browsers always send Origin on
+				// cross-origin POSTs.
+				const origin = req.headers.origin;
+				if (origin) {
+					let allowed = false;
+					try {
+						const url = new URL(origin);
+						const host = url.hostname;
+						allowed =
+							host === "127.0.0.1" || host === "localhost" || host === "::1" || host.endsWith(".localhost");
+					} catch {}
+					if (!allowed) {
+						res.statusCode = 403;
+						res.end(JSON.stringify({ error: "forbidden origin" }));
+						return;
+					}
+				}
 				let body = "";
 				req.on("data", (chunk) => (body += chunk));
 				req.on("end", () => {

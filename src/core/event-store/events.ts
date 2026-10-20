@@ -627,6 +627,65 @@ export interface CompactionRequestedEvent extends EventBase {
 }
 
 // ============================================================================
+// Browser Events (managed browser-use engine)
+//
+// Audit-only: payloads carry tab ids, origins, action classes, and outcomes.
+// Page content, ARIA snapshot text, screenshot bytes, and frame-channel
+// tokens must never be written into these payloads.
+// ============================================================================
+
+export interface BrowserTabOpenedEvent extends EventBase {
+	type: "BROWSER_TAB_OPENED";
+	payload: {
+		tab_id: string;
+		origin: string;
+	};
+}
+
+export interface BrowserTabActivatedEvent extends EventBase {
+	type: "BROWSER_TAB_ACTIVATED";
+	payload: {
+		tab_id: string;
+	};
+}
+
+export interface BrowserTabClosedEvent extends EventBase {
+	type: "BROWSER_TAB_CLOSED";
+	payload: {
+		tab_id: string;
+		reason?: string;
+	};
+}
+
+export interface BrowserNavigatedEvent extends EventBase {
+	type: "BROWSER_NAVIGATED";
+	payload: {
+		tab_id: string;
+		origin: string;
+	};
+}
+
+export interface BrowserActionEvent extends EventBase {
+	type: "BROWSER_ACTION";
+	payload: {
+		action: string;
+		tab_id?: string;
+		origin?: string;
+		outcome?: string;
+		reason?: string;
+		dialog_type?: string;
+		filename?: string;
+	};
+}
+
+export interface BrowserSessionEndedEvent extends EventBase {
+	type: "BROWSER_SESSION_ENDED";
+	payload: {
+		outcome: string;
+	};
+}
+
+// ============================================================================
 // Type Exports
 // ============================================================================
 
@@ -679,4 +738,10 @@ export type TypedEvent =
 	| CheckpointCreatedEvent
 	| ModelChangedEvent
 	| ThinkingLevelChangedEvent
-	| RuntimeErrorEvent;
+	| RuntimeErrorEvent
+	| BrowserTabOpenedEvent
+	| BrowserTabActivatedEvent
+	| BrowserTabClosedEvent
+	| BrowserNavigatedEvent
+	| BrowserActionEvent
+	| BrowserSessionEndedEvent;
