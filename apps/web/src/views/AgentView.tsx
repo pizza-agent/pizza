@@ -1447,12 +1447,21 @@ export default function AgentView({
 			</div>
 			{error && (
 				<div className="mx-auto max-w-3xl px-6 pb-2">
-					<div className="select-text rounded-md border border-danger/30 bg-danger/5 px-4 py-2 text-sm text-danger">
+					<div className="relative select-text rounded-md border border-danger/30 bg-danger/5 px-4 py-2 pr-10 text-sm text-danger">
 						{error.split("\n").map((line, i) => (
 							<div key={i} className={i === 0 ? "" : "mt-0.5 text-xs opacity-70"}>
 								{line}
 							</div>
 						))}
+						<button
+							type="button"
+							onClick={() => setError("")}
+							className="absolute right-1.5 top-1.5 rounded p-1 text-danger/60 transition-colors hover:bg-danger/10 hover:text-danger"
+							aria-label={t("common.dismiss")}
+							title={t("common.dismiss")}
+						>
+							<X size={14} />
+						</button>
 					</div>
 				</div>
 			)}
