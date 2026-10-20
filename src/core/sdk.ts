@@ -21,6 +21,11 @@ export type {
 } from "./extensions/index.js";
 export type { PromptTemplate } from "./context/prompt-templates.js";
 export type { Skill } from "./skills/skills.js";
+export type {
+	DefaultResourceLoaderOptions,
+	ResourceLoader,
+} from "./config/resource-loader.js";
+export { DefaultResourceLoader } from "./config/resource-loader.js";
 export type { Tool } from "./tools/index.js";
 
 export {

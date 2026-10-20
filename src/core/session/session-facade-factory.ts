@@ -31,7 +31,11 @@ import {
 } from "../extensions/index.js";
 import { createToolRegistry } from "../intent/tool-adapter.js";
 import { ModelRegistry } from "../models/model-registry.js";
-import { DefaultResourceLoader, type ResourceLoader } from "../config/resource-loader.js";
+import {
+	DefaultResourceLoader,
+	type DefaultResourceLoaderOptions,
+	type ResourceLoader,
+} from "../config/resource-loader.js";
 import { toModelConfig } from "../runtime/ai-client.js";
 import { sealConfigCommandTrust } from "../config/resolve-config-value.js";
 import { DefaultRetryPolicy } from "../runtime/policies.js";
@@ -67,6 +71,22 @@ export interface CreateSessionFacadeOptions {
 	settingsManager?: SettingsManager;
 	/** Resource loader (skills/context/extensions/system prompt). */
 	resourceLoader?: ResourceLoader;
+	/**
+	 * Options forwarded to the internally-created DefaultResourceLoader when
+	 * `resourceLoader` is not provided. Lets SDK consumers trim what gets
+	 * loaded without constructing a loader themselves, e.g.:
+	 *
+	 *   createSessionFacade({
+	 *     resourceLoaderOptions: { noBuiltinExtensions: true, noBuiltinSkills: true },
+	 *   })
+	 *
+	 * `cwd`, `agentDir`, `settingsManager`, `isMainAgent`, `mainDir`,
+	 * `memoryDir` are always derived from the facade options and cannot be
+	 * overridden here. */
+	resourceLoaderOptions?: Omit<
+		DefaultResourceLoaderOptions,
+		"cwd" | "agentDir" | "settingsManager" | "isMainAgent" | "mainDir" | "memoryDir"
+	>;
 
 	/** Model to use. Default: resolved from settings/registry. */
 	model?: Model<any>;
@@ -189,6 +209,7 @@ export async function createSessionFacade(
 	let resourceLoader = options.resourceLoader;
 	if (!resourceLoader) {
 		resourceLoader = new DefaultResourceLoader({
+			...options.resourceLoaderOptions,
 			cwd,
 			agentDir,
 			settingsManager,

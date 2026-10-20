@@ -22,7 +22,6 @@ import {
   AuthStorage,
   ModelRegistry,
   SettingsManager,
-  DefaultResourceLoader,
   createSessionFacade,
 } from "../dist/src/index.js";
 
@@ -30,16 +29,10 @@ const PORT = Number(process.env.PORT ?? 3001);
 const CWD = process.cwd();
 const AGENT_DIR = process.env.PIZZA_AGENT_DIR ?? join(process.env.HOME ?? "~", ".pizza", "agent");
 
-// ---------- 1. Build services (auth / model / settings / resource loader) ----------
+// ---------- 1. Build services (auth / model / settings) ----------
 const authStorage = AuthStorage.create(join(AGENT_DIR, "auth.json"));
 const settingsManager = SettingsManager.create(CWD, AGENT_DIR);
 const modelRegistry = ModelRegistry.create(authStorage, join(AGENT_DIR, "models.json"));
-const resourceLoader = new DefaultResourceLoader({
-  cwd: CWD,
-  agentDir: AGENT_DIR,
-  settingsManager,
-});
-await resourceLoader.reload();
 
 // ---------- 2. Create the facade (event-sourced session) ----------
 const { facade, model } = await createSessionFacade({
@@ -48,7 +41,15 @@ const { facade, model } = await createSessionFacade({
   authStorage,
   settingsManager,
   modelRegistry,
-  resourceLoader,
+  // The facade builds a DefaultResourceLoader internally; trim what it loads
+  // here instead of constructing one yourself (a full custom loader can still
+  // be injected via `resourceLoader` for finer control).
+  resourceLoaderOptions: {
+    // noExtensions: true,        // skip user/package extension discovery
+    // noBuiltinExtensions: true, // skip built-ins (agent-browser, computer-use, pet, mcp)
+    // noBuiltinSkills: true,
+    // noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+  },
   // storagePath left unset -> defaults to SQLite persistence at ~/.pizza/agent
   // storagePath: ":memory:",  // in-memory store for tests
 });

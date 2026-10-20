@@ -164,7 +164,12 @@ export type {
 	ResolvedResource,
 } from "./core/skills/package-manager.js";
 export { DefaultPackageManager } from "./core/skills/package-manager.js";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/config/resource-loader.js";
+export type {
+	DefaultResourceLoaderOptions,
+	ResourceCollision,
+	ResourceDiagnostic,
+	ResourceLoader,
+} from "./core/config/resource-loader.js";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/config/resource-loader.js";
 // SDK for programmatic usage
 export {
