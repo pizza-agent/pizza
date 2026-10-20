@@ -967,11 +967,38 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		// ---------------------------------------------------------------------------------------
 
 		pizza.on("session_start", (_event, ctx) => {
+			sessionCwd = ctx.cwd;
+			modelRegistry = ctx.modelRegistry;
+
+			if (!session.signal.aborted) {
+				// session_start can fire more than once for the same session — the
+				// facade emits it at creation (no UI bound yet) and interactive
+				// mode emits it again once a UI context exists. Re-initializing
+				// would drop live connections: reconcile the config instead, which
+				// reuses server objects (and their connections) for unchanged
+				// entries, starts newly-added servers, and closes removed ones.
+				const { signal } = session;
+				refreshConfig(ctx);
+				const enabled = servers.filter(isEnabled);
+				if (enabled.length === 0) {
+					reportProblems(ctx);
+					return;
+				}
+				pending = Promise.all(enabled.map((server) => server.ready))
+					.then(() => {
+						if (!signal.aborted) reportProblems(ctx);
+					})
+					.catch((error: unknown) => {
+						try {
+							ctx.ui.notify(`MCP failed to load: ${errorMessage(error)}`, "error");
+						} catch {}
+					});
+				return;
+			}
+
 			const loaded = (options.loadConfig ?? defaultLoadConfig)(ctx);
 			configErrors = loaded.errors;
 			projectConfig = loaded.projectConfig;
-			sessionCwd = ctx.cwd;
-			modelRegistry = ctx.modelRegistry;
 			session = new AbortController();
 			const { signal } = session;
 			configuredEntries = loaded.servers;

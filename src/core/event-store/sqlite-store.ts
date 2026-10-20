@@ -31,6 +31,15 @@ type EventRow = {
 	idempotency_key: string | null;
 };
 
+/** One tool_call block found inside an AGENT_MESSAGE_END, with the message’s envelope fields. */
+export interface MessageToolCallRow {
+	sequence: number;
+	event_id: string;
+	thread_id?: string;
+	caused_by?: string;
+	call: { id: string; name: string; arguments: Record<string, unknown> };
+}
+
 export class SqliteEventStore implements EventStore, SessionStore {
 	private db: DatabaseSync;
 	private subscribers: Map<
@@ -483,6 +492,68 @@ export class SqliteEventStore implements EventStore, SessionStore {
 		return row ? rowToEvent(row) : undefined;
 	}
 
+	/**
+	 * Extract `payload.tool_call_id` values for the given event types without
+	 * materializing events: json_extract in SQL keeps the often-huge tool
+	 * payloads (TOOL_EXECUTION_END embeds full results) in SQLite instead of
+	 * parsing them in JS. Used by crash-recovery startup scan.
+	 */
+	toolCallIds(types: EventType[]): Set<string> {
+		const ids = new Set<string>();
+		if (this._closed || types.length === 0) return ids;
+		const sql = `select json_extract(payload_json, '$.tool_call_id') as tool_call_id from events where workspace_id = ? and type in (${types.map(() => "?").join(", ")})`;
+		for (const row of this._prepare(sql).all(this.workspace_id, ...types) as Array<{ tool_call_id: unknown }>) {
+			if (typeof row.tool_call_id === "string" && row.tool_call_id) ids.add(row.tool_call_id);
+		}
+		return ids;
+	}
+
+	/**
+	 * Flattened (message, tool_call block) rows from AGENT_MESSAGE_END payloads.
+	 * Only `$.content` is extracted and parsed — message payloads carry usage
+	 * and other fields that recovery never needs.
+	 */
+	messageToolCallRows(): MessageToolCallRow[] {
+		if (this._closed) return [];
+		const rows = this._prepare(
+			"select sequence, event_id, thread_id, caused_by, json_extract(payload_json, '$.content') as content_json " +
+				"from events where workspace_id = ? and type = 'AGENT_MESSAGE_END' " +
+				"and (payload_json like '%\"type\":\"tool_call\"%' or payload_json like '%\"type\": \"tool_call\"%' " +
+				"or payload_json like '%\"type\":\"toolCall\"%' or payload_json like '%\"type\": \"toolCall\"%') " +
+				"order by sequence asc",
+		).all(this.workspace_id) as Array<{
+			sequence: number;
+			event_id: string;
+			thread_id: string | null;
+			caused_by: string | null;
+			content_json: string | null;
+		}>;
+		const out: MessageToolCallRow[] = [];
+		for (const row of rows) {
+			if (!row.content_json) continue;
+			let content: unknown;
+			try {
+				content = JSON.parse(row.content_json);
+			} catch {
+				continue;
+			}
+			if (!Array.isArray(content)) continue;
+			for (const block of content) {
+				const b = block as { type?: string; id?: string; tool_call_id?: string; name?: string; tool_name?: string; arguments?: Record<string, unknown> };
+				if (b.type !== "tool_call" && b.type !== "toolCall") continue;
+				const id = String(b.id ?? b.tool_call_id ?? "");
+				if (!id) continue;
+				out.push({
+					sequence: row.sequence,
+					event_id: row.event_id,
+					thread_id: row.thread_id ?? undefined,
+					caused_by: row.caused_by ?? undefined,
+					call: { id, name: String(b.name ?? b.tool_name ?? ""), arguments: b.arguments ?? {} },
+				});
+			}
+		}
+		return out;
+	}
 	/**
 	 * Fan out an event to subscribers. Each handler is isolated: a throwing
 	 * subscriber must not prevent the remaining subscribers from seeing the

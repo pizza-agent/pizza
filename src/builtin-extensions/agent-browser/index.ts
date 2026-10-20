@@ -20,7 +20,8 @@
 import { constants as fsConstants } from "node:fs";
 import { access, readFile, realpath, stat } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
-import { getAgentDir, SettingsManager } from "../../index.js";
+import { getAgentDir } from "../../config.js";
+import { SettingsManager } from "../../core/config/settings-manager.js";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,

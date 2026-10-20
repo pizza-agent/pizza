@@ -24,6 +24,10 @@
 		"./gateway": {
 			"types": "./dist/packages/gateway/index.d.ts",
 			"import": "./dist/packages/gateway/index.js"
+		},
+		"./sdk": {
+			"types": "./dist/src/core/sdk.d.ts",
+			"import": "./dist/src/core/sdk.js"
 		}
 	},
 	"files": [

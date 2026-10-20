@@ -62,64 +62,107 @@ function toolCallsOf(event: EventBase): Array<{ id: string; name: string; argume
 }
 
 /**
+ * Fast-path capabilities of the SQLite store: payload projection without
+ * materializing full events (TOOL_EXECUTION_END payloads embed entire tool
+ * results — often 100MB+ on a long-lived workspace).
+ */
+interface MessageToolCallRow {
+	sequence: number;
+	event_id: string;
+	thread_id?: string;
+	caused_by?: string;
+	call: { id: string; name: string; arguments: Record<string, unknown> };
+}
+
+interface PayloadProjectingStore extends EventStore {
+	toolCallIds(types: EventBase["type"][]): Set<string>;
+	messageToolCallRows(): MessageToolCallRow[];
+}
+
+function isPayloadProjectingStore(store: EventStore): store is PayloadProjectingStore {
+	const s = store as Partial<PayloadProjectingStore>;
+	return typeof s.toolCallIds === "function" && typeof s.messageToolCallRows === "function";
+}
+
+/**
  * Scan the log for tool calls interrupted by a crash and append compensating
  * events. Idempotent: a second run finds no unresolved calls and does nothing.
  */
 export function recoverDanglingTurnState(store: EventStore): CrashRecoveryResult {
 	const result: CrashRecoveryResult = { compensated_tool_call_ids: [], completed_thread_ids: [] };
 
-	const messageEnds = store.query({ types: ["AGENT_MESSAGE_END"] });
-	if (messageEnds.length === 0) return result;
+	// Only assistant messages containing tool calls matter; the SQLite fast
+	// path returns flattened (message, call) rows — generic stores fall back
+	// to parsing AGENT_MESSAGE_END payloads and flattening here.
+	const callRows: MessageToolCallRow[] = isPayloadProjectingStore(store)
+		? store.messageToolCallRows()
+		: store
+				.query({ types: ["AGENT_MESSAGE_END"] })
+				.flatMap((messageEnd) =>
+					toolCallsOf(messageEnd).map((call) => ({
+						sequence: messageEnd.sequence,
+						event_id: messageEnd.event_id,
+						thread_id: messageEnd.thread_id,
+						caused_by: messageEnd.caused_by,
+						call,
+					})),
+				);
+	if (callRows.length === 0) return result;
 
 	// Resolved tool calls: any TOOL_EXECUTION_END (real or compensated).
-	const resolvedIds = new Set<string>();
-	for (const end of store.query({ types: ["TOOL_EXECUTION_END"] })) {
-		const id = (end.payload as { tool_call_id?: string }).tool_call_id;
-		if (id) resolvedIds.add(id);
-	}
+	const resolvedIds = isPayloadProjectingStore(store)
+		? store.toolCallIds(["TOOL_EXECUTION_END"])
+		: new Set(
+				store
+					.query({ types: ["TOOL_EXECUTION_END"] })
+					.map((end) => (end.payload as { tool_call_id?: string }).tool_call_id)
+					.filter((id): id is string => typeof id === "string"),
+			);
 	// Started tool calls: those already have a START; do not emit a second one.
-	const startedIds = new Set<string>();
-	for (const start of store.query({ types: ["TOOL_EXECUTION_START"] })) {
-		const id = (start.payload as { tool_call_id?: string }).tool_call_id;
-		if (id) startedIds.add(id);
-	}
+	const startedIds = isPayloadProjectingStore(store)
+		? store.toolCallIds(["TOOL_EXECUTION_START"])
+		: new Set(
+				store
+					.query({ types: ["TOOL_EXECUTION_START"] })
+					.map((start) => (start.payload as { tool_call_id?: string }).tool_call_id)
+					.filter((id): id is string => typeof id === "string"),
+			);
 
 	// Threads whose dangling message needs a compensating turn completion:
 	// thread_id → sequence of the latest dangling AGENT_MESSAGE_END.
 	const interruptedThreads = new Map<string | undefined, number>();
 
-	for (const messageEnd of messageEnds) {
-		for (const call of toolCallsOf(messageEnd)) {
-			if (resolvedIds.has(call.id)) continue;
+	for (const row of callRows) {
+		const call = row.call;
+		if (resolvedIds.has(call.id)) continue;
 
-			if (!startedIds.has(call.id)) {
-				store.append({
-					actor_id: "runtime",
-					type: "TOOL_EXECUTION_START",
-					payload: { tool_call_id: call.id, tool_name: call.name, arguments: call.arguments },
-					caused_by: messageEnd.event_id,
-					thread_id: messageEnd.thread_id,
-				});
-			}
+		if (!startedIds.has(call.id)) {
 			store.append({
 				actor_id: "runtime",
-				type: "TOOL_EXECUTION_END",
-				payload: {
-					tool_call_id: call.id,
-					tool_name: call.name,
-					result: [{ type: "text", text: "Tool execution was interrupted: the process exited before the tool completed." }],
-					is_error: true,
-					duration_ms: 0,
-				},
-				caused_by: messageEnd.event_id,
-				thread_id: messageEnd.thread_id,
+				type: "TOOL_EXECUTION_START",
+				payload: { tool_call_id: call.id, tool_name: call.name, arguments: call.arguments },
+				caused_by: row.event_id,
+				thread_id: row.thread_id,
 			});
-			result.compensated_tool_call_ids.push(call.id);
-			resolvedIds.add(call.id);
-
-			const prev = interruptedThreads.get(messageEnd.thread_id) ?? -1;
-			if (messageEnd.sequence > prev) interruptedThreads.set(messageEnd.thread_id, messageEnd.sequence);
 		}
+		store.append({
+			actor_id: "runtime",
+			type: "TOOL_EXECUTION_END",
+			payload: {
+				tool_call_id: call.id,
+				tool_name: call.name,
+				result: [{ type: "text", text: "Tool execution was interrupted: the process exited before the tool completed." }],
+				is_error: true,
+				duration_ms: 0,
+			},
+			caused_by: row.event_id,
+			thread_id: row.thread_id,
+		});
+		result.compensated_tool_call_ids.push(call.id);
+		resolvedIds.add(call.id);
+
+		const prev = interruptedThreads.get(row.thread_id) ?? -1;
+		if (row.sequence > prev) interruptedThreads.set(row.thread_id, row.sequence);
 	}
 
 	// Close interrupted turns so settled-state queries (last USER_MESSAGE vs last

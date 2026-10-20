@@ -1,131 +1,209 @@
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@earendil-works/pi-tui";
-import { type Static, Type } from "@sinclair/typebox";
-import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-import { highlight, supportsLanguage } from "cli-highlight";
-import { getCustomThemesDir, getThemesDir } from "../../../src/config.js";
+import { getCustomThemesDir, getThemesDir, isBunBinary } from "../../../src/config.js";
 import type { SourceInfo } from "../../../src/core/skills/source-info.js";
+
+// cli-highlight is only needed when code blocks are actually rendered — never
+// at import time. Loading it here would tax every consumer of this module,
+// including headless SDK sessions (resource-loader imports loadThemeFromPath).
+// Under Node it is require()d lazily; in the compiled Bun binary require()
+// cannot see bundled modules, so it is bundled via top-level await instead.
+interface CliHighlight {
+	highlight: (code: string, options?: Record<string, unknown>) => string;
+	supportsLanguage: (name: string) => boolean;
+}
+let _cliHighlight: CliHighlight | undefined | null = isBunBinary
+	? await import("cli-highlight")
+			.then((m) => ((m as { default?: CliHighlight }).default ?? (m as unknown as CliHighlight)))
+			.catch(() => null)
+	: undefined;
+
+function getCliHighlight(): CliHighlight | null {
+	if (_cliHighlight === undefined) {
+		try {
+			_cliHighlight = createRequire(import.meta.url)("cli-highlight") as CliHighlight;
+		} catch {
+			_cliHighlight = null;
+		}
+	}
+	return _cliHighlight;
+}
 
 // ============================================================================
 // Types & Schema
 // ============================================================================
 
-const ColorValueSchema = Type.Union([
-	Type.String(), // hex "#ff0000", var ref "primary", or empty ""
-	Type.Integer({ minimum: 0, maximum: 255 }), // 256-color index
-]);
+// Theme JSON is validated by a small hand-rolled validator instead of TypeBox:
+// identical constraints, zero dependency cost at import time, and no
+// CJS-interop problems inside the compiled Bun binary.
 
-type ColorValue = Static<typeof ColorValueSchema>;
+/** hex "#ff0000", var ref "primary", 256-color index (0-255), or empty "" (terminal default) */
+type ColorValue = string | number;
 
 /** Upper bound for `web.splash.minDurationMs` — a theme must never hold the app hostage. */
 export const MAX_SPLASH_MIN_DURATION_MS = 4000;
 
-const ThemeJsonSchema = Type.Object({
-	$schema: Type.Optional(Type.String()),
-	name: Type.String(),
-	vars: Type.Optional(Type.Record(Type.String(), ColorValueSchema)),
-	colors: Type.Object({
-		// Core UI (10 colors)
-		accent: ColorValueSchema,
-		border: ColorValueSchema,
-		borderAccent: ColorValueSchema,
-		borderMuted: ColorValueSchema,
-		success: ColorValueSchema,
-		error: ColorValueSchema,
-		warning: ColorValueSchema,
-		muted: ColorValueSchema,
-		dim: ColorValueSchema,
-		text: ColorValueSchema,
-		thinkingText: ColorValueSchema,
-		// Backgrounds & Content Text (11 colors)
-		selectedBg: ColorValueSchema,
-		userMessageBg: ColorValueSchema,
-		userMessageText: ColorValueSchema,
-		customMessageBg: ColorValueSchema,
-		customMessageText: ColorValueSchema,
-		customMessageLabel: ColorValueSchema,
-		toolPendingBg: ColorValueSchema,
-		toolSuccessBg: ColorValueSchema,
-		toolErrorBg: ColorValueSchema,
-		toolTitle: ColorValueSchema,
-		toolOutput: ColorValueSchema,
-		// Markdown (10 colors)
-		mdHeading: ColorValueSchema,
-		mdLink: ColorValueSchema,
-		mdLinkUrl: ColorValueSchema,
-		mdCode: ColorValueSchema,
-		mdCodeBlock: ColorValueSchema,
-		mdCodeBlockBorder: ColorValueSchema,
-		mdQuote: ColorValueSchema,
-		mdQuoteBorder: ColorValueSchema,
-		mdHr: ColorValueSchema,
-		mdListBullet: ColorValueSchema,
-		// Tool Diffs (3 colors)
-		toolDiffAdded: ColorValueSchema,
-		toolDiffRemoved: ColorValueSchema,
-		toolDiffContext: ColorValueSchema,
-		// Syntax Highlighting (9 colors)
-		syntaxComment: ColorValueSchema,
-		syntaxKeyword: ColorValueSchema,
-		syntaxFunction: ColorValueSchema,
-		syntaxVariable: ColorValueSchema,
-		syntaxString: ColorValueSchema,
-		syntaxNumber: ColorValueSchema,
-		syntaxType: ColorValueSchema,
-		syntaxOperator: ColorValueSchema,
-		syntaxPunctuation: ColorValueSchema,
-		// Thinking Level Borders (6 colors)
-		thinkingOff: ColorValueSchema,
-		thinkingMinimal: ColorValueSchema,
-		thinkingLow: ColorValueSchema,
-		thinkingMedium: ColorValueSchema,
-		thinkingHigh: ColorValueSchema,
-		thinkingXhigh: ColorValueSchema,
-		// Bash Mode (1 color)
-		bashMode: ColorValueSchema,
-	}),
-	export: Type.Optional(
-		Type.Object({
-			pageBg: Type.Optional(ColorValueSchema),
-			cardBg: Type.Optional(ColorValueSchema),
-			infoBg: Type.Optional(ColorValueSchema),
-		}),
-	),
-	/**
-	 * Optional web/desktop UI contribution. `tokens` maps CSS custom-property
-	 * names (without the "--" prefix, e.g. "bg", "surface", "accent",
-	 * "syn-keyword", "retro-card") to CSS values. Values may reference `vars`
-	 * entries just like `colors` values. `title` rebrands the window/document
-	 * title, `icon` replaces the app icon (data: URI or a file path relative
-	 * to the theme JSON), `css` injects raw CSS while the theme is active
-	 * (background images, animations, ...), `video` plays a looping
-	 * background video behind the app content, and `splash` styles the
-	 * desktop launch screen.
-	 */
-	web: Type.Optional(
-		Type.Object({
-			label: Type.Optional(Type.String()),
-			mode: Type.Optional(Type.Union([Type.Literal("light"), Type.Literal("dark")])),
-			tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
-			title: Type.Optional(Type.String()),
-			icon: Type.Optional(Type.String()),
-			css: Type.Optional(Type.String()),
-			video: Type.Optional(Type.String()),
-			splash: Type.Optional(
-				Type.Object({
-					css: Type.Optional(Type.String()),
-					minDurationMs: Type.Optional(Type.Number({ minimum: 0, maximum: MAX_SPLASH_MIN_DURATION_MS })),
-				}),
-			),
-		}),
-	),
-});
+const THEME_COLOR_KEYS = [
+	// Core UI
+	"accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "muted", "dim", "text",
+	"thinkingText",
+	// Backgrounds & Content Text
+	"selectedBg", "userMessageBg", "userMessageText", "customMessageBg", "customMessageText", "customMessageLabel",
+	"toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
+	// Markdown
+	"mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder", "mdQuote", "mdQuoteBorder",
+	"mdHr", "mdListBullet",
+	// Tool Diffs
+	"toolDiffAdded", "toolDiffRemoved", "toolDiffContext",
+	// Syntax Highlighting
+	"syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString", "syntaxNumber",
+	"syntaxType", "syntaxOperator", "syntaxPunctuation",
+	// Thinking Level Borders
+	"thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh",
+	// Bash Mode
+	"bashMode",
+] as const;
 
-type ThemeJson = Static<typeof ThemeJsonSchema>;
+interface ThemeJson {
+	$schema?: string;
+	name: string;
+	vars?: Record<string, ColorValue>;
+	colors: Record<string, ColorValue>;
+	export?: {
+		pageBg?: ColorValue;
+		cardBg?: ColorValue;
+		infoBg?: ColorValue;
+	};
+	web?: {
+		label?: string;
+		mode?: "light" | "dark";
+		tokens?: Record<string, string>;
+		title?: string;
+		icon?: string;
+		css?: string;
+		video?: string;
+		splash?: {
+			css?: string;
+			minDurationMs?: number;
+		};
+	};
+}
 
-const validateThemeJson = TypeCompiler.Compile(ThemeJsonSchema);
+function isColorValue(value: unknown): value is ColorValue {
+	if (typeof value === "string") return true;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255;
+}
+
+/**
+ * Structural validation equivalent to the former TypeBox schema: required
+ * color keys are reported separately (nicer "missing tokens" guidance),
+ * everything else lands in the generic error list.
+ */
+function validateThemeJson(label: string, json: unknown): asserts json is ThemeJson {
+	const missingColors: string[] = [];
+	const otherErrors: string[] = [];
+	const fail = (path: string, message: string) => otherErrors.push(`  - ${path}: ${message}`);
+
+	const failRoot = () => {
+		throw new Error(`Invalid theme "${label}":\n\nOther errors:\n  - : must be object`);
+	};
+
+	if (typeof json !== "object" || json === null || Array.isArray(json)) failRoot();
+	const j = json as Record<string, unknown>;
+
+	if (j.$schema !== undefined && typeof j.$schema !== "string") fail("/$schema", "must be string");
+	if (typeof j.name !== "string") fail("/name", "must be string");
+
+	if (j.vars !== undefined) {
+		if (typeof j.vars !== "object" || j.vars === null || Array.isArray(j.vars)) {
+			fail("/vars", "must be object");
+		} else {
+			for (const [key, value] of Object.entries(j.vars)) {
+				if (!isColorValue(value)) fail(`/vars/${key}`, "must be string or 0-255 integer");
+			}
+		}
+	}
+
+	if (typeof j.colors !== "object" || j.colors === null || Array.isArray(j.colors)) {
+		fail("/colors", "must be object");
+		missingColors.push(...THEME_COLOR_KEYS);
+	} else {
+		const colors = j.colors as Record<string, unknown>;
+		for (const key of THEME_COLOR_KEYS) {
+			if (!(key in colors)) missingColors.push(key);
+		}
+		for (const [key, value] of Object.entries(colors)) {
+			if (!isColorValue(value)) fail(`/colors/${key}`, "must be string or 0-255 integer");
+		}
+	}
+
+	if (j.export !== undefined) {
+		if (typeof j.export !== "object" || j.export === null || Array.isArray(j.export)) {
+			fail("/export", "must be object");
+		} else {
+			for (const key of ["pageBg", "cardBg", "infoBg"] as const) {
+				const value = (j.export as Record<string, unknown>)[key];
+				if (value !== undefined && !isColorValue(value)) fail(`/export/${key}`, "must be string or 0-255 integer");
+			}
+		}
+	}
+
+	if (j.web !== undefined) {
+		if (typeof j.web !== "object" || j.web === null || Array.isArray(j.web)) {
+			fail("/web", "must be object");
+		} else {
+			const web = j.web as Record<string, unknown>;
+			for (const key of ["label", "title", "icon", "css", "video"] as const) {
+				if (web[key] !== undefined && typeof web[key] !== "string") fail(`/web/${key}`, "must be string");
+			}
+			if (web.mode !== undefined && web.mode !== "light" && web.mode !== "dark") {
+				fail("/web/mode", 'must be "light" or "dark"');
+			}
+			if (web.tokens !== undefined) {
+				if (typeof web.tokens !== "object" || web.tokens === null || Array.isArray(web.tokens)) {
+					fail("/web/tokens", "must be object");
+				} else {
+					for (const [key, value] of Object.entries(web.tokens)) {
+						if (typeof value !== "string") fail(`/web/tokens/${key}`, "must be string");
+					}
+				}
+			}
+			if (web.splash !== undefined) {
+				if (typeof web.splash !== "object" || web.splash === null || Array.isArray(web.splash)) {
+					fail("/web/splash", "must be object");
+				} else {
+					const splash = web.splash as Record<string, unknown>;
+					if (splash.css !== undefined && typeof splash.css !== "string") fail("/web/splash/css", "must be string");
+					if (
+						splash.minDurationMs !== undefined &&
+						(typeof splash.minDurationMs !== "number" ||
+							splash.minDurationMs < 0 ||
+							splash.minDurationMs > MAX_SPLASH_MIN_DURATION_MS)
+					) {
+						fail("/web/splash/minDurationMs", `must be number between 0 and ${MAX_SPLASH_MIN_DURATION_MS}`);
+					}
+				}
+			}
+		}
+	}
+
+	if (missingColors.length > 0 || otherErrors.length > 0) {
+		let errorMessage = `Invalid theme "${label}":\n`;
+		if (missingColors.length > 0) {
+			errorMessage += "\nMissing required color tokens:\n";
+			errorMessage += missingColors.map((c) => `  - ${c}`).join("\n");
+			errorMessage += "\n\nPlease add these colors to your theme's \"colors\" object.";
+			errorMessage += "\nSee the built-in themes (dark.json, light.json) for reference values.";
+		}
+		if (otherErrors.length > 0) {
+			errorMessage += `\n\nOther errors:\n${otherErrors.join("\n")}`;
+		}
+		throw new Error(errorMessage);
+	}
+}
 
 export type ThemeColor =
 	| "accent"
@@ -594,36 +672,8 @@ export function getAvailableThemesWithPaths(): ThemeInfo[] {
 }
 
 function parseThemeJson(label: string, json: unknown): ThemeJson {
-	if (!validateThemeJson.Check(json)) {
-		const errors = Array.from(validateThemeJson.Errors(json));
-		const missingColors: string[] = [];
-		const otherErrors: string[] = [];
-
-		for (const e of errors) {
-			// Check for missing required color properties
-			const match = e.path.match(/^\/colors\/(\w+)$/);
-			if (match && e.message.includes("Required")) {
-				missingColors.push(match[1]);
-			} else {
-				otherErrors.push(`  - ${e.path}: ${e.message}`);
-			}
-		}
-
-		let errorMessage = `Invalid theme "${label}":\n`;
-		if (missingColors.length > 0) {
-			errorMessage += "\nMissing required color tokens:\n";
-			errorMessage += missingColors.map((c) => `  - ${c}`).join("\n");
-			errorMessage += '\n\nPlease add these colors to your theme\'s "colors" object.';
-			errorMessage += "\nSee the built-in themes (dark.json, light.json) for reference values.";
-		}
-		if (otherErrors.length > 0) {
-			errorMessage += `\n\nOther errors:\n${otherErrors.join("\n")}`;
-		}
-
-		throw new Error(errorMessage);
-	}
-
-	return json as ThemeJson;
+	validateThemeJson(label, json);
+	return json;
 }
 
 function parseThemeJsonContent(label: string, content: string): ThemeJson {
@@ -1209,13 +1259,19 @@ function getCliHighlightTheme(t: Theme): CliHighlightTheme {
  * Highlight code with syntax coloring based on file extension or language.
  * Returns array of highlighted lines.
  */
-export function highlightCode(code: string, lang?: string): string[] {
+/**
+ * Shared highlight implementation for highlightCode() and the markdown theme.
+ * Falls back to mdCodeBlock-styled lines when cli-highlight is unavailable
+ * (e.g. require() inside the compiled Bun binary resolving nothing).
+ */
+function highlightCodeImpl(code: string, lang: string | undefined): string[] {
+	const hl = getCliHighlight();
 	// Validate language before highlighting to avoid stderr spam from cli-highlight
-	const validLang = lang && supportsLanguage(lang) ? lang : undefined;
+	const validLang = hl && lang && hl.supportsLanguage(lang) ? lang : undefined;
 	// Skip highlighting when no valid language is specified. cli-highlight's
 	// auto-detection is unreliable and can misidentify prose as AppleScript,
 	// LiveCodeServer, etc., coloring random English words as keywords.
-	if (!validLang) {
+	if (!validLang || !hl) {
 		return code.split("\n").map((line) => theme.fg("mdCodeBlock", line));
 	}
 	const opts = {
@@ -1224,10 +1280,14 @@ export function highlightCode(code: string, lang?: string): string[] {
 		theme: getCliHighlightTheme(theme),
 	};
 	try {
-		return highlight(code, opts).split("\n");
+		return hl.highlight(code, opts).split("\n");
 	} catch {
 		return code.split("\n");
 	}
+}
+
+export function highlightCode(code: string, lang?: string): string[] {
+	return highlightCodeImpl(code, lang);
 }
 
 /**
@@ -1317,26 +1377,7 @@ export function getMarkdownTheme(): MarkdownTheme {
 		italic: (text: string) => theme.italic(text),
 		underline: (text: string) => theme.underline(text),
 		strikethrough: (text: string) => chalk.strikethrough(text),
-		highlightCode: (code: string, lang?: string): string[] => {
-			// Validate language before highlighting to avoid stderr spam from cli-highlight
-			const validLang = lang && supportsLanguage(lang) ? lang : undefined;
-			// Skip highlighting when no valid language is specified. cli-highlight's
-			// auto-detection is unreliable and can misidentify prose as AppleScript,
-			// LiveCodeServer, etc., coloring random English words as keywords.
-			if (!validLang) {
-				return code.split("\n").map((line) => theme.fg("mdCodeBlock", line));
-			}
-			const opts = {
-				language: validLang,
-				ignoreIllegals: true,
-				theme: getCliHighlightTheme(theme),
-			};
-			try {
-				return highlight(code, opts).split("\n");
-			} catch {
-				return code.split("\n").map((line) => theme.fg("mdCodeBlock", line));
-			}
-		},
+		highlightCode: (code: string, lang?: string): string[] => highlightCodeImpl(code, lang),
 	};
 }
 

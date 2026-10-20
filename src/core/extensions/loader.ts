@@ -9,18 +9,15 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createJiti } from "@mariozechner/jiti";
-import * as _bundledAi from "@earendil-works/pi-ai/compat";
 import type { KeyId } from "@earendil-works/pi-tui";
-import * as _bundledTui from "@earendil-works/pi-tui";
-// Static imports of packages that extensions may use.
-// These MUST be static so Bun bundles them into the compiled binary.
-// The virtualModules option then makes them available to extensions.
-import * as _bundledTypebox from "@sinclair/typebox";
+// Bun-binary-only module payloads: in a compiled `bun build --compile` binary
+// jiti cannot resolve node_modules, so these packages are bundled and handed to
+// extensions via jiti virtualModules. They are imported lazily inside
+// getVirtualModules() so Node.js consumers (CLI, SDK) never pay the import
+// cost — under Node, jiti uses filesystem aliases instead.
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from "pizza".
-import * as _bundledPizza from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec/exec.js";
 import { execCommand } from "../exec/exec.js";
@@ -69,20 +66,33 @@ function validateBuiltinCommandName(name: string): void {
 	}
 }
 
-/** Modules available to extensions via virtualModules (for compiled Bun binary) */
-const VIRTUAL_MODULES: Record<string, unknown> = {
-	"@sinclair/typebox": _bundledTypebox,
-	typebox: _bundledTypebox,
-	"@earendil-works/pi-tui": _bundledTui,
-	"@mariozechner/pi-tui": _bundledTui,
-	"@earendil-works/pi-ai": _bundledAi,
-	"@mariozechner/pi-ai": _bundledAi,
-	pizza: _bundledPizza,
-	// Upstream pi specifiers — extensions published for pi (https://pi.dev/packages)
-	// import these; map them onto pizza's API surface so they load here too.
-	"@earendil-works/pi-coding-agent": _bundledPizza,
-	"@mariozechner/pi-coding-agent": _bundledPizza,
-};
+/**
+ * Modules available to extensions via virtualModules (compiled Bun binary
+ * only). Imported lazily: the whole point of virtualModules is to hand jiti
+ * pre-bundled module objects when no node_modules exist, so loading them on
+ * Node — where jiti uses filesystem aliases — is pure startup cost (pi-tui,
+ * the pizza index self-import, typebox).
+ */
+let _virtualModules: Promise<Record<string, unknown>> | undefined;
+function getVirtualModules(): Promise<Record<string, unknown>> {
+	_virtualModules ??= Promise.all([
+		import("@earendil-works/pi-tui"),
+		import("@earendil-works/pi-ai/compat"),
+		import("@sinclair/typebox"),
+		import("../../index.js"),
+	]).then(([_bundledTui, _bundledAi, _bundledTypebox, _bundledPizza]) => ({
+		"@sinclair/typebox": _bundledTypebox,
+		typebox: _bundledTypebox,
+		"@earendil-works/pi-tui": _bundledTui,
+		"@mariozechner/pi-tui": _bundledTui,
+		"@earendil-works/pi-ai": _bundledAi,
+		"@mariozechner/pi-ai": _bundledAi,
+		pizza: _bundledPizza,
+		"@earendil-works/pi-coding-agent": _bundledPizza,
+		"@mariozechner/pi-coding-agent": _bundledPizza,
+	}));
+	return _virtualModules;
+}
 
 const require = createRequire(import.meta.url);
 
@@ -444,12 +454,15 @@ function createExtensionAPI(
 }
 
 async function loadExtensionModule(extensionPath: string) {
+	// jiti is only needed to load user-supplied extension files — defer the
+	// import so sessions without file-based extensions never pay for it.
+	const { createJiti } = await import("@mariozechner/jiti");
 	const jiti = createJiti(import.meta.url, {
 		moduleCache: false,
 		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
 		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
 		// In Node.js/dev: use aliases to resolve to node_modules paths
-		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
+		...(isBunBinary ? { virtualModules: await getVirtualModules(), tryNative: false } : { alias: getAliases() }),
 		// Allow ESM imports without requiring main export
 		interopDefault: true,
 	});
