@@ -309,6 +309,8 @@
     "thinking": "思考中…",
     "thoughtProcess": "思考过程",
     "running": "运行中…",
+    "quickNavigation": "对话快速导航",
+    "goToTurn": "跳转到第 {{number}} 轮：{{title}}",
     "backToBottom": "回到底部",
     "queued": "排队中…",
     "cancelQueued": "删除 — 从队列移除，不发送",

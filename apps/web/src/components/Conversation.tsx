@@ -7,6 +7,7 @@ import { INTERNAL_MESSAGE_KINDS, parseTellCommand, splitVoiceSegments, workspace
 import { VoiceClipChip } from "./VoiceClip";
 import { CHANNEL_TYPES } from "@/lib/channels";
 import { Markdown } from "./Markdown";
+import { ConversationNav } from "./ConversationNav";
 import { Button, Badge } from "@/components/ui";
 import { FileAttachmentIcon } from "@/components/FileAttachmentIcon";
 import { formatFileSize } from "@/lib/file-format";
@@ -165,19 +166,20 @@ const DIFF_RE = /^(diff --git |@@ |--- |\+\+\+ )/m;
 function CollapsibleCode({ text, isError, highlight, highlightActive }: { text: string; isError?: boolean; highlight?: string; highlightActive?: boolean }) {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState(false);
-	const [html, setHtml] = useState<string | null>(null);
+	const [highlighted, setHighlighted] = useState<{ source: string; html: string } | null>(null);
 	const { shown, clamped } = clampForDisplay(text, expanded);
 	// Colorize unified diffs (git diff, patch output); everything else stays
 	// plain so stdout noise never gets false colors. Search highlight wins.
 	const isDiff = !highlight && !isError && DIFF_RE.test(text) && shown.length < 100_000;
+	const html = isDiff && highlighted?.source === shown ? highlighted.html : null;
 	useEffect(() => {
 		if (!isDiff) {
-			setHtml(null);
+			setHighlighted(null);
 			return;
 		}
 		let cancelled = false;
 		void loadHljs()
-			.then((hljs) => { if (!cancelled) setHtml(hljs.highlight(shown, { language: "diff", ignoreIllegals: true }).value); })
+			.then((hljs) => { if (!cancelled) setHighlighted({ source: shown, html: hljs.highlight(shown, { language: "diff", ignoreIllegals: true }).value }); })
 			.catch(() => undefined);
 		return () => { cancelled = true; };
 	}, [shown, isDiff]);
@@ -414,7 +416,9 @@ const ToolCard = memo(function ToolCard({
 	// Auto-collapse the card the moment its run ends. Approval cards stay open:
 	// the user still has an action to take inside them.
 	useEffect(() => {
-		if (item.streaming && !running && !awaitingApproval && !userToggledRef.current) {
+		if (awaitingApproval) {
+			setCollapsed(false);
+		} else if (!running && !userToggledRef.current) {
 			setCollapsed(true);
 		}
 	}, [item.streaming, running, awaitingApproval]);
@@ -1045,6 +1049,8 @@ export function Conversation({
 	//     scrollTop while content grows below it, so after submitting a
 	//     message the list appeared to stick in the middle instead of
 	//     showing the newest bubble.
+	const firstItemId = items[0]?.id ?? "";
+	const previousFirstIdRef = useRef(firstItemId);
 	const isFirstRenderRef = useRef(true);
 	const prevLenRef = useRef(items.length);
 	const prevLastIdRef = useRef("");
@@ -1052,6 +1058,12 @@ export function Conversation({
 		const container = getScrollContainer();
 		if (!container) return;
 
+		if (previousFirstIdRef.current !== firstItemId) {
+			previousFirstIdRef.current = firstItemId;
+			isFirstRenderRef.current = true;
+			atBottomRef.current = true;
+			setAtBottom(true);
+		}
 		if (isFirstRenderRef.current) {
 			isFirstRenderRef.current = false;
 			preBatchScrollHeightRef.current = null;
@@ -1076,25 +1088,38 @@ export function Conversation({
 		// scrolling up to read history is never interrupted.
 		const lastItem = items[items.length - 1];
 		const appended = items.length !== prevLenRef.current || (lastItem?.id ?? "") !== prevLastIdRef.current;
-		if (appended && (atBottomRef.current || (lastItem?.role === "user" && !lastItem.agentMessage))) {
+		if (atBottomRef.current || (appended && lastItem?.role === "user" && !lastItem.agentMessage)) {
 			container.scrollTop = container.scrollHeight;
 		}
-	}, [items, renderCount]);
-
-	// Reset first-render flag when a full reload happens (workspace/session
-	// switch) so the new conversation gets an initial scroll-to-bottom.
-	const firstItemId = items.length > 0 ? items[0].id : "";
-	useEffect(() => {
-		isFirstRenderRef.current = true;
-		// The previous conversation may have been scrolled up; the new one
-		// starts pinned, so reset the mirror before the first scroll event.
-		atBottomRef.current = true;
-		setAtBottom(true);
-	}, [firstItemId]);
+		prevLenRef.current = items.length;
+		prevLastIdRef.current = lastItem?.id ?? "";
+	}, [items, renderCount, firstItemId]);
 
 	// Refs to each rendered item wrapper, keyed by item id. Used to scroll the
 	// active search match into view.
 	const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+	const [navigationTarget, setNavigationTarget] = useState<string | null>(null);
+	useLayoutEffect(() => {
+		if (!navigationTarget) return;
+		const element = itemRefs.current.get(navigationTarget);
+		const container = getScrollContainer();
+		if (element && container) {
+			element.scrollIntoView({ block: "start" });
+			container.scrollTop -= 24;
+			// content-visibility may replace estimated heights after revealing a
+			// distant turn. Correct once layout has settled before releasing it.
+			let attempts = 0;
+			const align = () => {
+				const delta = element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+				container.scrollTop += delta;
+				if (++attempts < 8) frame = requestAnimationFrame(align);
+				else setNavigationTarget(null);
+			};
+			let frame = requestAnimationFrame(align);
+			return () => cancelAnimationFrame(frame);
+		}
+	}, [navigationTarget, renderCount]);
 
 	// Scroll the active match into view (centered) whenever it changes. The
 	// element is guaranteed to exist because searching forces a full render.
@@ -1116,56 +1141,65 @@ export function Conversation({
 	const visibleItems = searching || renderCount >= items.length ? items : items.slice(items.length - renderCount);
 
 	return (
-		<div className="mx-auto max-w-3xl px-6 pb-32 pt-4">
-			{visibleItems.map((item, i) => {
-				const isActive = item.id === activeMatchId;
-				let content: React.ReactNode;
-				if (item.role === "user") {
-					content = item.agentMessage ? (
-						<AgentMessageCard item={item} highlight={searchQuery} highlightActive={isActive} />
-					) : (
-						<UserBubble item={item} highlight={searchQuery} highlightActive={isActive} />
+		<div>
+			<ConversationNav items={items} itemRefs={itemRefs} anchorRef={bottomAnchorRef} renderCount={renderCount} onNavigate={(id) => {
+				atBottomRef.current = false;
+				setAtBottom(false);
+				preBatchScrollHeightRef.current = null;
+				setRenderCount(items.length);
+				setNavigationTarget(id);
+			}} />
+			<div className={cn("mx-auto max-w-3xl pr-6 pb-32 pt-4", items.filter((item) => item.role === "user" && !item.agentMessage && !item.queued).length > 3 ? "pl-12 sm:pl-14" : "pl-6")}>
+				{visibleItems.map((item, i) => {
+					const isActive = item.id === activeMatchId;
+					let content: React.ReactNode;
+					if (item.role === "user") {
+						content = item.agentMessage ? (
+							<AgentMessageCard item={item} highlight={searchQuery} highlightActive={isActive} />
+						) : (
+							<UserBubble item={item} highlight={searchQuery} highlightActive={isActive} />
+						);
+					} else if (item.role === "system") {
+						content = <SystemNotice item={item} />;
+					} else if (item.role === "tool") {
+						content = <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
+					} else if (!item.streaming && !item.text && !item.thinking && !(item.images && item.images.length > 0)) {
+						// Skip empty assistant bubbles (turns that produced only tool calls).
+						return null;
+					} else {
+						content = <AssistantMessage item={item} highlight={searchQuery} highlightActive={isActive} />;
+					}
+					return (
+						<div
+							key={item.id}
+							className="[content-visibility:auto] [contain-intrinsic-size:auto_180px]"
+							ref={(el) => {
+								if (el) itemRefs.current.set(item.id, el);
+								else itemRefs.current.delete(item.id);
+							}}
+						>
+							{content}
+						</div>
 					);
-				} else if (item.role === "system") {
-					content = <SystemNotice item={item} />;
-				} else if (item.role === "tool") {
-					content = <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
-				} else if (!item.streaming && !item.text && !item.thinking && !(item.images && item.images.length > 0)) {
-					// Skip empty assistant bubbles (turns that produced only tool calls).
-					return null;
-				} else {
-					content = <AssistantMessage item={item} highlight={searchQuery} highlightActive={isActive} />;
-				}
-				return (
-					<div
-						key={item.id}
-						className="[content-visibility:auto] [contain-intrinsic-size:auto_180px]"
-						ref={(el) => {
-							if (el) itemRefs.current.set(item.id, el);
-							else itemRefs.current.delete(item.id);
-						}}
-					>
-						{content}
+				})}
+				{!atBottom && (
+					<div className="pointer-events-none sticky bottom-4 z-10 -mb-9 flex justify-center">
+						<button
+							type="button"
+							onClick={() => {
+								const container = getScrollContainer();
+								container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+							}}
+							className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted shadow-md transition-colors hover:text-fg"
+							title={t("conversation.backToBottom")}
+						>
+							<ArrowDown className="h-3.5 w-3.5" />
+							{t("conversation.backToBottom")}
+						</button>
 					</div>
-				);
-			})}
-			{!atBottom && (
-				<div className="pointer-events-none sticky bottom-4 z-10 -mb-9 flex justify-center">
-					<button
-						type="button"
-						onClick={() => {
-							const container = getScrollContainer();
-							container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-						}}
-						className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted shadow-md transition-colors hover:text-fg"
-						title={t("conversation.backToBottom")}
-					>
-						<ArrowDown className="h-3.5 w-3.5" />
-						{t("conversation.backToBottom")}
-					</button>
-				</div>
-			)}
-			<div ref={bottomAnchorRef} />
+				)}
+				<div ref={bottomAnchorRef} />
+			</div>
 		</div>
 	);
 }

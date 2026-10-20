@@ -29,23 +29,24 @@ function CodeBlock({
 }) {
 	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
-	const [html, setHtml] = useState<string | null>(null);
+	const [highlighted, setHighlighted] = useState<{ code: string; lang: string; html: string } | null>(null);
 	// Syntax highlighting is deferred while the message streams (the tail
 	// block re-renders every flush, so per-flush hljs work is wasted) and
 	// disabled while a search highlight is active (the two cannot compose).
 	// Huge blocks stay plain — highlighting them would jank the main thread.
 	const shouldHighlight = !!lang && !defer && !highlight && code.length < 100_000;
+	const html = shouldHighlight && highlighted?.code === code && highlighted.lang === lang ? highlighted.html : null;
 	useEffect(() => {
 		if (!shouldHighlight) {
-			setHtml(null);
+			setHighlighted(null);
 			return;
 		}
 		let cancelled = false;
 		void loadHljs()
 			.then((hljs) => {
 				if (cancelled) return;
-				if (!hljs.getLanguage(lang!)) { setHtml(null); return; }
-				setHtml(hljs.highlight(code, { language: lang!, ignoreIllegals: true }).value);
+				if (!hljs.getLanguage(lang!)) { setHighlighted(null); return; }
+				setHighlighted({ code, lang: lang!, html: hljs.highlight(code, { language: lang!, ignoreIllegals: true }).value });
 			})
 			.catch(() => undefined);
 		return () => { cancelled = true; };
@@ -193,7 +194,9 @@ function MarkdownImpl({
 		() => makeComponents(highlight, !!highlightActive, !!streaming),
 		[highlight, highlightActive, streaming],
 	);
-	const blocks = splitBlocks(children);
+	// Completed documents need a single parse for lists and reference links
+	// spanning blank lines. Only streaming uses incremental blocks.
+	const blocks = streaming ? splitBlocks(children) : [children];
 	return (
 		<div className={cn("md select-text", className)}>
 			{blocks.map((block, i) => (
