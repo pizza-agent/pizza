@@ -30,6 +30,8 @@ import {
 	type PetMeta,
 } from "./components/pet-shared";
 
+import { sendCommandAwait } from "./lib/transport";
+
 const PET_WIDGET_KEY = "pet-widget";
 
 type UiRequest = Record<string, unknown>;
@@ -42,6 +44,8 @@ function PetFloat() {
 	const [chatOpen, setChatOpen] = useState(false);
 	const [input, setInput] = useState("");
 	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState("");
+	const [sent, setSent] = useState(false);
 	const [look, setLook] = useState({ x: 0, y: 0 });
 	const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 	const shellRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +96,7 @@ function PetFloat() {
 			if (req.method !== "setWidget" || req.widgetKey !== PET_WIDGET_KEY) return;
 			const m = req.widgetMeta as PetMeta | undefined;
 			if (m && m.species) setMeta(m);
+			else if (req.widgetLines == null) { setMeta(null); setSaveMeta(null); }
 			setLines((req.widgetLines as string[] | undefined) ?? null);
 		});
 		return () => {
@@ -135,11 +140,14 @@ function PetFloat() {
 		const text = input.trim();
 		if (!text || busy) return;
 		setBusy(true);
+		setError("");
+		setSent(false);
 		try {
-			await invoke("rpc_command", { command: { type: "prompt", message: text } });
+			await sendCommandAwait({ type: "prompt", message: text }, 60000, true);
 			setInput("");
+			setSent(true);
 		} catch (e) {
-			console.error("prompt failed:", e);
+			setError(String(e));
 		} finally {
 			setBusy(false);
 		}
@@ -152,7 +160,7 @@ function PetFloat() {
 	const effectiveMeta = meta ?? saveMeta;
 	const noPet = !effectiveMeta && (!lines || lines.length === 0);
 	const customSpecies = Boolean(effectiveMeta?.species && !SPECIES[effectiveMeta.species]);
-	const showChat = chatOpen || hover;
+	const showChat = chatOpen || hover || Boolean(input) || busy || Boolean(error);
 	const mood: Mood = effectiveMeta?.mood ?? "idle";
 
 	return (
@@ -207,7 +215,7 @@ function PetFloat() {
 								transformOrigin: "center",
 							}}
 						>
-							{lines?.slice(0, -1).join("\n") ?? ""}
+							{lines?.slice(0, -1).join("\n") || "( ? )"}
 						</pre>
 					) : (
 						<PetSprite
@@ -225,7 +233,7 @@ function PetFloat() {
 				</div>
 				{effectiveMeta?.subtitle && <div style={petSubtitleStyle}>{effectiveMeta.subtitle}</div>}
 				{showChat && !noPet && (
-					<PetChatPill input={input} setInput={setInput} onSend={sendPrompt} onTranscribe={transcribe} />
+					<PetChatPill input={input} setInput={setInput} onSend={sendPrompt} onTranscribe={transcribe} sending={busy} error={error} sent={sent} autoFocus={chatOpen} onActive={() => setChatOpen(true)} />
 				)}
 				{!effectiveMeta && lines && lines.length > 0 && (
 					<pre style={petAsciiStyle}>{lines.join("\n")}</pre>

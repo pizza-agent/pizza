@@ -51,10 +51,10 @@ export async function invoke<T = unknown>(command: string, args?: Record<string,
 	}
 }
 
-export async function sendCommandRaw(command: Record<string, unknown>): Promise<string> {
+export async function sendCommandRaw(command: Record<string, unknown>, targetMain = false): Promise<string> {
 	if (isTauri()) {
 		const { invoke } = await import("@tauri-apps/api/core");
-		return invoke<string>("rpc_command", { command });
+		return invoke<string>("rpc_command", { command, targetMain });
 	}
 	await fetch("/rpc/command", {
 		method: "POST",
@@ -90,6 +90,7 @@ export function setRpcWorkspace(cwd: string | null): void {
 export async function sendCommandAwait<T = unknown>(
 	command: Record<string, unknown>,
 	timeoutMs = 15000,
+	targetMain = false,
 ): Promise<RpcResponse<T>> {
 	if (isTauri()) {
 		const { listen } = await import("@tauri-apps/api/event");
@@ -102,7 +103,7 @@ export async function sendCommandAwait<T = unknown>(
 		// time: during a workspace switch an in-flight command may be routed to
 		// the previous workspace — its response must NOT be adopted here, or the
 		// new workspace's view displays the old workspace's data.
-		const expectedCwd = rpcWorkspace;
+		const expectedCwd = targetMain ? null : rpcWorkspace;
 		return new Promise((resolve, reject) => {
 			// Tear the listener down exactly once. Several paths race to finish a
 			// request (matching response, timeout, send error) and, on page
@@ -141,14 +142,17 @@ export async function sendCommandAwait<T = unknown>(
 					// If the request already finished (e.g. timed out) before
 					// registration resolved, tear the listener down immediately.
 					if (settled) { try { fn(); } catch { /* ignore */ } }
-					else unlistenFn = fn;
+					else {
+						unlistenFn = fn;
+						sendCommandRaw(command, targetMain).catch((e) => finish(() => reject(e)));
+					}
 				})
-				.catch(() => { /* registration failed (reload) — swallow */ });
-			sendCommandRaw(command).catch((e) => {
-				finish(() => reject(e));
-			});
+				.catch((e) => finish(() => reject(e)));
 		});
 	}
+	// The development bridge owns only one project process and cannot route
+	// to the persistent assistant. Fail visibly instead of sending to that project.
+	if (targetMain) throw new Error("Pet chat with main is available in the desktop app.");
 	// Browser: generate id, register waiter BEFORE sending to avoid race
 	const id = (command.id as string) ?? crypto.randomUUID();
 	command.id = id;

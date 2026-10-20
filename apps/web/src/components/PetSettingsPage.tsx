@@ -128,19 +128,36 @@ export function PetSettingsPage({ menu, onAction, workspace }: { menu: Extension
 	// Chat pill → prompt into the session (main workspace, like the pet window).
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
+	const [chatError, setChatError] = useState("");
+	const [chatSent, setChatSent] = useState(false);
 	const [customizeOpen, setCustomizeOpen] = useState(false);
 	const [customScale, setCustomScale] = useState(pet?.scale ?? 1);
 	const [customSubtitle, setCustomSubtitle] = useState(pet?.subtitle ?? "");
 	const [miniOpen, setMiniOpen] = useState(pet?.floating === true);
+	useEffect(() => {
+		setMiniOpen(pet?.floating === true);
+	}, [pet?.floating]);
+	useEffect(() => {
+		if (!isTauri()) return;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void import("@tauri-apps/api/event").then(({ listen }) =>
+			listen<{ open: boolean }>("pet_window_state", (event) => setMiniOpen(event.payload.open)),
+		).then((fn) => { if (disposed) fn(); else unlisten = fn; }).catch(() => {});
+		return () => { disposed = true; unlisten?.(); };
+	}, []);
 	const sendPrompt = useCallback(async () => {
 		const text = input.trim();
 		if (!text || sending) return;
 		setSending(true);
+		setChatError("");
+		setChatSent(false);
 		try {
-			await sendCommandAwait({ type: "prompt", message: text });
+			await sendCommandAwait({ type: "prompt", message: text }, 60000, true);
 			setInput("");
+			setChatSent(true);
 		} catch (e) {
-			console.error("prompt failed:", e);
+			setChatError(String(e));
 		} finally {
 			setSending(false);
 		}
@@ -148,7 +165,6 @@ export function PetSettingsPage({ menu, onAction, workspace }: { menu: Extension
 
 	const runItem = (item: ExtensionMenuItemWire) => {
 		runExtensionMenuItem(item);
-		if (item === floatItem) setMiniOpen((open) => !open);
 		window.setTimeout(onAction, 500);
 	};
 
@@ -220,6 +236,9 @@ export function PetSettingsPage({ menu, onAction, workspace }: { menu: Extension
 							onTranscribe={isTauri() ? transcribe : undefined}
 							voice={isTauri()}
 							autoFocus={false}
+							sending={sending}
+							error={chatError}
+							sent={chatSent}
 						/>
 						{actionItems.length > 0 && (
 							<div className="mt-1 flex flex-wrap items-center justify-center gap-2">

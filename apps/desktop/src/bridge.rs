@@ -1036,7 +1036,16 @@ pub async fn init_sidecar(
 	state: tauri::State<'_, BridgeState>,
 	cwd: Option<String>,
 ) -> Result<String, String> {
-	let window_label = window.label().to_string();
+	let label = window.label().to_string();
+	init_workspace(window, state, cwd, label).await
+}
+
+async fn init_workspace(
+	window: tauri::Window,
+	state: tauri::State<'_, BridgeState>,
+	cwd: Option<String>,
+	window_label: String,
+) -> Result<String, String> {
 	log_file(&format!("init_sidecar: start, window={}", window_label));
 	if crate::updater::is_installing() {
 		return Err("Pizza is installing an update and will restart shortly".into());
@@ -1461,7 +1470,16 @@ pub async fn rpc_command(
 	window: tauri::Window,
 	state: tauri::State<'_, BridgeState>,
 	command: Value,
+	target_main: Option<bool>,
 ) -> Result<String, String> {
+	let use_main = target_main.unwrap_or(false) || window.label() == PET_WINDOW_LABEL;
+	if use_main {
+		// Serialize lazy main startup across both pet chat surfaces.
+		static MAIN_INIT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+		let _guard = MAIN_INIT.lock().await;
+		let cwd = persistent_chat_cwd().ok_or("Cannot locate main assistant workspace")?;
+		init_workspace(window.clone(), state.clone(), Some(cwd), "pet-chat".to_string()).await?;
+	}
 	let window_label = window.label();
 	log_file(&format!("rpc_command [{}]: {}", window_label, command));
 	let mut obj = command
@@ -1478,13 +1496,12 @@ pub async fn rpc_command(
 	let line = serde_json::to_string(&Value::Object(obj.clone())).map_err(|e| e.to_string())?;
 	log_file(&format!("rpc_command [{}] sending: {}", window_label, line));
 
-	// Route to the active sidecar for this window. The floating pet window
-	// owns no workspace — it proxies through "main" so voice/text typed on
-	// the pet lands in the primary session.
+	// Pet chat uses its own routing entry for the persistent main workspace;
+	// the main window may currently be displaying an unrelated project.
 	let cwd = {
 		let active = lock_ok(&state.active);
-		let label = if window_label == PET_WINDOW_LABEL {
-			"main"
+		let label = if use_main {
+			"pet-chat"
 		} else {
 			window_label
 		};
@@ -1868,6 +1885,12 @@ pub const PET_WINDOW_LABEL: &str = "pet";
 /// `setWidget` frames for the pet widget are cached in BridgeState so a
 /// freshly (re)opened pet window can be repainted immediately.
 fn emit_to_pet_window(app: &AppHandle, frame: &Value) {
+	if frame.get("type").and_then(|t| t.as_str()) == Some("response") {
+		if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+			let _ = win.emit("rpc_response", frame);
+		}
+		return;
+	}
 	if frame.get("type").and_then(|t| t.as_str()) != Some("extension_ui_request") {
 		return;
 	}
@@ -1965,8 +1988,8 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<String, String> {
 		tauri::WebviewUrl::App("pet.html".into()),
 	)
 	.title("Pizza Pet")
-	.inner_size(220.0, 210.0)
-	.max_inner_size(220.0, 210.0)
+	.inner_size(300.0, 300.0)
+	.max_inner_size(300.0, 300.0)
 	.resizable(false)
 	.maximizable(false)
 	.minimizable(false)

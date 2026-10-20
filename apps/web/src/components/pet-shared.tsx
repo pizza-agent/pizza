@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Mic, Square } from "lucide-react";
 
 export { PetSprite, SPECIES, type PetSpriteProps } from "./pet-sprites";
 
@@ -34,6 +35,10 @@ export function PetChatPill({
 	onTranscribe,
 	voice = true,
 	autoFocus = true,
+	sending = false,
+	error = "",
+	sent = false,
+	onActive,
 }: {
 	input: string;
 	setInput: (v: string) => void;
@@ -42,7 +47,16 @@ export function PetChatPill({
 	onTranscribe?: (audioB64: string, mimeType: string) => Promise<string>;
 	voice?: boolean;
 	autoFocus?: boolean;
+	sending?: boolean;
+	error?: string;
+	sent?: boolean;
+	onActive?: () => void;
 }) {
+	const [voiceError, setVoiceError] = useState("");
+	const [starting, setStarting] = useState(false);
+	const mountedRef = useRef(true);
+	const inputValueRef = useRef(input);
+	inputValueRef.current = input;
 	const [recording, setRecording] = useState(false);
 	const [transcribing, setTranscribing] = useState(false);
 	const recorderRef = useRef<MediaRecorder | null>(null);
@@ -61,9 +75,13 @@ export function PetChatPill({
 	};
 
 	const startRecording = async () => {
-		if (!onTranscribe) return;
+		if (!onTranscribe || starting || transcribing || sending) return;
+		onActive?.();
+		setVoiceError("");
+		setStarting(true);
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			if (!mountedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
 			streamRef.current = stream;
 			const mime = MediaRecorder.isTypeSupported("audio/mp4")
 				? "audio/mp4"
@@ -84,16 +102,16 @@ export function PetChatPill({
 				const reader = new FileReader();
 				reader.onload = async () => {
 					const result = reader.result;
-					if (typeof result !== "string") return;
+					if (typeof result !== "string" || !mountedRef.current) return;
 					const b64 = result.slice(result.indexOf(",") + 1);
 					setTranscribing(true);
 					try {
 						const text = await onTranscribe(b64, mimeRef.current);
-						if (text) setInput((input ? input.trimEnd() + " " : "") + text);
+						if (text && mountedRef.current) setInput((inputValueRef.current ? inputValueRef.current.trimEnd() + " " : "") + text);
 					} catch (e) {
-						console.error("transcribe failed:", e);
+						if (mountedRef.current) setVoiceError(String(e));
 					} finally {
-						setTranscribing(false);
+						if (mountedRef.current) setTranscribing(false);
 					}
 				};
 				reader.readAsDataURL(blob);
@@ -102,8 +120,11 @@ export function PetChatPill({
 			setRecording(true);
 			rec.start(250);
 		} catch (e) {
-			console.error("mic failed:", e);
+			stopStream();
+			setRecording(false);
+			setVoiceError(String(e));
 		}
+		finally { if (mountedRef.current) setStarting(false); }
 	};
 
 	const stopRecording = () => {
@@ -112,25 +133,31 @@ export function PetChatPill({
 		setRecording(false);
 	};
 
-	useEffect(() => () => {
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+		mountedRef.current = false;
 		if (recorderRef.current) {
 			recorderRef.current.onstop = null;
 			if (recorderRef.current.state !== "inactive") recorderRef.current.stop();
 		}
 		streamRef.current?.getTracks().forEach((track) => track.stop());
+		};
 	}, []);
 
 	return (
-		<div data-nodrag style={chatBarStyle}>
+		<div data-nodrag style={{ maxWidth: "100%", width: 256 }} onFocus={onActive}>
+			<div style={{ ...chatBarStyle, marginBottom: 5 }}>
 			<style>{"@keyframes petRecPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(229,72,77,.55); } 50% { box-shadow: 0 0 0 5px rgba(229,72,77,0); } }"}</style>
 			<input
 				ref={inputRef}
 				value={transcribing ? "transcribing…" : input}
-				disabled={transcribing}
-				placeholder={recording ? "listening…" : "say something"}
+				disabled={transcribing || sending}
+				aria-label="Message main assistant"
+				placeholder={recording ? "Listening…" : "Message main…"}
 				onChange={(e) => setInput(e.target.value)}
 				onKeyDown={(e) => {
-					if (e.key === "Enter") onSend();
+					if (e.key === "Enter" && !e.nativeEvent.isComposing && !recording && !sending && !transcribing && !starting) { e.preventDefault(); onSend(); }
 					if (e.key === "Escape") setInput("");
 					e.stopPropagation();
 				}}
@@ -139,7 +166,9 @@ export function PetChatPill({
 			{voice && onTranscribe && (
 				<button
 					type="button"
-					title={recording ? "Stop & transcribe" : "Hold a thought, speak it"}
+					aria-label={recording ? "Stop recording" : "Record voice"}
+					disabled={starting || transcribing || sending}
+					title={recording ? "Stop & transcribe" : "Record voice"}
 					onClick={() => (recording ? stopRecording() : void startRecording())}
 					style={{
 						...recButtonStyle,
@@ -147,9 +176,14 @@ export function PetChatPill({
 						animation: recording ? "petRecPulse 1.1s ease-in-out infinite" : undefined,
 					}}
 				>
-					{recording ? "■" : transcribing ? "…" : "●"}
+					{recording ? <Square size={12} /> : transcribing || starting ? "…" : <Mic size={14} />}
 				</button>
 			)}
+			<button type="button" aria-label="Send to main assistant" title="Send to main assistant" disabled={!input.trim() || sending || recording || transcribing || starting} onClick={onSend} style={{ ...recButtonStyle, color: input.trim() && !sending ? "#b8efda" : "#88918e", background: "rgba(255,255,255,.1)" }}><ArrowUp size={15} /></button>
+			</div>
+			<div role={error || voiceError ? "alert" : "status"} style={{ maxHeight: 42, overflowY: "auto", fontSize: 10, lineHeight: 1.3, textAlign: "center", color: error || voiceError ? "#ffb3b5" : "#e8f4e8", background: "rgba(16,20,24,.8)", borderRadius: 8, padding: "3px 6px", overflowWrap: "anywhere" }}>
+				{error || voiceError || (sending ? "Sending to main…" : sent ? "Sent · Continue in main" : "main assistant · Enter to send")}
+			</div>
 		</div>
 	);
 }
@@ -191,7 +225,9 @@ const chatBarStyle: React.CSSProperties = {
 };
 
 const chatInputStyle: React.CSSProperties = {
-	width: 118,
+	width: 0,
+	minWidth: 0,
+	flex: 1,
 	border: "none",
 	outline: "none",
 	background: "transparent",
