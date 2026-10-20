@@ -301,7 +301,7 @@ pub fn browser_view_open_tab(
 	let parsed = normalize_user_url(&url)?;
 	let state = app.state::<BrowserViewState>();
 	{
-		let mut tabs = state.tabs.lock().unwrap();
+		let tabs = state.tabs.lock().unwrap();
 		if tabs.iter().any(|(id, _)| *id == tab_id) {
 			return Err(format!("tab already exists: {tab_id}"));
 		}

@@ -1,0 +1,10 @@
+{
+	"name": "@tauri-apps/api",
+	"version": "0.0.0-test",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./index.js",
+		"./*": "./*.js"
+	}
+}

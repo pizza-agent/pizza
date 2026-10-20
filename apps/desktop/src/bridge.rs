@@ -1478,7 +1478,13 @@ pub async fn rpc_command(
 		static MAIN_INIT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 		let _guard = MAIN_INIT.lock().await;
 		let cwd = persistent_chat_cwd().ok_or("Cannot locate main assistant workspace")?;
-		init_workspace(window.clone(), state.clone(), Some(cwd), "pet-chat".to_string()).await?;
+		init_workspace(
+			window.clone(),
+			state.clone(),
+			Some(cwd),
+			"pet-chat".to_string(),
+		)
+		.await?;
 	}
 	let window_label = window.label();
 	log_file(&format!("rpc_command [{}]: {}", window_label, command));
@@ -1500,11 +1506,7 @@ pub async fn rpc_command(
 	// the main window may currently be displaying an unrelated project.
 	let cwd = {
 		let active = lock_ok(&state.active);
-		let label = if use_main {
-			"pet-chat"
-		} else {
-			window_label
-		};
+		let label = if use_main { "pet-chat" } else { window_label };
 		active.get(label).cloned()
 	};
 	let cwd = cwd.ok_or("No active workspace for this window")?;

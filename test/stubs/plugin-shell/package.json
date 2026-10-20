@@ -1,0 +1,20 @@
+{
+	"name": "@tauri-apps/plugin-shell",
+	"version": "0.0.0-test",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./index.js"
+	}
+}
+EOF
+_write test/stubs/plugin-shell/index.js <<'EOF'
+// Test stub for @tauri-apps/plugin-shell (see tauri-api/core.js for why this exists).
+export async function open() {
+	throw new Error("@tauri-apps/plugin-shell stub: open is unavailable outside the Tauri shell");
+}
+export class Command {
+	static create() {
+		throw new Error("@tauri-apps/plugin-shell stub: Command is unavailable outside the Tauri shell");
+	}
+}

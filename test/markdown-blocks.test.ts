@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitBlocks } from "./markdown-blocks";
+import { splitBlocks } from "../apps/web/src/lib/markdown-blocks";
 
 describe("splitBlocks", () => {
 	it("returns one block for text without blank lines", () => {

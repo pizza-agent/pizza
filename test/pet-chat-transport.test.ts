@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sendCommandAwait, setRpcWorkspace } from "../apps/web/src/lib/transport.js";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
-vi.mock("../apps/web/node_modules/@tauri-apps/api/core", () => ({ invoke: bridge.invoke }));
-vi.mock("../apps/web/node_modules/@tauri-apps/api/event", () => ({ listen: bridge.listen }));
+// @tauri-apps/* resolve to test/stubs via vitest alias (apps/web deps are not
+// installed by root npm ci); mock them on the specifier transport.ts imports.
+vi.mock("@tauri-apps/api/core", () => ({ invoke: bridge.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: bridge.listen }));
 
 afterEach(() => {
 	vi.unstubAllGlobals();
