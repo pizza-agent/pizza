@@ -47,7 +47,7 @@
 		"build:protocol": "npm run build -w @tomsun28/pizza-protocol",
 		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
 		"build:release": "npm run build && npm run vendor-tools",
-		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --outfile dist/pizza && npm run copy-binary-assets",
+		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets",
 		"build:desktop": "npm run build:binary && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
 		"dev:desktop": "npm run build && npm run fix:pty-permissions && npm run prepare-desktop-resources && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri dev",
 		"fix:pty-permissions": "node scripts/fix-pty-permissions.mjs",
