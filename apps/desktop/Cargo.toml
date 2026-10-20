@@ -1,6 +1,6 @@
 [package]
 name = "pizza-gui"
-version = "0.4.1"
+version = "0.4.2"
 description = "Pizza desktop GUI"
 edition = "2021"
 rust-version = "1.90"
