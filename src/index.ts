@@ -331,3 +331,7 @@ export * from "./core/event-store/async-storage.js";
 export * from "./core/event-store/async-projection-store.js";
 export * from "./core/event-store/postgres-storage.js";
 export * from "./core/event-store/sqlite-snapshot.js";
+
+// The SDK's own TypeBox instance. Tool `parameters` must be built with it:
+// a second TypeBox copy in the host breaks TSchema's unique [Kind] symbol typing.
+export { Type, type Static, type TSchema } from "@sinclair/typebox";

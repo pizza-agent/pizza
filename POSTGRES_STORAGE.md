@@ -34,8 +34,9 @@ try {
 }
 ```
 
-The host supplies the `pg` pool; the SDK does not add a mandatory pg dependency.
-Use Node 22.13+ for the default Node SQLite projection and legacy reader. Existing
+The host supplies the `pg` pool; `pg` is declared as an optional peer dependency
+(`^8.11.0`), so CLI/SQLite installs never pull it in. Node 22.13+ is required
+(`engines`) for the unflagged `node:sqlite` projection and legacy reader. Existing
 SQLite callers retain `dispose()`. Async callers should await `disposeAsync()` or
 `closeAsync()`; a plain `dispose()` only starts a best-effort background flush and
 close, so its errors are logged instead of surfaced. Closing a store that has

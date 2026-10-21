@@ -101,6 +101,14 @@
 			"rimraf": "6.1.2"
 		}
 	},
+	"peerDependencies": {
+		"pg": "^8.11.0"
+	},
+	"peerDependenciesMeta": {
+		"pg": {
+			"optional": true
+		}
+	},
 	"optionalDependencies": {
 		"@mariozechner/clipboard": "^0.3.2"
 	},
@@ -135,6 +143,6 @@
 		"url": "https://github.com/pizza-agent/pizza.git"
 	},
 	"engines": {
-		"node": ">=22.5.0"
+		"node": ">=22.13.0"
 	}
 }
