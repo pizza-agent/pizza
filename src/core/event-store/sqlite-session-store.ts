@@ -24,6 +24,18 @@ export class SqliteSessionStore implements SessionStore {
 		return { threads, sessions, watermark_sequence: this._loadWatermark() };
 	}
 
+	/** Drop all thread/session rows and the watermark (used to rebuild a disposable projection). */
+	clearSessionIndex(): void {
+		this.db.exec("begin");
+		try {
+			this.db.exec("delete from threads; delete from sessions; delete from session_index_meta;");
+			this.db.exec("commit");
+		} catch (error) {
+			this.db.exec("rollback");
+			throw error;
+		}
+	}
+
 	saveSessionIndex(index: SessionIndex): void {
 		this.db.exec("begin");
 		try {

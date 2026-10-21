@@ -67,7 +67,7 @@ export function estimateContextUsage(model: Model<any> | undefined, messages: Ag
 }
 
 export interface ExtensionBindingDeps {
-	store: SqliteEventStore;
+	store: import("../event-store/async-storage.js").SessionEventStore;
 	projection: SessionProjection;
 	sessionManager: ProjectionSessionManager;
 	extensionSessionManager: EventStoreExtensionSessionManager;

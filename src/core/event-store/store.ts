@@ -61,6 +61,10 @@ export interface SubscribeOptions {
 export interface EventStore {
 	/** Workspace identifier */
 	readonly workspace_id: string;
+	/** Optional durability barrier for asynchronous persistence backends. */
+	flush?(): Promise<void>;
+	onPersistenceError?(handler: (error: Error) => void): () => void;
+	closeAsync?(): Promise<void>;
 
 	/**
 	 * Append a new event.

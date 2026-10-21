@@ -25,7 +25,7 @@ export interface ForkSource {
 }
 
 export function prepareForkedSession(options: {
-	store: SqliteEventStore;
+	store: import("../event-store/async-storage.js").SessionEventStore;
 	sessionManager: ProjectionSessionManager;
 	agentDir: string;
 	source: ForkSource;

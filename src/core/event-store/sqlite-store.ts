@@ -61,11 +61,16 @@ export class SqliteEventStore implements EventStore, SessionStore {
 
 	readonly workspace_id: string;
 
+	/** False for embedded projections (e.g. AsyncProjectionStore): never touch the local workspace meta.json. */
+	private readonly touchWorkspaceMeta: boolean;
+
 	constructor(
 		workspaceId: string,
 		dbPath: string,
 		private runtimeId = "local_runtime",
+		options: { touchWorkspaceMeta?: boolean } = {},
 	) {
+		this.touchWorkspaceMeta = options.touchWorkspaceMeta ?? true;
 		this.workspace_id = workspaceId;
 		if (dbPath !== ":memory:") {
 			mkdirSync(dirname(dbPath), { recursive: true });
@@ -175,6 +180,7 @@ export class SqliteEventStore implements EventStore, SessionStore {
 	private _metaTouchTimer: ReturnType<typeof setTimeout> | undefined;
 
 	private _touchMetaOnMessage(eventType: string): void {
+		if (!this.touchWorkspaceMeta) return;
 		if (eventType !== "USER_MESSAGE" && eventType !== "AGENT_MESSAGE_START") return;
 		// Throttle: last_accessed_at only feeds workspace-list recency sorting.
 		// Without this, every message did a synchronous read+parse+write of
@@ -362,6 +368,26 @@ export class SqliteEventStore implements EventStore, SessionStore {
 
 	saveSessionIndex(index: SessionIndex): void {
 		this.sessionStore.saveSessionIndex(index);
+	}
+
+	/** @internal Replace (not merge) the session index — for rebuilt projection caches. */
+	clearSessionIndex(): void {
+		this.sessionStore.clearSessionIndex();
+	}
+
+	/** @internal Small key/value metadata, e.g. the identity of a projection cache's source log. */
+	getStoreMeta(key: string): string | undefined {
+		this.db.exec("create table if not exists store_meta (key text primary key, value text not null)");
+		const row = this.db.prepare("select value from store_meta where key = ?").get(key) as { value: string } | undefined;
+		return row?.value;
+	}
+
+	/** @internal */
+	setStoreMeta(key: string, value: string): void {
+		this.db.exec("create table if not exists store_meta (key text primary key, value text not null)");
+		this.db
+			.prepare("insert into store_meta (key, value) values (?, ?) on conflict(key) do update set value = excluded.value")
+			.run(key, value);
 	}
 
 	// Enable WAL so external readers (GUI, ad-hoc sqlite3) do not block writes,
@@ -631,7 +657,8 @@ function lockRetryDelayMs(attempt: number): number {
 	return base + Math.random() * base;
 }
 
-function matchesSubscription(event: EventBase, options?: SubscribeOptions, afterSequence?: number): boolean {
+/** @internal Shared subscription filter, also used by AsyncProjectionStore. */
+export function matchesSubscription(event: EventBase, options?: SubscribeOptions, afterSequence?: number): boolean {
 	if (!options) return true;
 	if (options.after) {
 		// afterSequence was resolved at subscribe time. When the `after` event

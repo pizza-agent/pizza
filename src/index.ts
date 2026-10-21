@@ -326,3 +326,8 @@ export { copyToClipboard } from "./utils/clipboard.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.js";
+
+export * from "./core/event-store/async-storage.js";
+export * from "./core/event-store/async-projection-store.js";
+export * from "./core/event-store/postgres-storage.js";
+export * from "./core/event-store/sqlite-snapshot.js";

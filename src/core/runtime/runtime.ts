@@ -119,6 +119,7 @@ export class EventSourcedRuntime {
 	/** Agent data directory */
 	get agentDir(): string { return this.config.agentDir ?? getAgentDir(); }
 	private _isProcessing = false;
+	private _disposed = false;
 	/** Shared turn-level state across reactor lifecycles (follow-ups, retries,
 	 * trackers, approvals). Survives per-prompt reactor restarts. */
 	private readonly turnState = new TurnState(generateRunId());
@@ -183,8 +184,15 @@ export class EventSourcedRuntime {
 		}
 
 		this._isProcessing = true;
-
+		let rejectStorage!: (error: Error) => void;
+		const storageFailure = new Promise<never>((_resolve, reject) => { rejectStorage = reject; });
+		void storageFailure.catch(() => {});
+		const unsubscribeStorage = this.rawStore.onPersistenceError?.((error) => {
+			this.reactor?.interrupt();
+			rejectStorage(error);
+		});
 		try {
+			if (this.rawStore.flush) await this.rawStore.flush();
 			// An idle-triggered compaction (compact() with no live reactor) may
 			// still be running; the new turn must not race it — both rewrite the
 			// same context boundary.
@@ -248,8 +256,11 @@ export class EventSourcedRuntime {
 			});
 			promptThreadId = userMessage.thread_id;
 
-			await settledPromise;
+			if (this.rawStore.onPersistenceError) await Promise.race([settledPromise, storageFailure]);
+			else await settledPromise;
+			if (this.rawStore.flush) await this.rawStore.flush();
 		} finally {
+			unsubscribeStorage?.();
 			this._turnSubscription?.();
 			this._turnSubscription = undefined;
 			this.reactor?.stop();
@@ -839,7 +850,14 @@ export class EventSourcedRuntime {
 	/**
 	 * Dispose the runtime.
 	 */
+	async disposeAsync(): Promise<void> {
+		this.dispose();
+		if (this.ownsStore) await this.rawStore.closeAsync?.();
+	}
+
 	dispose(): void {
+		if (this._disposed) return;
+		this._disposed = true;
 		// Cancel an in-flight idle compaction before the store goes away. Its
 		// remaining appends then fail closed inside _runIdleCompaction (which
 		// never rejects), so nothing escapes as an unhandled rejection here.

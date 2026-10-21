@@ -17,7 +17,12 @@ export class ThreadScopedStore implements EventStore {
 	constructor(
 		private readonly inner: EventStore,
 		private readonly threadId: string | (() => string | undefined),
-	) {}
+	) {
+		if (inner.flush) this.flush = () => inner.flush!();
+		if (inner.onPersistenceError) this.onPersistenceError = (handler) => inner.onPersistenceError!(handler);
+	}
+	readonly flush?: () => Promise<void>;
+	readonly onPersistenceError?: (handler: (error: Error) => void) => () => void;
 
 	private _threadId(): string | undefined {
 		return typeof this.threadId === "function" ? this.threadId() : this.threadId;

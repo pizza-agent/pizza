@@ -51,3 +51,6 @@ pizza
 ---
 
 ![desktop](./resources/pizza-desktop-white.png)
+## Server event storage
+
+Server SDK hosts can inject asynchronous PostgreSQL persistence while keeping the default SQLite API. See [PostgreSQL event storage](POSTGRES_STORAGE.md) for commit barriers, ownership, migration and operational limits.

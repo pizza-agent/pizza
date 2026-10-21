@@ -343,6 +343,11 @@ export class SessionFacade {
 		this.runtime.setSystemPrompt(prompt);
 	}
 
+	async disposeAsync(): Promise<void> {
+		this.dispose();
+		await this.runtime.disposeAsync();
+	}
+
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;

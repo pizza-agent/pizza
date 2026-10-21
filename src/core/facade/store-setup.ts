@@ -6,6 +6,7 @@
  */
 
 import { acquireWorkspaceLock } from "../agent/main-agent.js";
+import type { SessionEventStore } from "../event-store/async-storage.js";
 import { SqliteEventStore } from "../event-store/sqlite-store.js";
 import {
 	deriveWorkspaceId,
@@ -26,6 +27,8 @@ export interface StoreSetupOptions {
 	isMainAgent: boolean;
 	workspaceId?: string;
 	storagePath?: string;
+	/** Already-opened store. Caller must exclusively lease its persistence scope. */
+	store?: SessionEventStore;
 	sessionId?: string;
 	/** Caller-supplied thread id (multi-tenant isolation). Wins over sessionId. */
 	threadId?: string;
@@ -34,7 +37,7 @@ export interface StoreSetupOptions {
 
 export interface StoreSetupResult {
 	workspaceId: string;
-	store: SqliteEventStore;
+	store: SessionEventStore;
 	sessionManager: ProjectionSessionManager;
 	/** Release callback for the advisory workspace lock, if acquired. */
 	workspaceLock: { release: () => void } | null;
@@ -42,8 +45,9 @@ export interface StoreSetupResult {
 
 export function setupEventStore(options: StoreSetupOptions): StoreSetupResult {
 	const { cwd, agentDir, rawAgentDir, isMainAgent } = options;
-	const workspaceId = options.workspaceId ?? deriveWorkspaceId(cwd);
-	if (options.storagePath !== ":memory:") {
+	const workspaceId = options.workspaceId ?? options.store?.workspace_id ?? deriveWorkspaceId(cwd);
+	if (options.store && options.store.workspace_id !== workspaceId) throw Error("Injected store workspace mismatch");
+	if (!options.store && options.storagePath !== ":memory:") {
 		ensureWorkspaceMeta(workspaceId, cwd, rawAgentDir);
 	}
 	// Best-effort workspace lock: if another Pizza process is already driving
@@ -51,13 +55,13 @@ export function setupEventStore(options: StoreSetupOptions): StoreSetupResult {
 	// not a hard gate. This allows the CLI and the desktop gateway to coexist
 	// on the same workspace without blocking each other.
 	let workspaceLock: { release: () => void } | null = null;
-	if (!isMainAgent && options.storagePath !== ":memory:" && agentDir) {
+	if (!options.store && !isMainAgent && options.storagePath !== ":memory:" && agentDir) {
 		workspaceLock = acquireWorkspaceLock(getWorkspaceDir(workspaceId, agentDir));
 		if (!workspaceLock) {
 			console.warn(`Warning: workspace ${workspaceId} (cwd ${cwd}) is already in use by another Pizza process. Proceeding anyway.`);
 		}
 	}
-	const store = new SqliteEventStore(
+	const store = options.store ?? new SqliteEventStore(
 		workspaceId,
 		options.storagePath ?? getEventDatabasePath(workspaceId, rawAgentDir),
 	);
@@ -66,7 +70,7 @@ export function setupEventStore(options: StoreSetupOptions): StoreSetupResult {
 	// AGENT_TURN_COMPLETED). Only safe when we are the sole workspace driver:
 	// with a concurrent live process an in-flight tool is indistinguishable
 	// from a crashed one.
-	if (workspaceLock || isMainAgent || options.storagePath === ":memory:") {
+	if (options.store || workspaceLock || isMainAgent || options.storagePath === ":memory:") {
 		try {
 			const recovered = recoverDanglingTurnState(store);
 			if (recovered.compensated_tool_call_ids.length > 0) {
@@ -75,6 +79,7 @@ export function setupEventStore(options: StoreSetupOptions): StoreSetupResult {
 				);
 			}
 		} catch (error) {
+			if (options.store) throw error;
 			console.warn(`Crash recovery scan failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
@@ -82,6 +87,7 @@ export function setupEventStore(options: StoreSetupOptions): StoreSetupResult {
 		store,
 		store,
 	);
+	if (options.store && options.forkFrom && options.forkFrom.workspaceId !== workspaceId) throw Error("Custom storage requires an explicit cross-workspace fork resolver");
 	if (options.forkFrom) {
 		prepareForkedSession({ store, sessionManager, agentDir, source: options.forkFrom });
 	} else if (options.threadId) {
