@@ -49,7 +49,7 @@ import { BrowserFrameServer } from "../../src/core/browser/frame-server.js";
 import { resolveNativeResult, setNativeBridge } from "../../src/core/browser/native-bridge.js";
 import { type Theme, theme, resolveThemeIcon, resolveThemeVideo, getBuiltinWebThemes } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
-import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "@tomsun28/pizza-protocol";
+import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "../protocol/index.js";
 import { installCrashHandlers } from "../../src/core/ops/crash-handlers.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
@@ -1524,7 +1524,7 @@ export async function runRpcModeWithFacade(
 				return success(id, "get_scheduler_policy", { policy: facade.settingsManager.getSchedulerPolicy() });
 			}
 			case "set_scheduler_policy": {
-				const policy = (command as unknown as { policy: import("@tomsun28/pizza-protocol").SchedulerPolicy }).policy;
+				const policy = (command as unknown as { policy: import("../protocol/index.js").SchedulerPolicy }).policy;
 				facade.settingsManager.setSchedulerPolicy(policy);
 				return success(id, "set_scheduler_policy", { policy: facade.settingsManager.getSchedulerPolicy() });
 			}
@@ -1532,7 +1532,7 @@ export async function runRpcModeWithFacade(
 				return success(id, "get_network", { network: facade.settingsManager.getNetworkSettings() });
 			}
 			case "set_network": {
-				const network = (command as unknown as { network: import("@tomsun28/pizza-protocol").NetworkSettings }).network;
+				const network = (command as unknown as { network: import("../protocol/index.js").NetworkSettings }).network;
 				facade.settingsManager.setNetworkSettings(network ?? {});
 				return success(id, "set_network", { network: facade.settingsManager.getNetworkSettings() });
 			}

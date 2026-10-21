@@ -24,7 +24,7 @@ import {
 	type AgentConnection,
 } from "../packages/gateway/gateway-server.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
-import type { RpcCommand, RpcResponse } from "@tomsun28/pizza-protocol";
+import type { RpcCommand, RpcResponse } from "../packages/protocol/index.js";
 
 /** Fake agent that records the messages it is handed. */
 class RecordingAgent implements AgentConnection {

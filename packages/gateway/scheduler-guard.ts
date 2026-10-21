@@ -23,7 +23,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readTasks } from "../../src/core/scheduler/store.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
-import type { ScheduledTask } from "@tomsun28/pizza-protocol";
+import type { ScheduledTask } from "../protocol/index.js";
 
 /**
  * Can this task ever fire? Mirrors the engine's gating: it must be enabled,

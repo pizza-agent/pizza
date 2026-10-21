@@ -4,7 +4,7 @@
  * Spawns the agent in RPC mode and provides a typed API for all operations.
  */
 
-import { COMPACTION_RPC_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
+import { COMPACTION_RPC_TIMEOUT_MS } from "../protocol/index.js";
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { COMPACTION_TIMEOUT_MS, COMPACTION_RPC_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
+import { COMPACTION_TIMEOUT_MS, COMPACTION_RPC_TIMEOUT_MS } from "../packages/protocol/index.js";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
 import type { CompactionOutcome } from "../src/core/runtime/policies.js";
 import { RpcClient } from "../packages/rpc/rpc-client.js";

@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { VoiceSettings } from "@tomsun28/pizza-protocol";
+import type { VoiceSettings } from "../protocol/index.js";
 import { AuthStorage } from "../../src/core/auth/auth-storage.js";
 import { resolveConfigValue } from "../../src/core/config/resolve-config-value.js";
 

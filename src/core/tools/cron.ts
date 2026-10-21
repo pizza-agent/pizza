@@ -25,7 +25,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
-import type { ScheduleSpec, ScheduledTaskSummary } from "@tomsun28/pizza-protocol";
+import type { ScheduleSpec, ScheduledTaskSummary } from "../../../packages/protocol/index.js";
 import type { SchedulerEngine } from "../scheduler/engine.js";
 import { parseScheduleShorthand } from "../scheduler/shorthand.js";
 import { mutateTaskAnyScope, readTasksAllScopes } from "../scheduler/store.js";

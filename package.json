@@ -28,24 +28,21 @@
 		"./sdk": {
 			"types": "./dist/src/core/sdk.d.ts",
 			"import": "./dist/src/core/sdk.js"
+		},
+		"./protocol": {
+			"types": "./dist/packages/protocol/index.d.ts",
+			"import": "./dist/packages/protocol/index.js"
 		}
 	},
 	"files": [
 		"dist"
 	],
-	"workspaces": [
-		"packages/protocol"
-	],
-	"bundleDependencies": [
-		"@tomsun28/pizza-protocol"
-	],
 	"scripts": {
-		"clean": "shx rm -rf dist && npm run clean -w @tomsun28/pizza-protocol",
+		"clean": "shx rm -rf dist",
 		"generate-providers": "node scripts/generate-providers.mjs",
 		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"start": "node dist/src/cli.js",
-		"build:protocol": "npm run build -w @tomsun28/pizza-protocol",
-		"build": "npm run build:protocol && tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
+		"build": "tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
 		"build:release": "npm run build && npm run vendor-tools",
 		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets",
 		"build:desktop": "npm run build:binary && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
@@ -71,7 +68,6 @@
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"@sinclair/typebox": "^0.34.41",
 		"@slack/bolt": "^3.22.0",
-		"@tomsun28/pizza-protocol": "^0.2.1",
 		"ajv": "^8.17.1",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",

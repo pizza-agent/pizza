@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionLockManager } from "../../src/core/scheduler/locks.js";
-import type { ScheduledTask } from "@tomsun28/pizza-protocol";
+import type { ScheduledTask } from "../../packages/protocol/index.js";
 
 function makeTask(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
 	return {

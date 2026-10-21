@@ -1,4 +1,4 @@
-import { COMPACTION_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
+import { COMPACTION_TIMEOUT_MS } from "../../../packages/protocol/index.js";
 import type { CompactionOutcome, CompactionPolicy } from "./policies.js";
 
 /** Both idle and in-turn compaction must cancel before reporting a timeout. */

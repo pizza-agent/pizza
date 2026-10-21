@@ -23,13 +23,12 @@
 		"rootDir": ".",
 		"baseUrl": ".",
 		"paths": {
-			"@tomsun28/pizza-protocol": ["./packages/protocol/index.ts"],
 			"@pizza/http-bridge": ["./packages/http-bridge/server.ts"],
 			"@pizza/rpc": ["./packages/rpc/rpc-mode.ts"],
 			"@pizza/tui": ["./packages/tui/interactive-mode.ts"],
 			"@pizza/cli": ["./packages/cli/args.ts"]
 		}
 	},
-	"include": ["src/**/*.ts", "packages/http-bridge/server.ts", "packages/rpc/*.ts", "packages/tui/**/*.ts", "packages/cli/*.ts"],
+	"include": ["src/**/*.ts", "packages/http-bridge/server.ts", "packages/rpc/*.ts", "packages/tui/**/*.ts", "packages/cli/*.ts", "packages/protocol/*.ts"],
 	"exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
 }

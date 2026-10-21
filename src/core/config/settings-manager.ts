@@ -17,7 +17,7 @@ import {
 
 /** File name of the plugin registry inside the agent dir. */
 export const EXTENSION_REGISTRY_FILE = "extensions.json";
-import type { NetworkSettings, SchedulerPolicy, VoiceSettings } from "@tomsun28/pizza-protocol";
+import type { NetworkSettings, SchedulerPolicy, VoiceSettings } from "../../../packages/protocol/index.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true

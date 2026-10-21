@@ -12,7 +12,7 @@
  * interval bounds). No scheduling logic is duplicated.
  */
 
-import type { ScheduleSpec } from "@tomsun28/pizza-protocol";
+import type { ScheduleSpec } from "../../../packages/protocol/index.js";
 import { cronToSpec, validateCron } from "./cron.js";
 import {
 	SCHEDULE_MAX_INTERVAL_N,
