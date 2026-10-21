@@ -55,6 +55,8 @@ export interface EventSourcedRuntimeConfig {
 	runtimeAdapter?: RuntimeAdapter;
 	/** Approval handler for UI */
 	approvalHandler?: ApprovalHandler;
+	/** Authoritative pre-execution tool gate; see ReactorConfig.beforeToolCall. */
+	beforeToolCall?: import("./reactor.js").ToolCallGate;
 	/** LLM client */
 	llmClient: LLMClient;
 	/** System prompt */
@@ -210,6 +212,7 @@ export class EventSourcedRuntime {
 				classifier: this.classifier,
 				toolRegistry: this.config.toolRegistry,
 				approvalHandler: this.config.approvalHandler,
+				beforeToolCall: this.config.beforeToolCall,
 				runtimeAdapter: this.runtimeAdapter,
 				systemPrompt: this.config.systemPrompt,
 				model: this.config.model,
@@ -895,6 +898,7 @@ export function createEventSourcedRuntime(
 		classifierConfig: config.classifierConfig,
 		runtimeAdapter: config.runtimeAdapter,
 		approvalHandler: config.approvalHandler,
+		beforeToolCall: config.beforeToolCall,
 		llmClient: config.llmClient,
 		systemPrompt: config.systemPrompt,
 		model: config.model,

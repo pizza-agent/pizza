@@ -57,6 +57,15 @@ import { DefaultRetryPolicy, NoopCompactionPolicy } from "./policies.js";
 // Types
 // ============================================================================
 
+export interface ToolCallGateInput {
+	tool_call_id: string;
+	tool_name: string;
+	arguments: Record<string, unknown>;
+}
+export type ToolCallGate = (
+	call: ToolCallGateInput,
+) => Promise<{ block?: boolean; reason?: string } | undefined | void>;
+
 /** Reactor configuration */
 export interface ReactorConfig {
 	/** Shared turn-level state (follow-ups, retries, trackers, approvals).
@@ -69,6 +78,11 @@ export interface ReactorConfig {
 	classifier: IntentClassifier;
 	toolRegistry: ToolRegistry;
 	approvalHandler?: ApprovalHandler;
+	/** Authoritative pre-execution gate (e.g. extension `tool_call` handlers).
+	 * Runs after approval and before TOOL_EXECUTION_START. It receives a private
+	 * copy of the arguments; in-place mutations are what the tool executes.
+	 * Returning `{ block: true }` or throwing rejects the call (fail closed). */
+	beforeToolCall?: ToolCallGate;
 	runtimeAdapter: RuntimeAdapter;
 	systemPrompt: string;
 	model: { provider: string; model_id: string; thinking_level?: string };
@@ -1093,8 +1107,32 @@ export class Reactor {
 			}
 		}
 
+		// Private copy: gate mutations must not leak into the logged intent event.
+		const args = structuredClone(payload.arguments ?? {});
+		if (this.config.beforeToolCall) {
+			let decision: { block?: boolean; reason?: string } | undefined | void;
+			try {
+				decision = await this.config.beforeToolCall({
+					tool_call_id: payload.tool_call_id,
+					tool_name: payload.tool_name,
+					arguments: args,
+				});
+			} catch (err) {
+				decision = { block: true, reason: `tool_call hook failed: ${err instanceof Error ? err.message : String(err)}` };
+			}
+			if (decision?.block) {
+				const reason = decision.reason?.trim() || "Blocked by tool_call hook";
+				this._emitToolExecutionRejected(payload.tool_call_id, payload.tool_name, {
+					content: [{ type: "text", text: `Tool execution blocked: ${reason}` }],
+					is_error: true,
+					error_message: reason,
+				}, event.event_id);
+				return;
+			}
+		}
+
 		// Execute the tool
-		await this._executeTool(event.event_id, payload.tool_call_id, payload.tool_name, payload.arguments);
+		await this._executeTool(event.event_id, payload.tool_call_id, payload.tool_name, args);
 	}
 
 	private async _executeTool(causedBy: string, tool_call_id: string, tool_name: string, args: Record<string, unknown>): Promise<void> {

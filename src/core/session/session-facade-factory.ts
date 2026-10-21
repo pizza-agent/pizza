@@ -436,6 +436,9 @@ export async function createSessionFacade(
 						requestApproval: () => {},
 						cancelApproval: () => {},
 					},
+		// Extension `tool_call` handlers are enforced before execution: a
+		// `{ block: true }` result (or a throwing handler) rejects the call.
+		beforeToolCall: extensionRunner.createToolCallGate(),
 		retryAssistantErrorCompletions: true,
 		retryPolicy: new DefaultRetryPolicy({ capDelayMs: settingsManager.getRetrySettings().maxDelayMs }),
 		contextBudget: options.contextBudget ?? model?.contextWindow ?? 128000,

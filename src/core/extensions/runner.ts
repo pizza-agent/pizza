@@ -256,6 +256,7 @@ export class ExtensionRunner {
 	private eventStoreLastMessage: AgentMessage | undefined;
 	private eventStoreToolResults: ToolResultMessage[] = [];
 	private eventStoreToolCallsEmitted = new Set<string>();
+	private toolCallGateInstalled = false;
 
 	constructor(
 		extensions: Extension[],
@@ -525,11 +526,32 @@ export class ExtensionRunner {
 		return [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }];
 	}
 
+	/**
+	 * Pre-execution gate for the runtime. Once installed, `tool_call` handlers
+	 * run here (before the tool executes, able to block or mutate `input`)
+	 * instead of from the after-the-fact event-store observer. A throwing
+	 * handler blocks the call: a policy hook must fail closed.
+	 */
+	createToolCallGate(): (call: {
+		tool_call_id: string;
+		tool_name: string;
+		arguments: Record<string, unknown>;
+	}) => Promise<ToolCallEventResult | undefined> {
+		this.toolCallGateInstalled = true;
+		return async (call) =>
+			this.emitToolCall(
+				{ type: "tool_call", toolCallId: call.tool_call_id, toolName: call.tool_name, input: call.arguments } as ToolCallEvent,
+				{ failClosed: true },
+			);
+	}
+
 	private async emitEventStoreToolCall(
 		toolCallId: string,
 		toolName: string,
 		input: Record<string, unknown>,
 	): Promise<void> {
+		// The gate already ran the handlers before execution; never twice.
+		if (this.toolCallGateInstalled) return;
 		if (this.eventStoreToolCallsEmitted.has(toolCallId)) return;
 		this.eventStoreToolCallsEmitted.add(toolCallId);
 		await this.emitToolCall({
@@ -978,7 +1000,10 @@ export class ExtensionRunner {
 		};
 	}
 
-	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
+	async emitToolCall(
+		event: ToolCallEvent,
+		options: { failClosed?: boolean } = {},
+	): Promise<ToolCallEventResult | undefined> {
 		const ctx = this.createContext();
 		let result: ToolCallEventResult | undefined;
 
@@ -1007,6 +1032,8 @@ export class ExtensionRunner {
 						error: message,
 						stack,
 					});
+					// As an execution gate, a crashed policy hook must not let the call through.
+					if (options.failClosed) return { block: true, reason: `tool_call handler failed: ${message}` };
 				}
 			}
 		}

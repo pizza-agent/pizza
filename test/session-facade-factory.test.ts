@@ -203,6 +203,30 @@ describe("createSessionFacade", () => {
 		facade.dispose();
 	});
 
+	it("enforces extension tool_call handlers as a pre-execution gate", async () => {
+		const extension = makeExtension();
+		const seen: string[] = [];
+		extension.handlers.set("tool_call", [
+			async (event: any) => {
+				seen.push(event.toolName);
+				return event.toolName === "dangerous" ? { block: true, reason: "denied" } : undefined;
+			},
+		]);
+		const { facade, runtime } = await createSessionFacade({
+			...makeOptions(),
+			resourceLoader: makeResourceLoader([extension]),
+		});
+		const gate = (runtime as any).config.beforeToolCall;
+		expect(typeof gate).toBe("function");
+		await expect(gate({ tool_call_id: "a", tool_name: "dangerous", arguments: {} })).resolves.toMatchObject({
+			block: true,
+			reason: "denied",
+		});
+		await expect(gate({ tool_call_id: "b", tool_name: "safe", arguments: {} })).resolves.toBeUndefined();
+		expect(seen).toEqual(["dangerous", "safe"]);
+		facade.dispose();
+	});
+
 	// The extension-facing setModel/setThinkingLevel actions bypass SessionFacade
 	// (they talk to the runtime directly), so they need their own persistence and
 	// their own coverage — the SessionFacade tests don't exercise this path.

@@ -195,4 +195,134 @@ describe("EventStoreExtensionSessionManager", () => {
 
 		facade.dispose();
 	});
+
+	describe("tool_call gate", () => {
+		function setup(handler: (event: any) => Promise<unknown>) {
+			const cwd = makeTempDir();
+			const executed: unknown[] = [];
+			let calls = 0;
+			const registry: ToolRegistry = {
+				get(name: string): ToolExecutor | undefined {
+					if (name !== "echo") return undefined;
+					return {
+						async execute(args) {
+							executed.push(args);
+							return { content: [{ type: "text", text: String(args.text ?? "") }], is_error: false };
+						},
+						getMetadata() {
+							return { name: "echo", category: "file_read", defaultRisk: "safe" };
+						},
+					};
+				},
+				list: () => ["echo"],
+			};
+			const extension: Extension = {
+				path: "gate-test",
+				resolvedPath: "gate-test",
+				sourceInfo: { path: "gate-test", source: "test", scope: "temporary", origin: "top-level" },
+				handlers: new Map<string, Array<(...args: unknown[]) => Promise<unknown>>>([
+					["tool_call", [handler as (...args: unknown[]) => Promise<unknown>]],
+				]),
+				tools: new Map(),
+				builtinCommands: new Map(),
+				commands: new Map(),
+				flags: new Map(),
+				shortcuts: new Map(),
+			};
+			let gate!: ReturnType<ExtensionRunner["createToolCallGate"]>;
+			const runtime = new EventSourcedRuntime({
+				cwd,
+				agentDir: cwd,
+				toolRegistry: registry,
+				// No approval gate: the hook alone must decide.
+				classifierConfig: { safe_mode: false },
+				beforeToolCall: (call) => gate(call),
+				llmClient: {
+					async complete(): Promise<LLMResponse> {
+						calls++;
+						const usage = { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 };
+						return calls === 1
+							? {
+									content: [
+										{ type: "tool_call", id: "call_echo", name: "echo", arguments: { text: "hello" } } as ContentBlock,
+									],
+									provider: "test",
+									model: "test-model",
+									usage,
+									stopReason: "tool_use",
+								}
+							: { content: [{ type: "text", text: "done" } as ContentBlock], provider: "test", model: "test-model", usage, stopReason: "stop" };
+					},
+				},
+				systemPrompt: "",
+				model: { provider: "test", model_id: "test-model" },
+				tools: [{ name: "echo", input_schema: { type: "object" } }],
+			});
+			const runner = new ExtensionRunner(
+				[extension],
+				createExtensionRuntime(),
+				cwd,
+				new EventStoreExtensionSessionManager({ store: runtime.store, projection: runtime.getProjection(), cwd }),
+				ModelRegistry.inMemory(AuthStorage.inMemory()),
+			);
+			gate = runner.createToolCallGate();
+			const unbind = runner.bindEventStore(runtime.store);
+			const toolEnd = () =>
+				runtime.store.query({ types: ["TOOL_EXECUTION_END"] }).map((event) => event.payload as any);
+			return { runtime, executed, toolEnd, unbind };
+		}
+
+		it("blocks execution when a handler returns { block: true }, calling it once", async () => {
+			let handled = 0;
+			const { runtime, executed, toolEnd, unbind } = setup(async () => {
+				handled++;
+				return { block: true, reason: "policy says no" };
+			});
+			await runtime.prompt("run echo");
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			unbind();
+			expect(executed).toEqual([]);
+			expect(handled).toBe(1);
+			expect(toolEnd()).toEqual([
+				expect.objectContaining({ tool_call_id: "call_echo", is_error: true }),
+			]);
+			expect(JSON.stringify(toolEnd()[0].result)).toContain("policy says no");
+			runtime.dispose();
+		});
+
+		it("executes the handler's in-place input mutation without rewriting the logged intent", async () => {
+			const { runtime, executed, unbind } = setup(async (event) => {
+				event.input.text = "rewritten";
+			});
+			await runtime.prompt("run echo");
+			unbind();
+			expect(executed).toEqual([{ text: "rewritten" }]);
+			const intent = runtime.store.query({ types: ["INTENT_TOOL_CALL"] })[0]!.payload as any;
+			expect(intent.arguments).toEqual({ text: "hello" });
+			const start = runtime.store.query({ types: ["TOOL_EXECUTION_START"] })[0]!.payload as any;
+			expect(start.arguments).toEqual({ text: "rewritten" });
+			runtime.dispose();
+		});
+
+		it("fails closed when a handler throws", async () => {
+			const { runtime, executed, toolEnd, unbind } = setup(async () => {
+				throw new Error("policy crashed");
+			});
+			await runtime.prompt("run echo");
+			unbind();
+			expect(executed).toEqual([]);
+			expect(toolEnd()[0]).toMatchObject({ is_error: true });
+			expect(JSON.stringify(toolEnd()[0].result)).toContain("policy crashed");
+			runtime.dispose();
+		});
+
+		it("lets the call through when handlers return nothing", async () => {
+			const { runtime, executed, toolEnd, unbind } = setup(async () => undefined);
+			await runtime.prompt("run echo");
+			unbind();
+			expect(executed).toEqual([{ text: "hello" }]);
+			expect(toolEnd()[0]).toMatchObject({ is_error: false });
+			runtime.dispose();
+		});
+	});
 });
