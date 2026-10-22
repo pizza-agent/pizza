@@ -32,6 +32,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import {
   CombinedAutocompleteProvider,
+  type AutocompleteProvider,
   type Component,
   Container,
   fuzzyFilter,
@@ -316,7 +317,7 @@ export class InteractiveMode {
   private statusContainer!: Container;
   private defaultEditor!: CustomEditor;
   private editor!: EditorComponent;
-  private autocompleteProvider: CombinedAutocompleteProvider | undefined;
+  private autocompleteProvider: AutocompleteProvider | undefined;
   private fdPath: string | undefined;
   private editorContainer!: Container;
   private footer!: FooterComponent;
@@ -984,6 +985,26 @@ export class InteractiveMode {
       this.facadeCwd,
       fdPath,
     );
+    // Suppress the description column when it would just repeat the label
+    // (a file in cwd gets label=NOTES.md AND description=NOTES.md — the
+    // duplicated name reads like a rendering bug).
+    const innerProvider = this.autocompleteProvider;
+    this.autocompleteProvider = {
+      ...innerProvider,
+      triggerCharacters: innerProvider.triggerCharacters,
+      async getSuggestions(lines, cursorLine, cursorCol, options) {
+        const suggestions = await innerProvider.getSuggestions(lines, cursorLine, cursorCol, options);
+        if (!suggestions) return suggestions;
+        return {
+          ...suggestions,
+          items: suggestions.items.map((item) =>
+            item.description === item.label ? { ...item, description: undefined } : item,
+          ),
+        };
+      },
+      applyCompletion: innerProvider.applyCompletion.bind(innerProvider),
+      shouldTriggerFileCompletion: innerProvider.shouldTriggerFileCompletion?.bind(innerProvider),
+    } as AutocompleteProvider;
     this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
     if (this.editor !== this.defaultEditor) {
       this.editor.setAutocompleteProvider?.(this.autocompleteProvider);
@@ -2970,6 +2991,12 @@ export class InteractiveMode {
       }
       if (text === "/history") {
         this.showTreeSelector();
+        this.editor.setText("");
+        return;
+      }
+      if (text === "/rename" || text.startsWith("/rename ")) {
+        const name = text.startsWith("/rename ") ? text.slice(8).trim() : "";
+        this.handleRenameCommand(name);
         this.editor.setText("");
         return;
       }
@@ -5497,6 +5524,20 @@ export class InteractiveMode {
     }
   }
 
+  private handleRenameCommand(name: string): void {
+    const sessionId = this.projectionSessionManager?.getActiveSessionId();
+    if (!sessionId) {
+      this.showError("No active session to rename");
+      return;
+    }
+    if (!name) {
+      const current = this.projectionSessionManager?.getSession(sessionId)?.name;
+      this.showStatus(current ? `Session name: ${current} (usage: /rename <new name>)` : "Usage: /rename <new name>");
+      return;
+    }
+    this.projectionSessionManager!.renameSession(sessionId, name);
+    this.showStatus(`Session renamed to: ${name}`);
+  }
   private handleStatsCommand(): void {
     const messages = this.facade.getProjection().buildContext().messages;
     const stats = computeMessageStats(messages);
