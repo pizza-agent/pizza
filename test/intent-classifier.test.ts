@@ -168,7 +168,8 @@ describe("IntentClassifier", () => {
 			const result = classifier.classify("cli", {
 				command: `_edit src/app.ts search "if (count ${GT} bestCount) {" "if (bestCount < count) {"`,
 			});
-			expect(result.category).toBe("shell_moderate");
+			expect(result.category).toBe("file_write");
+			expect(result.affected_files).toEqual(["src/app.ts"]);
 			expect(result.requires_approval).toBe(false);
 		});
 
@@ -266,5 +267,27 @@ describe("IntentClassifier", () => {
 			c.setSafeMode(undefined);
 			expect(c.classify("cli", { command: "npm install" }).requires_approval).toBe(false);
 		});
+	});
+});
+
+describe("cli built-in underscore commands", () => {
+	it("gates _write through approvals.writes like the write tool", () => {
+		const gated = new IntentClassifier({ require_approval_writes: true, require_approval_unknown: false });
+		const result = gated.classify("cli", { command: "_write hello.txt MARZIPAN" });
+		expect(result.category).toBe("file_write");
+		expect(result.requires_approval).toBe(true);
+	});
+
+	it("gates _edit through approvals.edits", () => {
+		const gated = new IntentClassifier({ require_approval_edits: true, require_approval_unknown: false });
+		const result = gated.classify("cli", { command: `_edit a.ts replace 12#ab "x = 1"` });
+		expect(result.category).toBe("file_write");
+		expect(result.requires_approval).toBe(true);
+	});
+
+	it("does not gate underscore writes when the writes gate is off (default)", () => {
+		const c = new IntentClassifier();
+		expect(c.classify("cli", { command: "_write a.txt hi" }).requires_approval).toBe(false);
+		expect(c.classify("cli", { command: "_write a.txt hi" }).category).toBe("file_write");
 	});
 });
