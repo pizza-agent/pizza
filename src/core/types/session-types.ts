@@ -91,6 +91,19 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	display: boolean;
 }
 
+/**
+ * A display-only entry synthesized from the event-store timeline projection.
+ * Used by the TUI session-tree selector (/history) which cannot reconstruct
+ * full SessionEntry objects from the projection; carries the timeline kind
+ * and a pre-computed human summary instead.
+ */
+export interface TimelineDisplayEntry extends SessionEntryBase {
+	type: "timeline";
+	kind: string;
+	summary: string;
+	durationMs?: number;
+	metadata?: Record<string, unknown>;
+}
 export type SessionEntry =
 	| SessionMessageEntry
 	| ThinkingLevelChangeEntry
@@ -100,7 +113,8 @@ export type SessionEntry =
 	| CustomEntry
 	| CustomMessageEntry
 	| LabelEntry
-	| SessionInfoEntry;
+	| SessionInfoEntry
+	| TimelineDisplayEntry;
 
 // ============================================================================
 // Tree Node

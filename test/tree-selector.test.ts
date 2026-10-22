@@ -653,3 +653,62 @@ describe("TreeSelectorComponent", () => {
 		});
 	});
 });
+
+describe("timeline display entries (TUI /history)", () => {
+	function timelineEntry(id: string, parentId: string | null, kind: string, summary: string) {
+		return {
+			type: "timeline" as const,
+			kind,
+			summary,
+			id,
+			parentId,
+			timestamp: new Date().toISOString(),
+		} satisfies SessionEntry;
+	}
+
+	function chain(entries: SessionEntry[]): SessionTreeNode[] {
+		const nodes = entries.map((entry) => ({ entry, children: [] as SessionTreeNode[] }));
+		for (let i = 1; i < nodes.length; i++) nodes[i - 1]!.children.push(nodes[i]!);
+		return nodes.slice(0, 1);
+	}
+
+	test("renders timeline entries with readable kind-prefixed summaries", () => {
+		const tree = chain([
+			timelineEntry("e1", null, "session_boundary", "Session created: user_explicit"),
+			timelineEntry("e2", "e1", "bash_command", "[bash] echo hello"),
+			timelineEntry("e3", "e2", "user_message", "fix the bug"),
+			timelineEntry("e4", "e3", "agent_message", "I fixed it"),
+		]);
+		const selector = new TreeSelectorComponent(tree, "e4", 24, () => {}, () => {});
+		const render = selector.getTreeList().render(200).join("\n");
+		expect(render).toContain("Session created: user_explicit");
+		expect(render).toContain("[bash] echo hello");
+		expect(render).toContain("fix the bug");
+		expect(render).toContain("I fixed it");
+		// Entries must not collapse to bare "•" markers
+		expect(render).not.toMatch(/^\s*[› ]?•\s*$/m);
+	});
+
+	test("default filter hides runtime/other timeline kinds", () => {
+		const tree = chain([
+			timelineEntry("e1", null, "runtime", "Runtime started"),
+			timelineEntry("e2", "e1", "user_message", "hello"),
+		]);
+		const selector = new TreeSelectorComponent(tree, "e2", 24, () => {}, () => {});
+		const render = selector.getTreeList().render(200).join("\n");
+		expect(render).toContain("hello");
+		expect(render).not.toContain("Runtime started");
+	});
+
+	test("user-only filter shows timeline user messages", () => {
+		const tree = chain([
+			timelineEntry("e1", null, "user_message", "user says hi"),
+			timelineEntry("e2", "e1", "agent_message", "agent says hello"),
+		]);
+		const selector = new TreeSelectorComponent(tree, "e2", 24, () => {}, () => {});
+		selector.handleInput("\x15"); // ctrl+u: user-only filter
+		const render = selector.getTreeList().render(200).join("\n");
+		expect(render).toContain("user says hi");
+		expect(render).not.toContain("agent says hello");
+	});
+});

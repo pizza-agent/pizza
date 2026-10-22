@@ -3411,7 +3411,16 @@ export class InteractiveMode {
           this.autoCompactionLoader = undefined;
           this.statusContainer.clear();
         }
-        this.showStatus("Auto-compaction cancelled");
+        // COMPACTION_ABORTED fires for user cancel, timeout, AND plain
+        // errors (e.g. "Nothing to compact" on a short session). Surface
+        // the real reason instead of always saying "cancelled".
+        if (event.reason === "error") {
+          this.showWarning(`Compaction failed: ${event.message ?? "unknown error"}`);
+        } else if (event.reason === "timeout") {
+          this.showWarning("Compaction timed out");
+        } else {
+          this.showStatus("Auto-compaction cancelled");
+        }
         void this.flushCompactionQueue({ willRetry: false });
         this.ui.requestRender();
         break;
@@ -3748,7 +3757,11 @@ export class InteractiveMode {
     // Show compaction info if session was compacted
     const allEntries = this.facade.getProjection().getTimeline();
     const compactionCount = allEntries.filter(
-      (e: any) => e.kind === "compaction",
+      // Only completed compactions count — request/start/abort events
+      // share the "compaction" kind.
+      (e: any) =>
+        e.kind === "compaction" &&
+        (e.metadata?.event_type === "COMPACTION_END" || e.summary?.includes("compacted")),
     ).length;
     if (compactionCount > 0) {
       const times =
@@ -3801,7 +3814,7 @@ export class InteractiveMode {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
     this.unregisterSignalHandlers();
-    this.facade.dispose();
+    await this.facade.disposeAsync();
 
     // Wait for any pending renders to complete
     // requestRender() uses process.nextTick(), so we wait one tick
@@ -3914,6 +3927,10 @@ export class InteractiveMode {
     }
     // If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
     else if (this.editor.onSubmit) {
+      // Mirror the Enter path: clear the editor or the submitted text
+      // lingers as a stale draft alongside the sent message. History
+      // bookkeeping stays inside onSubmit, same as the Enter path.
+      this.editor.setText("");
       this.editor.onSubmit(text);
     }
   }
@@ -3953,14 +3970,18 @@ export class InteractiveMode {
   private async cycleModel(direction: "forward" | "backward"): Promise<void> {
     try {
       const result = await this.cycleModelFacade(direction);
-      if (result === undefined) {
-        this.showStatus("Only one model available");
+      if (result.success === false) {
+        this.showStatus(result.message ?? "Only one model available");
       } else {
         this.footer.invalidate();
         this.updateEditorBorderColor();
+        const thinkingLevel =
+          result.model.reasoning
+            ? ((this.facade.thinkingLevel ?? "off") as ThinkingLevel)
+            : undefined;
         const thinkingStr =
-          result.model.reasoning && result.thinkingLevel !== "off"
-            ? ` (thinking: ${result.thinkingLevel})`
+          thinkingLevel && thinkingLevel !== "off"
+            ? ` (thinking: ${thinkingLevel})`
             : "";
         this.showStatus(
           `Switched to ${result.model.name || result.model.id}${thinkingStr}`,
@@ -4699,17 +4720,31 @@ export class InteractiveMode {
     // Convert timeline entries to SessionTreeNode[] for TreeSelectorComponent
     // In the event-sourced model there is no intra-session branching, so this is a flat list
     const tree: SessionTreeNode[] = [];
+    // Link nodes into a single chronological chain (each entry is the child
+    // of the previous one) so the selector renders the flat history in
+    // order instead of treating every entry as a separate root.
+    let previous: SessionTreeNode | undefined;
     for (let i = 0; i < timeline.length; i++) {
       const entry = timeline[i]!;
-      tree.push({
+      const node: SessionTreeNode = {
         entry: {
-          type: entry.kind,
+          type: "timeline",
+          kind: entry.kind,
+          summary: entry.summary,
+          durationMs: entry.duration_ms,
+          metadata: entry.metadata,
           id: entry.event_id,
           parentId: i > 0 ? timeline[i - 1]!.event_id : null,
           timestamp: new Date(entry.timestamp).toISOString(),
-        } as any as SessionEntry,
+        } satisfies SessionEntry,
         children: [],
-      });
+      };
+      if (previous) {
+        previous.children.push(node);
+      } else {
+        tree.push(node);
+      }
+      previous = node;
     }
 
     if (tree.length === 0) {
@@ -5806,7 +5841,7 @@ export class InteractiveMode {
   ): Promise<void> {
     const entries = this.facade.getProjection().getTimeline();
     const messageCount = entries.filter(
-      (e: any) => e.kind === "message",
+      (e: any) => e.kind === "user_message" || e.kind === "agent_message",
     ).length;
 
     if (messageCount < 2) {
