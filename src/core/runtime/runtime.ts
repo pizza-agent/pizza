@@ -124,6 +124,12 @@ export class EventSourcedRuntime {
 	 * model change because capacity evidence is per-model.
 	 */
 	private observedContextMax = 0;
+	/** Snapshot of the declared context window taken at construction — the
+	 * pristine basis for the compaction threshold. config.contextBudget is
+	 * deliberately mutable (the observed-capacity callback widens it so
+	 * truncation never chops context the provider already accepted), so it
+	 * cannot serve as the declared term anymore. */
+	private declaredContextBudget: number;
 	private readonly rawStore: EventStore;
 
 	/** Working directory for this runtime */
@@ -143,6 +149,10 @@ export class EventSourcedRuntime {
 	private _resolveSettled: (() => void) | undefined;
 	constructor(config: EventSourcedRuntimeConfig) {
 		this.config = config;
+		// Pristine declared window — the compaction threshold basis. config
+		// .contextBudget is intentionally mutable (widened by the observed-
+		// capacity callback) and therefore can no longer serve as "declared".
+		this.declaredContextBudget = config.contextBudget ?? 128000;
 		this.ownsStore = config.ownsStore ?? !config.store;
 
 		// 1. Create or use provided EventStore
@@ -560,25 +570,21 @@ export class EventSourcedRuntime {
 			llmClient: this.config.llmClient,
 			model: this.config.model,
 			getContextWindow: () => {
-				// Threshold basis = the declared catalog window extended by
-				// evidence. When the provider has already served a prompt larger
-				// than the catalog value, compacting at ~95% of the understated
-				// catalog throws away context the endpoint keeps — the observed
-				// frontier (+ one reserve of headroom) is the better basis.
-				// With an accurate catalog this reduces to declared exactly.
 				// An explicitly configured engine window is authoritative —
 				// observed evidence must not extend it.
 				const explicit = this.config.compactionEngineSettings?.contextWindow;
 				if (explicit) return explicit;
-				// Otherwise the basis is the resolved (possibly understated catalog)
-				// window extended by evidence of the real serving capacity: once the
-				// provider has served a prompt larger than the catalog value,
-				// compacting at ~95% of the understated catalog throws away
-				// context the endpoint keeps. With an accurate catalog this
+				// Otherwise the threshold basis is the largest of:
+				//   declared  — the catalog/resolved window (possibly understated),
+				//   observed  — the largest prompt the provider already served.
+				// NOT observed + reserve: the trigger is window×95%, and prompt
+				// estimates are capped near observed by the truncation budget, so
+				// a +reserve margin would put the trigger ~1.2× above anything
+				// reachable and silently disable auto-compaction whenever
+				// observed ≳ declared but < ~19×reserve. The observed frontier
+				// itself is the better basis — with an accurate catalog this
 				// reduces to declared exactly.
-				const declared = this.config.contextBudget ?? 128000;
-				const reserve = this.config.compactionEngineSettings?.reserveTokens ?? 16384;
-				return Math.max(declared, this.observedContextMax + reserve);
+				return Math.max(this.declaredContextBudget, this.observedContextMax);
 			},
 			settings: {
 				contextWindow: this.config.contextBudget ?? 128000,
@@ -601,6 +607,9 @@ export class EventSourcedRuntime {
 		// and threshold compaction can never fire.
 		if (typeof contextWindow === "number" && contextWindow > 0) {
 			this.config.contextBudget = contextWindow;
+			// New declared basis for the compaction threshold — the old
+			// model’s window must not outlive the switch.
+			this.declaredContextBudget = contextWindow;
 		}
 		// Capacity evidence is per-model: discard it on switch, or an old
 		// model’s observed serving size would delay the new model’s
