@@ -191,7 +191,14 @@ export function getBundledBinDir(): string {
 	if (isBunBinary) {
 		return join(getPackageDir(), "vendor", "bin");
 	}
-	return join(getPackageDir(), "dist", "vendor", "bin");
+	const packageDir = getPackageDir();
+	// Dev builds run from dist/src, so getPackageDir() finds the copied
+	// dist/package.json and returns dist/ itself — in that layout vendor
+	// assets live directly at <pkg>/vendor/bin. Installed packages keep
+	// them under <pkg>/dist/vendor/bin. Probe both so fd/rg resolve either way.
+	const direct = join(packageDir, "vendor", "bin");
+	if (existsSync(direct)) return direct;
+	return join(packageDir, "dist", "vendor", "bin");
 }
 
 // =============================================================================

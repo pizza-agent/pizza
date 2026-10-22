@@ -1056,6 +1056,7 @@ function nextMessageId(): string {
 				const now = Date.now();
 				write({
 					type: "status_result",
+					pid: process.pid,
 					uptime: now - startTime,
 					channels: subscribers.size,
 					version: gatewayVersion,
@@ -1221,8 +1222,8 @@ function nextMessageId(): string {
 	}
 
 	/**
-	 * Probe whether the process currently bound to the gateway socket is
-	 * alive and answering. Used on EADDRINUSE: the classic "stale socket
+	 * Probe whether a listener still owns the gateway socket. Used on
+	 * EADDRINUSE: the classic "stale socket
 	 * from a crashed daemon" is only ONE cause — another is a LIVE gateway
 	 * that was merely slow to answer (busy fanning out agent events).
 	 * Unlinking the path out from under a live daemon orphans it (nobody can
@@ -1242,8 +1243,9 @@ function nextMessageId(): string {
 			const timer = setTimeout(() => finish(false), 3000);
 			const socket = connect(socketPath);
 			socket.on("connect", () => {
-				// A listener accepted us: ping it — any reply proves liveness.
-				socket.write(`${serializeJsonLine({ type: "ping" })}\n`);
+				// A listener exists even if its JS event loop is blocked. Never
+				// steal its socket; the desktop supervisor handles hung children.
+				finish(true);
 			});
 			socket.on("data", () => finish(true));
 			socket.on("error", () => finish(false));
@@ -1301,7 +1303,7 @@ function nextMessageId(): string {
 				}
 				if (error.code === "EADDRINUSE") {
 					// Another process holds the socket. It is stale ONLY if it
-					// is provably dead (no ping answer). A live gateway must
+					// has no listener (connection refused). A live gateway must
 					// keep the path — this process exits instead of stealing
 					// it, which would orphan the running daemon and duplicate
 					// the agent pool.

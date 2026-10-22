@@ -170,6 +170,8 @@ export interface GatewayPong extends GatewayMessageBase {
 /** Reply to {@link GatewayStatusRequest}: pool info. */
 export interface GatewayStatusResult extends GatewayMessageBase {
 	type: "status_result";
+	/** Owning process, used by desktop supervision to detect displacement. */
+	pid?: number;
 	/** Gateway process uptime in ms. */
 	uptime: number;
 	/** Number of subscribed channels. */

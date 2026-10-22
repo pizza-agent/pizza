@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -134,6 +134,26 @@ describe("gateway server", () => {
 		await server.start();
 		const mode = statSync(socketPath).mode & 0o777;
 		expect(mode).toBe(0o600);
+	});
+
+	it("does not steal a listening socket when its owner cannot answer ping", async () => {
+		if (platform() === "win32") return;
+		const socketPath = uniqueSocketPath();
+		sockets.push(socketPath);
+		const listener = createServer(socket => socket.on("error", () => {}));
+		await new Promise<void>(resolve => listener.listen(socketPath, resolve));
+		const inode = statSync(socketPath).ino;
+		const duplicate = createGatewayServer({ socketPath, agentDir: "/tmp/nonexistent-agent" });
+		const events: string[] = [];
+		duplicate.on("duplicate", () => events.push("duplicate"));
+		try {
+			await duplicate.start();
+			expect(events).toEqual(["duplicate"]);
+			expect(statSync(socketPath).ino).toBe(inode);
+		} finally {
+			await duplicate.stop();
+			await new Promise<void>(resolve => listener.close(() => resolve()));
+		}
 	});
 
 	it("normalizes destination paths so path variants share ONE pool entry", async () => {
