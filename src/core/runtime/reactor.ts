@@ -1071,7 +1071,15 @@ export class Reactor {
 			classification?: IntentClassification;
 		};
 
-		if (payload.requires_approval) {
+		// Session-scoped "always allow": a category the user approved for
+		// this session skips the dialog entirely (TurnState.allowedCategories
+		// is memory-only; nothing is persisted). Local flag — payload is the
+		// logged event object and must not be mutated.
+		const category = payload.classification?.category;
+		const needsApproval =
+			payload.requires_approval &&
+			!(category !== undefined && this.turnState.allowedCategories.has(category));
+		if (needsApproval) {
 			if (!this.config.approvalHandler) {
 				this._emitToolExecutionRejected(payload.tool_call_id, payload.tool_name, {
 					content: [{ type: "text", text: "Tool execution requires approval, but no approval handler is available." }],
@@ -1644,7 +1652,13 @@ export class Reactor {
 	// ─── USER_APPROVAL ──────────────────────────────────────────────────────
 
 	private async _onUserApproval(event: EventBase): Promise<void> {
-		const payload = event.payload as { intent_event_id: string };
+		const payload = event.payload as { intent_event_id: string; scope?: "once" | "session"; category?: string };
+		// Session-scoped approval: remember the category so later gated calls
+		// in the same category auto-run without another dialog. Recorded in
+		// memory only — the event just documents the user’s choice.
+		if (payload.scope === "session" && payload.category) {
+			this.turnState.allowedCategories.add(payload.category);
+		}
 		const pending = this._pendingApprovals.get(payload.intent_event_id);
 		if (pending) {
 			this._pendingApprovals.delete(payload.intent_event_id);

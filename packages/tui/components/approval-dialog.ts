@@ -13,6 +13,7 @@ export class ApprovalDialogComponent extends Container {
 	private readonly options: string[];
 	private listContainer: Container;
 	private onApproveCallback: () => void;
+	private onApproveAlwaysCallback: (() => void) | undefined;
 	private onRejectCallback: () => void;
 	private disposed = false;
 
@@ -23,12 +24,20 @@ export class ApprovalDialogComponent extends Container {
 		private readonly args: Record<string, unknown>,
 		onApprove: () => void,
 		onReject: () => void,
+		onApproveAlways?: () => void,
 	) {
 		super();
 
 		this.onApproveCallback = onApprove;
 		this.onRejectCallback = onReject;
-		this.options = ["Approve", "Reject"];
+		this.onApproveAlwaysCallback = onApproveAlways;
+		// "Always allow" is only offered for moderate risk — dangerous
+		// actions (file_delete, shell_dangerous) are gated unconditionally
+		// by the classifier, so a session-scoped bypass must not exist.
+		this.options =
+			onApproveAlways && classification.risk !== "dangerous"
+				? ["Approve", "Always allow (this session)", "Reject"]
+				: ["Approve", "Reject"];
 
 		this.addChild(new DynamicBorder((str: string) => theme.fg("warning", str)));
 		this.addChild(new Spacer(1));
@@ -135,8 +144,15 @@ export class ApprovalDialogComponent extends Container {
 		} else if (keyData === "y" || keyData === "Y") {
 			this.selectedIndex = 0;
 			this.choose();
+		} else if (keyData === "a" || keyData === "A") {
+			const alwaysIndex = this.options.findIndex((o) => o.startsWith("Always"));
+			if (alwaysIndex >= 0) {
+				this.selectedIndex = alwaysIndex;
+				this.choose();
+			}
 		} else if (keyData === "n" || keyData === "N") {
-			this.selectedIndex = 1;
+			// Reject is always the last option regardless of list size.
+			this.selectedIndex = this.options.length - 1;
 			this.choose();
 		} else if (kb.matches(keyData, "tui.select.cancel")) {
 			this.reject();
@@ -146,8 +162,11 @@ export class ApprovalDialogComponent extends Container {
 	private choose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		if (this.selectedIndex === 0) {
+		const choice = this.options[this.selectedIndex];
+		if (choice === "Approve") {
 			this.onApproveCallback();
+		} else if (choice === "Always allow (this session)") {
+			this.onApproveAlwaysCallback?.();
 		} else {
 			this.onRejectCallback();
 		}

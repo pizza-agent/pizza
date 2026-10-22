@@ -776,11 +776,15 @@ export class EventSourcedRuntime {
 	/**
 	 * Approve a pending intent.
 	 */
-	approve(intentEventId: string): void {
+	approve(intentEventId: string, options?: { scope?: "once" | "session"; category?: string }): void {
 		this.store.append({
 			actor_id: "user",
 			type: "USER_APPROVAL",
-			payload: { intent_event_id: intentEventId },
+			payload: {
+				intent_event_id: intentEventId,
+				scope: options?.scope ?? "once",
+				category: options?.category,
+			},
 		});
 	}
 

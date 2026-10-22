@@ -2432,6 +2432,15 @@ export class InteractiveMode {
         this.hideApprovalDialog();
         if (eid) this.facade.runtime.reject(eid);
       },
+      () => {
+        const eid = this.pendingApprovalEventId;
+        this.pendingApprovalEventId = undefined;
+        this.hideApprovalDialog();
+        if (eid) {
+          this.facade.runtime.approve(eid, { scope: "session", category: classification.category });
+          this.showStatus(`Auto-approving ${classification.category} for this session`);
+        }
+      }
     );
     // Render the approval dialog as a centered overlay ON TOP of the
     // existing UI (instead of swapping out the editor). This avoids the
@@ -3182,6 +3191,13 @@ export class InteractiveMode {
         if (msg.role === "bashExecution") {
           break;
         }
+        // compactionSummary arrives with the COMPACTION_END commit; the
+        // compaction_finished handler rebuilds the chat from the projection
+        // (which already injects the summary at the boundary), so rendering
+        // it again here double-draws the [compaction] block.
+        if (msg.role === "compactionSummary") {
+          break;
+        }
         if (msg.role === "user") {
           this.addMessageToChat(msg);
           this.updatePendingMessagesDisplay();
@@ -3384,16 +3400,14 @@ export class InteractiveMode {
           this.autoCompactionLoader = undefined;
           this.statusContainer.clear();
         }
-        // Rebuild chat from projection
+        // Rebuild chat from projection — buildContext already injects the
+        // compaction summary (its boundary scan covers summary and mask
+        // compactions alike), the same path restart replay uses. Adding
+        // the summary explicitly here rendered the block twice, and the
+        // message_committed fired for COMPACTION_END is skipped below
+        // for the same reason.
         this.chatContainer.clear();
         this.rebuildChatFromMessages();
-        this.addMessageToChat(
-          createCompactionSummaryMessage(
-            event.summary,
-            event.tokensBefore,
-            new Date().toISOString(),
-          ),
-        );
         this.footer.invalidate();
         void this.flushCompactionQueue({ willRetry: false });
         this.ui.requestRender();
