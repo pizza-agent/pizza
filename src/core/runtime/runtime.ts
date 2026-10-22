@@ -114,6 +114,16 @@ export class EventSourcedRuntime {
 	private reactor: Reactor | null = null;
 	private config: EventSourcedRuntimeConfig;
 	private readonly ownsStore: boolean;
+	/**
+	 * Largest provider-observed prompt size for the CURRENT model (input +
+	 * cache_read + cache_write — tokens actually present in the context).
+	 * This is hard evidence of the model’s real serving capacity. When the
+	 * catalog contextWindow is understated (e.g. swe-2 catalog reported 262k
+	 * while the endpoint serves 440k+), this floor prevents both truncation
+	 * and the compaction threshold from acting on the wrong number. Reset on
+	 * model change because capacity evidence is per-model.
+	 */
+	private observedContextMax = 0;
 	private readonly rawStore: EventStore;
 
 	/** Working directory for this runtime */
@@ -223,10 +233,14 @@ export class EventSourcedRuntime {
 				retryAssistantErrorCompletions: this.config.retryAssistantErrorCompletions,
 				compactionPolicy: this._buildCompactionPolicy(projection),
 			onObservedContextTokens: (tokens) => {
-				// Self-correct an understated contextBudget: if the provider
-				// demonstrably served a prompt larger than our configured
-				// window, the catalog value was wrong — widen so truncation
-				// and the compaction threshold stop firing early.
+				// Record the largest prompt the provider demonstrably served.
+				// This is the strongest evidence of the real context window —
+				// stronger than the model catalog, which can understate it.
+				if (Number.isFinite(tokens) && tokens > this.observedContextMax) {
+					this.observedContextMax = tokens;
+				}
+				// Also widen the truncation budget so buildContext never chops
+				// history the provider already accepted.
 				if (Number.isFinite(tokens) && tokens > (this.config.contextBudget ?? 128000)) {
 					this.config.contextBudget = tokens;
 				}
@@ -545,7 +559,27 @@ export class EventSourcedRuntime {
 			projection,
 			llmClient: this.config.llmClient,
 			model: this.config.model,
-			getContextWindow: () => this.config.compactionEngineSettings?.contextWindow ?? this.config.contextBudget ?? 128000,
+			getContextWindow: () => {
+				// Threshold basis = the declared catalog window extended by
+				// evidence. When the provider has already served a prompt larger
+				// than the catalog value, compacting at ~95% of the understated
+				// catalog throws away context the endpoint keeps — the observed
+				// frontier (+ one reserve of headroom) is the better basis.
+				// With an accurate catalog this reduces to declared exactly.
+				// An explicitly configured engine window is authoritative —
+				// observed evidence must not extend it.
+				const explicit = this.config.compactionEngineSettings?.contextWindow;
+				if (explicit) return explicit;
+				// Otherwise the basis is the resolved (possibly understated catalog)
+				// window extended by evidence of the real serving capacity: once the
+				// provider has served a prompt larger than the catalog value,
+				// compacting at ~95% of the understated catalog throws away
+				// context the endpoint keeps. With an accurate catalog this
+				// reduces to declared exactly.
+				const declared = this.config.contextBudget ?? 128000;
+				const reserve = this.config.compactionEngineSettings?.reserveTokens ?? 16384;
+				return Math.max(declared, this.observedContextMax + reserve);
+			},
 			settings: {
 				contextWindow: this.config.contextBudget ?? 128000,
 				...this.config.compactionEngineSettings,
@@ -568,6 +602,10 @@ export class EventSourcedRuntime {
 		if (typeof contextWindow === "number" && contextWindow > 0) {
 			this.config.contextBudget = contextWindow;
 		}
+		// Capacity evidence is per-model: discard it on switch, or an old
+		// model’s observed serving size would delay the new model’s
+		// compaction threshold by exactly that amount.
+		this.observedContextMax = 0;
 		this.store.append({
 			actor_id: "user",
 			type: "MODEL_CHANGED",

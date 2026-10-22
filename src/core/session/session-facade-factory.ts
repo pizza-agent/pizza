@@ -442,6 +442,12 @@ export async function createSessionFacade(
 		retryAssistantErrorCompletions: true,
 		retryPolicy: new DefaultRetryPolicy({ capDelayMs: settingsManager.getRetrySettings().maxDelayMs }),
 		contextBudget: options.contextBudget ?? model?.contextWindow ?? 128000,
+		// User-configured compaction knobs (reserveTokens / keepRecentTokens)
+		// — previously dead settings that never reached the engine.
+		compactionEngineSettings: {
+			reserveTokens: settingsManager.getCompactionSettings().reserveTokens,
+			keepRecentTokens: settingsManager.getCompactionSettings().keepRecentTokens,
+		},
 		refreshSystemPrompt: () => {
 			// Rebuild the system prompt with the current session-position
 			// breadcrumb on session boundary events (split/fork/jump).

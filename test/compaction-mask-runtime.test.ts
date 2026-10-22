@@ -105,3 +105,80 @@ describe("runtime auto-compaction with tool-result masking (default engine)", ()
 		runtime.dispose();
 	});
 });
+
+describe("compaction threshold basis with understated catalog window", () => {
+	const tempDirs: string[] = [];
+	afterEach(() => {
+		for (const dir of tempDirs.splice(0)) if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+	});
+
+	function makeTempDir(): string {
+		const dir = join(tmpdir(), `pizza-basis-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(dir, { recursive: true });
+		tempDirs.push(dir);
+		return dir;
+	}
+
+	function replyWith(usage: { input: number; output: number }, text = "ok"): LLMResponse {
+		return {
+			content: [{ type: "text", text } as ContentBlock],
+			provider: "test",
+			model: "test",
+			usage: { ...usage, cache_read: 0, cache_write: 0, total: usage.input + usage.output, cost: 0 },
+			stopReason: "stop",
+		};
+	}
+
+	function newRuntime(cwd: string, responses: LLMResponse[]) {
+		let i = 0;
+		const client: LLMClient = {
+			async complete() {
+				return responses[Math.min(i++, responses.length - 1)]!;
+			},
+		};
+		return new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: { get: () => undefined, list: () => [] },
+			llmClient: client,
+			classifierConfig: { approve_unknown: false },
+			systemPrompt: "",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+			// resolved catalog-style window 10k via contextBudget (not the
+			// explicit engine override, which stays authoritative), reserve 0
+			contextBudget: 10_000,
+			compactionEngineSettings: { reserveTokens: 0, keepRecentTokens: 0 },
+		});
+	}
+
+	it("extends the trigger basis past an understated catalog window using observed capacity", async () => {
+		const cwd = makeTempDir();
+		// Provider proves it serves ≥30k prompts; the understated 10k catalog
+		// must not trigger compaction while observedMax ≈ 30k.
+		const runtime = newRuntime(cwd, [replyWith({ input: 30_000, output: 0 })]);
+		const policy = (runtime as any)._buildCompactionPolicy(runtime.getProjection());
+		expect(policy.contextWindow()).toBe(10_000);
+		// Simulate the reactor's observed-context report.
+		(runtime as any).observedContextMax = 30_000;
+		expect(policy.contextWindow()).toBe(30_000); // max(budget, observed + reserve)
+		expect(policy.contextWindow() * policy.threshold()).toBe(30_000);
+		runtime.dispose();
+	});
+
+	it("resets observed capacity evidence on model change", async () => {
+		const cwd = makeTempDir();
+		const runtime = newRuntime(cwd, [replyWith({ input: 1, output: 1 })]);
+		(runtime as any).observedContextMax = 50_000;
+		const policy = (runtime as any)._buildCompactionPolicy(runtime.getProjection());
+		expect(policy.contextWindow()).toBe(50_000);
+		// New model: catalog for the new window overrides via contextBudget,
+		// and old observed evidence must not leak into the new basis.
+		runtime.setModel("test", "other-model", 20_000);
+		expect((runtime as any).observedContextMax).toBe(0);
+		// Budget re-pins to the new model window; old evidence cleared.
+		const policy2 = (runtime as any)._buildCompactionPolicy(runtime.getProjection());
+		expect(policy2.contextWindow()).toBe(20_000);
+		runtime.dispose();
+	});
+});
