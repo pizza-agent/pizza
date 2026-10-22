@@ -85,6 +85,10 @@ const config = JSON.parse(readFileSync(join(root, "apps/desktop/tauri.conf.json"
 const devConfig = { app: { windows: config.app.windows.map(window => ({ ...window, title: "Pizza · Dev" })) } };
 const desktopEnv = { ...process.env };
 delete desktopEnv.PIZZA_BIN;
+if (process.platform === "darwin") {
+	const target = process.arch === "arm64" ? "AARCH64_APPLE_DARWIN" : "X86_64_APPLE_DARWIN";
+	desktopEnv[`CARGO_TARGET_${target}_RUNNER`] = `${process.execPath} ${join(root, "scripts/run-desktop-dev.mjs")}`;
+}
 const desktop = spawn("cargo", ["tauri", "dev", "--config", JSON.stringify(devConfig)], { cwd: join(root, "apps/desktop"), env: desktopEnv, stdio: "inherit" });
 const reloadTimer = setInterval(() => void reloadWhenIdle(), 2000);
 let stopping = false;
