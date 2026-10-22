@@ -1624,19 +1624,21 @@ export class Reactor {
 		return "scheduled";
 	}
 
-	/** Walk causal chain back to find the highest retry_attempt seen. */
+	/** Retries belong to the current LLM call, not earlier successful tool rounds. */
 	private _attemptCount(eventId: string): number {
-		const chain = this.config.store.getCausalChain(eventId);
-		let attempt = 0;
-		for (const e of chain) {
+		const visited = new Set<string>();
+		let currentId: string | undefined = eventId;
+		while (currentId && !visited.has(currentId)) {
+			visited.add(currentId);
+			const e = this.config.store.get(currentId);
+			if (!e) break;
 			if (e.type === "AGENT_TURN_REQUESTED") {
-				const p = e.payload as { retry_attempt?: number };
-				if (p.retry_attempt !== undefined && p.retry_attempt > attempt) {
-					attempt = p.retry_attempt;
-				}
+				const p = e.payload as { reason?: string; retry_attempt?: number };
+				return p.reason === "retry" ? (p.retry_attempt ?? 0) : 0;
 			}
+			currentId = e.caused_by;
 		}
-		return attempt;
+		return 0;
 	}
 
 	// ─── USER_APPROVAL ──────────────────────────────────────────────────────
