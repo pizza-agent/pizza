@@ -383,3 +383,29 @@ describe("tool-result masking projection semantics", () => {
 		store.close();
 	});
 });
+
+describe("degenerate window/reserve edge cases", () => {
+	it("does not degenerate the threshold to zero when reserve exceeds the window", async () => {
+		const { CompactionEngine } = await import("../src/core/compaction/compaction-engine.js");
+		const engine = new CompactionEngine({
+			projection: { buildContext: () => ({ messages: [], events: [], contextPrefixEventCount: 0 }) } as any,
+			llmClient: {} as any,
+			model: { provider: "t", model_id: "m" } as any,
+			getContextWindow: () => 16000,
+			settings: { reserveTokens: 16384 }, // bigger than the window
+		});
+		const t = engine.threshold();
+		// uncapped: (16000-16384)/16000 → clamps to 0 → always fires
+		expect(t).toBeGreaterThan(0);
+		expect(t).toBeLessThanOrEqual(1);
+	});
+
+	it("shouldCompact stays false-ish until real usage under a tiny window", async () => {
+		const { shouldCompact } = await import("../src/core/compaction/compaction.js");
+		const settings = { enabled: true, reserveTokens: 16384 };
+		// With an uncapped reserve this is `tokens > -384` — always true.
+		// Capped at 80% of the window the cutoff is 3200.
+		expect(shouldCompact(2000, 16000, settings)).toBe(false);
+		expect(shouldCompact(15000, 16000, settings)).toBe(true);
+	});
+});

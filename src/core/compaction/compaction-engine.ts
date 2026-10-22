@@ -161,7 +161,13 @@ export class CompactionEngine implements CompactionPolicy {
 		if (this.config.settings?.threshold !== undefined) return this.config.settings.threshold;
 		const window = this.contextWindow();
 		if (!Number.isFinite(window) || window <= 0) return 1;
-		const reserve = this.config.settings?.reserveTokens ?? DEFAULT_RESERVE_TOKENS;
+		// A reserve that swallows the whole window degenerates the
+		// threshold to 0 — compaction then fires on every turn only to
+		// abort with Nothing to compact. Cap the effective reserve at
+		// 80% of the window so a misconfigured or tiny window still
+		// yields a meaningful cutoff.
+		const configured = this.config.settings?.reserveTokens ?? DEFAULT_RESERVE_TOKENS;
+		const reserve = Math.min(configured, Math.floor(window * 0.8));
 		return Math.max(0, Math.min(1, (window - reserve) / window));
 	}
 
