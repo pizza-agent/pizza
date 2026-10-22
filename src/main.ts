@@ -911,7 +911,7 @@ export async function main(args: string[], options?: MainOptions) {
 			process.exitCode = exitCode;
 		}
 	} finally {
-		created.facade.dispose();
+		await created.facade.disposeAsync();
 		stopThemeWatcher();
 		restoreStdout();
 	}

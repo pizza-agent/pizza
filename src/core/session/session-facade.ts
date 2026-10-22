@@ -344,8 +344,29 @@ export class SessionFacade {
 	}
 
 	async disposeAsync(): Promise<void> {
+		// Emit session_shutdown so extensions can release external resources
+		// (MCP child processes, sockets, helper sessions). Without this they
+		// leak and keep the event loop — and the process — alive past
+		// one-shot commands like `pizza -p`.
+		let emitShutdown: Promise<void> | undefined;
+		try {
+			const runner = this.extensionRunner;
+			if (runner?.hasHandlers("session_shutdown")) {
+				emitShutdown = Promise.resolve(runner.emit({ type: "session_shutdown", reason: "quit" })).catch(
+					() => {},
+				);
+			}
+		} catch {
+			// Shutdown-time handler failures must not block disposal.
+		}
 		this.dispose();
-		await this.runtime.disposeAsync();
+		// Extension cleanup (e.g. MCP server close) runs concurrently with
+		// the runtime teardown instead of serially, and the whole phase is
+		// bounded so a wedged handler cannot stall process exit.
+		await Promise.race([
+			Promise.all([emitShutdown ?? Promise.resolve(), this.runtime.disposeAsync()]),
+			new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+		]);
 	}
 
 	dispose(): void {

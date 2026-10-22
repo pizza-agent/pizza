@@ -1064,7 +1064,7 @@ export async function runRpcModeWithFacade(
 		unsubscribe?.();
 		scheduler.dispose();
 		setNativeBridge(undefined);
-		await Promise.resolve(facade.dispose());
+		await facade.disposeAsync();
 		await ptyServer?.close().catch(() => {});
 		// Tear down the managed browser: stop screencast, drop approvals, kill
 		// Chromium, and close the frame channel before the process exits.
