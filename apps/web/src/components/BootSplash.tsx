@@ -52,7 +52,7 @@ function longestMotionMs(el: HTMLElement): number {
 	);
 }
 
-export function BootSplash({ active }: { active: boolean }) {
+export function BootSplash({ active, message }: { active: boolean; message?: string }) {
 	const { t } = useTranslation();
 	const [state, setState] = useState<SplashState>(active ? "active" : "gone");
 	const [spec, setSpec] = useState<SplashSpec>(getSplashSpec);
@@ -105,7 +105,7 @@ export function BootSplash({ active }: { active: boolean }) {
 				<div className="pizza-splash__icon">
 					{spec.icon ? <img src={spec.icon} alt="" width={48} height={48} /> : <BrandIcon size={48} />}
 				</div>
-				<p className="pizza-splash__message">{t("common.starting")}</p>
+				<p className="pizza-splash__message">{message ?? t("common.starting")}</p>
 			</div>
 		</div>
 	);

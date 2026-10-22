@@ -38,7 +38,14 @@ import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./
 import { SettingsManager } from "./core/config/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/ops/timings.js";
 
-import { InteractiveMode, runGuiModeWithFacade, runPrintModeWithFacade, runRpcModeWithFacade } from "./modes/index.js";
+import {
+	InteractiveMode,
+	runFsRpcMode,
+	runGuiModeWithFacade,
+	runPrintModeWithFacade,
+	runRpcModeWithFacade,
+} from "./modes/index.js";
+import { runProviderProvisioningMode } from "./core/remote/provider-provisioning.js";
 import { initTheme, stopThemeWatcher } from "../packages/tui/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
 import { handleBuiltinCommand } from "./builtin-cli.js";
@@ -99,7 +106,15 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
-type AppMode = "interactive" | "print" | "json" | "rpc" | "gui" | "gateway";
+type AppMode =
+	| "interactive"
+	| "print"
+	| "json"
+	| "rpc"
+	| "gui"
+	| "gateway"
+	| "fs-rpc"
+	| "provider-provision-rpc";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	if (parsed.mode === "gui") {
@@ -111,6 +126,12 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	if (parsed.mode === "gateway") {
 		return "gateway";
 	}
+	if (parsed.mode === "fs-rpc") {
+		return "fs-rpc";
+	}
+	if (parsed.mode === "provider-provision-rpc") {
+		return "provider-provision-rpc";
+	}
 	if (parsed.mode === "json") {
 		return "json";
 	}
@@ -120,7 +141,9 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	return "interactive";
 }
 
-function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc" | "gui" | "gateway"> {
+function toPrintOutputMode(
+	appMode: AppMode,
+): Exclude<Mode, "rpc" | "gui" | "gateway" | "fs-rpc" | "provider-provision-rpc"> {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -478,6 +501,13 @@ export async function main(args: string[], options?: MainOptions) {
 	time("parseArgs");
 	let appMode = resolveAppMode(parsed, process.stdin.isTTY);
 
+	// Internal desktop-to-remote configuration channel. It accepts only the
+	// versioned provisioning envelope on stdin and emits a secret-free result.
+	if (appMode === "provider-provision-rpc") {
+		await runProviderProvisioningMode();
+		return;
+	}
+
 	// ── Gateway daemon mode ─────────────────────────────────────────────────
 	// `pizza --mode gateway` starts the agent-to-agent messaging daemon. It is
 	// a lightweight process — no session facade, no LLM, no theme. It only needs
@@ -575,6 +605,9 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 		// Keep the process alive.
 		return;
+	}
+	if (appMode === "fs-rpc") {
+		await runFsRpcMode();
 	}
 	const shouldTakeOverStdout = appMode !== "interactive" && appMode !== "gui";
 	if (shouldTakeOverStdout) {

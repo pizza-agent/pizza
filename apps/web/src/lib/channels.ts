@@ -279,9 +279,9 @@ export interface WorkspaceOption {
 export async function workspaceOptions(): Promise<WorkspaceOption[]> {
 	const workspaces = await listWorkspaces();
 	const options = workspaces
-		.filter((ws) => !isMainChatCwd(ws.cwd))
+		.filter((ws) => !isMainChatCwd(ws.cwd) && ws.kind !== "remote")
 		.map((ws) => {
-			const name = pathBasename(ws.cwd);
+			const name = ws.display_name ?? pathBasename(ws.cwd);
 			return { value: ws.cwd, label: name, hint: ws.cwd };
 		});
 	return [{ value: MAIN_CHAT_CWD, label: "", hint: "", main: true }, ...options];

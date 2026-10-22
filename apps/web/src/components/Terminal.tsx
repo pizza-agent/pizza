@@ -4,6 +4,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme, useThemeId, type Theme } from "@/lib/theme";
+import { isRemoteWorkspaceKey } from "@/lib/platform";
 
 /**
  * Terminal — a real interactive terminal (xterm.js) backed by a local PTY
@@ -155,7 +156,15 @@ export default function Terminal({
 		const spawn = (): void => {
 			const cols = term.cols ?? 80;
 			const rows = term.rows ?? 24;
-			send({ type: "spawn", cwd: workspace ?? undefined, cols, rows });
+				// The remote Pizza process already has the remote project as its
+				// cwd. Passing the synthetic remote:// workspace key here would
+				// make the remote PTY try to chdir into a nonexistent path.
+				send({
+					type: "spawn",
+					cwd: isRemoteWorkspaceKey(workspace) ? undefined : workspace ?? undefined,
+					cols,
+					rows,
+				});
 		};
 
 		ws.onopen = () => {

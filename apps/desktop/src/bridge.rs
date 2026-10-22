@@ -1,10 +1,12 @@
 use crate::gateway_channel;
+use crate::remote;
+use crate::remote_deploy;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -249,6 +251,32 @@ struct SidecarEntry {
 	stdin: ChildStdin,
 }
 
+/// One SSH local-forward used to expose a loopback-only remote service (PTY or
+/// browser frame server) to the desktop webview.
+struct RemoteTunnel {
+	local_port: u16,
+	child: Child,
+}
+
+/// Per-remote-workspace transport state. The SSH ControlMaster is owned by the
+/// long-lived remote Pizza process; this map only tracks forwarding children.
+struct RemoteRuntime {
+	control_socket: PathBuf,
+	tunnels: HashMap<u16, RemoteTunnel>,
+	gateway_tunnel: Option<Child>,
+	gateway_local_socket: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct RemoteProvisioningLane {
+	/// Whether one sync worker currently owns the lane.
+	running: bool,
+	/// Every trigger advances generation. The worker tails the latest value.
+	generation: u64,
+	/// Response waiters used to verify the remote registry reload barrier.
+	waiters: HashMap<String, std::sync::mpsc::Sender<Value>>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileAttachmentInfo {
@@ -283,6 +311,16 @@ pub struct BridgeState {
 	/// pet window when it (re)opens so it doesn't sit on the placeholder until
 	/// the next turn boundary.
 	pet_widget_frame: Mutex<Option<Value>>,
+	/// SSH remote workspace definitions keyed by the synthetic `remote://` cwd.
+	remote_workspaces: Mutex<HashMap<String, remote::RemoteWorkspaceConfig>>,
+	/// Runtime SSH forwarding state keyed by the same remote workspace cwd.
+	remote_runtimes: Mutex<HashMap<String, RemoteRuntime>>,
+	/// Per-environment single-flight lane for Local -> Remote provider sync.
+	remote_provisioning: Mutex<RemoteProvisioningLane>,
+	/// Serializes remote workspace initialization per desktop window. Without
+	/// this, rapid workspace clicks can attach out of order and leave the
+	/// bridge's active pointer on the older selection.
+	remote_init_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// A running `pizza auth login --mode jsonl` child plus its stdin writer.
@@ -301,6 +339,10 @@ impl Default for BridgeState {
 			oauth_login: Mutex::new(None),
 			auth_options_cache: Mutex::new(None),
 			pet_widget_frame: Mutex::new(None),
+			remote_workspaces: Mutex::new(remote::load_remote_workspaces()),
+			remote_runtimes: Mutex::new(HashMap::new()),
+			remote_provisioning: Mutex::new(RemoteProvisioningLane::default()),
+			remote_init_locks: Mutex::new(HashMap::new()),
 		}
 	}
 }
@@ -323,6 +365,294 @@ pub fn kill_sidecar_for_cwd(state: &BridgeState, cwd: &str) {
 		let _ = sidecar.child.wait();
 		log_file(&format!("kill_sidecar_for_cwd: killed sidecar for {}", cwd));
 	}
+	drop(sidecars);
+	if remote::is_remote_workspace_key(cwd) {
+		stop_remote_runtime(state, cwd);
+	}
+}
+
+fn remote_workspace_config(
+	state: &BridgeState,
+	cwd: &str,
+) -> Option<remote::RemoteWorkspaceConfig> {
+	lock_ok(&state.remote_workspaces).get(cwd).cloned()
+}
+
+fn gateway_workspace_for_cwd(state: &BridgeState, cwd: &str) -> String {
+	remote_workspace_config(state, cwd)
+		.map(|config| config.remote_path)
+		.unwrap_or_else(|| cwd.to_string())
+}
+
+fn same_remote_workspace(
+	left: &remote::RemoteWorkspaceConfig,
+	right: &remote::RemoteWorkspaceConfig,
+) -> bool {
+	left.ssh_target == right.ssh_target
+		&& left.port.unwrap_or(22) == right.port.unwrap_or(22)
+		&& left.remote_path == right.remote_path
+}
+
+fn online_remote_workspaces(state: &BridgeState) -> Vec<(String, remote::RemoteWorkspaceConfig)> {
+	let mut running: HashSet<String> = lock_ok(&state.sidecars).keys().cloned().collect();
+	running.extend(lock_ok(&state.channels).keys().cloned());
+	lock_ok(&state.remote_workspaces)
+		.iter()
+		.filter(|(cwd, _)| running.contains(*cwd))
+		.map(|(cwd, config)| (cwd.clone(), config.clone()))
+		.collect()
+}
+
+fn complete_remote_reload_waiter(state: &BridgeState, frame: &Value) {
+	if frame.get("type").and_then(Value::as_str) != Some("response") {
+		return;
+	}
+	let Some(id) = frame.get("id").and_then(Value::as_str) else {
+		return;
+	};
+	let waiter = lock_ok(&state.remote_provisioning).waiters.remove(id);
+	if let Some(sender) = waiter {
+		let _ = sender.send(frame.clone());
+	}
+}
+
+fn reload_remote_provider_registry(state: &BridgeState, cwd: &str) -> Result<(), String> {
+	if let Some(channel) = lock_ok(&state.channels).get(cwd).cloned() {
+		let gateway_workspace = gateway_workspace_for_cwd(state, cwd);
+		let response = channel.rpc(
+			&gateway_workspace,
+			serde_json::json!({
+				"id": uuid::Uuid::new_v4().to_string(),
+				"type": "reload_providers"
+			}),
+		)?;
+		if response.get("success").and_then(Value::as_bool) != Some(true) {
+			return Err(response
+				.get("error")
+				.and_then(Value::as_str)
+				.unwrap_or("Remote provider registry reload failed")
+				.to_string());
+		}
+		return Ok(());
+	}
+
+	let id = uuid::Uuid::new_v4().to_string();
+	let (sender, receiver) = std::sync::mpsc::channel();
+	lock_ok(&state.remote_provisioning)
+		.waiters
+		.insert(id.clone(), sender);
+	let write_result = {
+		let mut sidecars = lock_ok(&state.sidecars);
+		let sidecar = sidecars
+			.get_mut(cwd)
+			.ok_or_else(|| "Remote sidecar is not running".to_string())?;
+		write_rpc_line(
+			sidecar,
+			serde_json::json!({
+				"id": id,
+				"type": "reload_providers"
+			}),
+		)
+	};
+	if let Err(error) = write_result {
+		lock_ok(&state.remote_provisioning).waiters.remove(&id);
+		return Err(error);
+	}
+	let response = receiver
+		.recv_timeout(Duration::from_secs(20))
+		.map_err(|_| "Remote provider registry reload timed out".to_string())?;
+	if response.get("success").and_then(Value::as_bool) != Some(true) {
+		let error = response
+			.get("error")
+			.and_then(Value::as_str)
+			.unwrap_or("Remote provider registry reload failed");
+		return Err(error.to_string());
+	}
+	Ok(())
+}
+
+fn provision_and_refresh_online_remotes(app: &AppHandle) {
+	let state = app.state::<BridgeState>();
+	let local_agent_dir = match agent_dir() {
+		Ok(path) => path,
+		Err(error) => {
+			log_file(&format!("remote provider provisioning skipped: {error}"));
+			return;
+		}
+	};
+	for (cwd, config) in online_remote_workspaces(state.inner()) {
+		let control_socket = lock_ok(&state.remote_runtimes)
+			.get(&cwd)
+			.map(|runtime| runtime.control_socket.clone())
+			.unwrap_or_else(|| remote::environment_control_socket_path(&config));
+		match remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir) {
+			Ok(result) => {
+				let status = result
+					.get("status")
+					.and_then(Value::as_str)
+					.unwrap_or("unknown");
+				let providers = result
+					.get("personalProviderCount")
+					.and_then(Value::as_u64)
+					.unwrap_or(0);
+				let credentials = result
+					.get("credentialCount")
+					.and_then(Value::as_u64)
+					.unwrap_or(0);
+				log_file(&format!(
+					"remote provider provisioning ok: cwd={} status={} providers={} credentials={}",
+					cwd, status, providers, credentials
+				));
+				if let Err(error) = reload_remote_provider_registry(state.inner(), &cwd) {
+					log_file(&format!(
+						"remote provider provisioning refresh warning: cwd={} error={}",
+						cwd, error
+					));
+				}
+			}
+			Err(error) => {
+				log_file(&format!(
+					"remote provider provisioning warning: cwd={} error={}",
+					cwd, error
+				));
+			}
+		}
+	}
+}
+
+fn schedule_remote_provider_provisioning(app: &AppHandle, delay: Duration) {
+	let state = app.state::<BridgeState>();
+	{
+		let mut lane = lock_ok(&state.remote_provisioning);
+		lane.generation = lane.generation.wrapping_add(1);
+		if lane.running {
+			return;
+		}
+		lane.running = true;
+	}
+	let worker_app = app.clone();
+	tauri::async_runtime::spawn(async move {
+		if !delay.is_zero() {
+			tokio::time::sleep(delay).await;
+		}
+		loop {
+			let generation = {
+				let state = worker_app.state::<BridgeState>();
+				let generation = lock_ok(&state.remote_provisioning).generation;
+				generation
+			};
+			let blocking_app = worker_app.clone();
+			let _ = tauri::async_runtime::spawn_blocking(move || {
+				provision_and_refresh_online_remotes(&blocking_app);
+			})
+			.await;
+			let state = worker_app.state::<BridgeState>();
+			let mut lane = lock_ok(&state.remote_provisioning);
+			if lane.generation == generation {
+				lane.running = false;
+				break;
+			}
+		}
+	});
+}
+
+fn maybe_schedule_model_config_sync(app: &AppHandle, cwd: &str, frame: &Value) {
+	if remote::is_remote_workspace_key(cwd)
+		|| frame.get("type").and_then(Value::as_str) != Some("response")
+		|| frame.get("success").and_then(Value::as_bool) != Some(true)
+	{
+		return;
+	}
+	let command = frame.get("command").and_then(Value::as_str).unwrap_or("");
+	if matches!(
+		command,
+		"set_model" | "cycle_model" | "set_thinking_level" | "cycle_thinking_level"
+	) {
+		// SettingsManager persists the default before responding. This short
+		// delay lets its queued file write settle before the source snapshot.
+		schedule_remote_provider_provisioning(app, Duration::from_millis(75));
+	}
+}
+
+fn remote_server_asset_dir(app: &AppHandle) -> Result<PathBuf, String> {
+	let candidates = [
+		app.path()
+			.resource_dir()
+			.ok()
+			.map(|path| path.join("remote")),
+		Some(
+			PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+				.join("..")
+				.join("..")
+				.join("dist")
+				.join("remote"),
+		),
+	];
+	candidates
+		.into_iter()
+		.flatten()
+		.find(|path| path.join("manifest.json").exists())
+		.ok_or_else(|| {
+			"Remote server package is missing. Rebuild the desktop application.".to_string()
+		})
+}
+
+fn clear_remote_tunnels(state: &BridgeState, cwd: &str) {
+	let mut runtimes = lock_ok(&state.remote_runtimes);
+	if let Some(runtime) = runtimes.get_mut(cwd) {
+		for (_, mut tunnel) in runtime.tunnels.drain() {
+			let _ = tunnel.child.kill();
+			let _ = tunnel.child.wait();
+		}
+	}
+}
+
+fn stop_remote_runtime(state: &BridgeState, cwd: &str) {
+	let runtime = lock_ok(&state.remote_runtimes).remove(cwd);
+	if let Some(mut runtime) = runtime {
+		for (_, mut tunnel) in runtime.tunnels.drain() {
+			let _ = tunnel.child.kill();
+			let _ = tunnel.child.wait();
+		}
+		if let Some(mut tunnel) = runtime.gateway_tunnel.take() {
+			let _ = tunnel.kill();
+			let _ = tunnel.wait();
+		}
+		if let Some(socket) = runtime.gateway_local_socket.take() {
+			let _ = std::fs::remove_file(socket);
+		}
+	}
+	if let Some(channel) = lock_ok(&state.channels).remove(cwd) {
+		channel.close();
+	}
+}
+
+/// Warm one SSH master per configured remote environment in the background.
+/// The first workspace click can then reuse an already-authenticated transport.
+pub fn warm_remote_transports(app: AppHandle) {
+	let configs = {
+		let state = app.state::<BridgeState>();
+		let configs = lock_ok(&state.remote_workspaces)
+			.values()
+			.cloned()
+			.collect::<Vec<_>>();
+		configs
+	};
+	thread::spawn(move || {
+		let mut warmed = HashSet::new();
+		for config in configs {
+			let socket = remote::environment_control_socket_path(&config);
+			if !warmed.insert(socket.clone()) {
+				continue;
+			}
+			if let Err(error) = remote::ensure_control_master(&config, &socket) {
+				log_file(&format!(
+					"warm_remote_transports: target={} error={error}",
+					config.ssh_target
+				));
+			}
+		}
+	});
 }
 
 /// Drop every gateway channel and kill every legacy sidecar — used right
@@ -419,14 +749,17 @@ fn broadcast_to_all_sidecars(state: &BridgeState, command_type: &str) {
 async fn broadcast_to_all_channels(state: &BridgeState, command_type: &str) {
 	let entries: Vec<(String, gateway_channel::GatewayChannel)> = lock_ok(&state.channels)
 		.iter()
-		.map(|(k, v)| (k.clone(), v.clone()))
+		.map(|(cwd, channel)| (gateway_workspace_for_cwd(state, cwd), channel.clone()))
 		.collect();
 	let mut sent = 0;
-	for (cwd, channel) in entries {
+	for (workspace, channel) in entries {
 		let cmd_type = command_type.to_string();
 		let id = uuid::Uuid::new_v4().to_string();
 		let result = tauri::async_runtime::spawn_blocking(move || {
-			channel.rpc(&cwd, serde_json::json!({ "id": id, "type": cmd_type }))
+			channel.rpc(
+				&workspace,
+				serde_json::json!({ "id": id, "type": cmd_type }),
+			)
 		})
 		.await;
 		if result.map(|r| r.is_ok()).unwrap_or(false) {
@@ -838,6 +1171,212 @@ fn write_rpc_line(sidecar: &mut SidecarEntry, value: Value) -> Result<(), String
 	Ok(())
 }
 
+fn ensure_remote_tunnel(
+	state: &BridgeState,
+	cwd: &str,
+	config: &remote::RemoteWorkspaceConfig,
+	remote_port: u16,
+) -> Result<u16, String> {
+	{
+		let mut runtimes = lock_ok(&state.remote_runtimes);
+		let runtime = runtimes
+			.get_mut(cwd)
+			.ok_or_else(|| "Remote SSH runtime is not running".to_string())?;
+		if let Some(tunnel) = runtime.tunnels.get_mut(&remote_port) {
+			if tunnel
+				.child
+				.try_wait()
+				.map_err(|e| e.to_string())?
+				.is_none()
+			{
+				return Ok(tunnel.local_port);
+			}
+			let mut dead = runtime
+				.tunnels
+				.remove(&remote_port)
+				.expect("checked tunnel");
+			let _ = dead.child.wait();
+		}
+	}
+
+	let control_socket = {
+		let runtimes = lock_ok(&state.remote_runtimes);
+		runtimes
+			.get(cwd)
+			.map(|runtime| runtime.control_socket.clone())
+			.ok_or_else(|| "Remote SSH runtime is not running".to_string())?
+	};
+	let local_port = remote::allocate_local_port()?;
+	let child = remote::spawn_tunnel(config, &control_socket, local_port, remote_port)?;
+	let mut runtimes = lock_ok(&state.remote_runtimes);
+	let runtime = runtimes
+		.get_mut(cwd)
+		.ok_or_else(|| "Remote SSH runtime stopped during tunnel creation".to_string())?;
+	if let Some(existing) = runtime.tunnels.get(&remote_port) {
+		return Ok(existing.local_port);
+	}
+	runtime
+		.tunnels
+		.insert(remote_port, RemoteTunnel { local_port, child });
+	log_file(&format!(
+		"remote tunnel ready: cwd={} remote_port={} local_port={}",
+		cwd, remote_port, local_port
+	));
+	Ok(local_port)
+}
+
+fn rewrite_remote_port_field(
+	state: &BridgeState,
+	cwd: &str,
+	config: &remote::RemoteWorkspaceConfig,
+	value: &mut Value,
+	pointer: &str,
+) {
+	let Some(port_value) = value.pointer_mut(pointer) else {
+		return;
+	};
+	let Some(port) = port_value.as_u64() else {
+		return;
+	};
+	if port == 0 || port > u16::MAX as u64 {
+		return;
+	}
+	match ensure_remote_tunnel(state, cwd, config, port as u16) {
+		Ok(local_port) => {
+			*port_value = Value::Number(local_port.into());
+		}
+		Err(error) => {
+			log_file(&format!(
+				"remote tunnel setup failed: cwd={} pointer={} port={} error={}",
+				cwd, pointer, port, error
+			));
+		}
+	}
+}
+
+fn rewrite_remote_service_ports(state: &BridgeState, cwd: &str, value: &mut Value) {
+	let Some(config) = remote_workspace_config(state, cwd) else {
+		return;
+	};
+	rewrite_remote_port_field(state, cwd, &config, value, "/data/ptyPort");
+	rewrite_remote_port_field(state, cwd, &config, value, "/data/frame/wsPort");
+}
+
+/// Persist a validated SSH workspace and return the same metadata shape as
+/// `list_workspaces`.
+#[tauri::command]
+pub async fn add_remote_workspace(
+	state: tauri::State<'_, BridgeState>,
+	input: remote::AddRemoteWorkspaceInput,
+) -> Result<Value, String> {
+	let config = tauri::async_runtime::spawn_blocking(move || remote::add_remote_workspace(input))
+		.await
+		.map_err(|e| format!("remote workspace probe task failed: {e}"))??;
+	let existing = {
+		let workspaces = lock_ok(&state.remote_workspaces);
+		workspaces
+			.values()
+			.find(|candidate| same_remote_workspace(candidate, &config))
+			.cloned()
+	};
+	if let Some(existing) = existing {
+		let cwd = remote::workspace_key(&existing.id);
+		log_file(&format!(
+			"add_remote_workspace: reusing existing cwd={} target={} path={}",
+			cwd, existing.ssh_target, existing.remote_path
+		));
+		return Ok(remote::remote_workspace_meta(&existing));
+	}
+	let cwd = remote::workspace_key(&config.id);
+	let meta = remote::remote_workspace_meta(&config);
+	{
+		let mut workspaces = lock_ok(&state.remote_workspaces);
+		workspaces.insert(cwd.clone(), config.clone());
+		if let Err(error) = remote::save_remote_workspaces(&workspaces) {
+			workspaces.remove(&cwd);
+			return Err(error);
+		}
+	}
+	log_file(&format!(
+		"add_remote_workspace: cwd={} target={} path={}",
+		cwd, config.ssh_target, config.remote_path
+	));
+	Ok(meta)
+}
+
+#[tauri::command]
+pub async fn browse_remote_directories(
+	input: remote::RemoteSshInput,
+	path: Option<String>,
+) -> Result<Value, String> {
+	let listing = tauri::async_runtime::spawn_blocking(move || {
+		remote::browse_remote_directories(input, path)
+	})
+	.await
+	.map_err(|e| format!("remote directory browse task failed: {e}"))??;
+	serde_json::to_value(listing).map_err(|e| e.to_string())
+}
+
+async fn remote_fs_request(
+	state: &BridgeState,
+	cwd: &str,
+	method: &str,
+	params: Value,
+) -> Result<Option<Value>, String> {
+	if !remote::is_remote_workspace_key(cwd) {
+		return Ok(None);
+	}
+	let config = remote_workspace_config(state, cwd)
+		.ok_or_else(|| format!("Remote workspace is not registered: {cwd}"))?;
+	let control_socket = lock_ok(&state.remote_runtimes)
+		.get(cwd)
+		.map(|runtime| runtime.control_socket.clone())
+		.unwrap_or_else(|| remote::environment_control_socket_path(&config));
+	let request = serde_json::json!({
+		"id": uuid::Uuid::new_v4().to_string(),
+		"method": method,
+		"params": params
+	});
+	let value = tauri::async_runtime::spawn_blocking(move || {
+		remote::run_remote_fs_request(&config, &control_socket, request)
+	})
+	.await
+	.map_err(|e| format!("remote filesystem task failed: {e}"))??;
+	Ok(Some(value))
+}
+
+fn save_remote_upload(
+	state: &BridgeState,
+	cwd: &str,
+	filename: &str,
+	mime_type: &str,
+	bytes: &[u8],
+) -> Result<FileAttachmentInfo, String> {
+	let config = remote_workspace_config(state, cwd)
+		.ok_or_else(|| format!("Remote workspace is not registered: {cwd}"))?;
+	let control_socket = lock_ok(&state.remote_runtimes)
+		.get(cwd)
+		.map(|runtime| runtime.control_socket.clone())
+		.unwrap_or_else(|| remote::environment_control_socket_path(&config));
+	let safe_name = sanitize_upload_filename(filename);
+	let stored_name = format!("{}-{}", uuid::Uuid::new_v4(), safe_name);
+	let relative_path = format!(".pizza/uploads/{stored_name}");
+	let remote_path = format!(
+		"{}/{}",
+		config.remote_path.trim_end_matches('/'),
+		relative_path
+	);
+	remote::upload_bytes(&config, &control_socket, &remote_path, bytes)?;
+	Ok(FileAttachmentInfo {
+		kind: "file",
+		absolute_path: remote_path.clone(),
+		relative_path,
+		mime_type: guess_mime_type(&PathBuf::from(&remote_path), mime_type),
+		name: filename.to_string(),
+		size: bytes.len() as u64,
+	})
+}
+
 fn spawn_background_sidecar(
 	app: AppHandle,
 	state: &BridgeState,
@@ -1062,6 +1601,10 @@ async fn init_workspace(
 	// Expand ~ to home directory.
 	let cwd = expand_tilde(&cwd);
 	log_file(&format!("init_sidecar: cwd={}", cwd));
+
+	if remote::is_remote_workspace_key(&cwd) {
+		return init_remote_sidecar(window, state, window_label, cwd).await;
+	}
 
 	// The persistent Chat workspace (~/.pizza/main) is auto-created on first
 	// launch. It is the default workspace the desktop app boots into, so it
@@ -1405,6 +1948,621 @@ async fn init_workspace(
 	Ok(state_data.to_string())
 }
 
+async fn connect_remote_gateway(
+	window: &tauri::Window,
+	state: &BridgeState,
+	cwd: &str,
+	window_label: &str,
+	config: &remote::RemoteWorkspaceConfig,
+	control_socket: &Path,
+	install: &remote_deploy::RemoteServerInstall,
+) -> Result<String, String> {
+	let (local_socket, gateway_tunnel) =
+		match remote_deploy::open_gateway_channel(config, control_socket, install) {
+			Ok(value) => value,
+			Err(error) => {
+				stop_remote_runtime(state, cwd);
+				return Err(error);
+			}
+		};
+	{
+		let mut runtimes = lock_ok(&state.remote_runtimes);
+		if let Some(runtime) = runtimes.get_mut(cwd) {
+			runtime.gateway_tunnel = Some(gateway_tunnel);
+			runtime.gateway_local_socket = Some(local_socket.clone());
+		}
+	}
+	let channel = match gateway_channel::GatewayChannel::connect(&local_socket) {
+		Ok(channel) => channel,
+		Err(error) => {
+			stop_remote_runtime(state, cwd);
+			return Err(format!("Connect to remote Pizza gateway: {error}"));
+		}
+	};
+	if let Err(error) = channel.attach(&config.remote_path) {
+		channel.close();
+		stop_remote_runtime(state, cwd);
+		return Err(format!("Attach remote workspace: {error}"));
+	}
+	let response = match gateway_rpc(
+		&channel,
+		&config.remote_path,
+		serde_json::json!({
+			"id": uuid::Uuid::new_v4().to_string(),
+			"type": "get_state"
+		}),
+	)
+	.await
+	{
+		Ok(response) => response,
+		Err(error) => {
+			channel.close();
+			stop_remote_runtime(state, cwd);
+			return Err(format!("Remote Pizza gateway startup failed: {error}"));
+		}
+	};
+	if response.get("success").and_then(Value::as_bool) != Some(true) {
+		channel.close();
+		stop_remote_runtime(state, cwd);
+		return Err(response
+			.get("error")
+			.and_then(Value::as_str)
+			.unwrap_or("Remote Pizza returned an invalid startup response")
+			.to_string());
+	}
+
+	let mut state_data = response;
+	rewrite_remote_service_ports(state, cwd, &mut state_data);
+	lock_ok(&state.channels).insert(cwd.to_string(), channel.clone());
+	lock_ok(&state.active).insert(window_label.to_string(), cwd.to_string());
+	emit_frame_to_windows(window.app_handle(), cwd, state_data.clone());
+
+	let app = window.app_handle().clone();
+	let drain_cwd = cwd.to_string();
+	thread::spawn(move || loop {
+		let messages = channel.drain_events();
+		let disconnected = messages
+			.iter()
+			.any(|message| matches!(message, gateway_channel::ChannelMessage::Disconnected));
+		for message in messages {
+			if let gateway_channel::ChannelMessage::Event { frame, .. } = message {
+				let state_ref = app.state::<BridgeState>();
+				let mut frame = frame;
+				rewrite_remote_service_ports(state_ref.inner(), &drain_cwd, &mut frame);
+				emit_frame_to_windows(&app, &drain_cwd, frame);
+			}
+		}
+		if disconnected {
+			channel.close();
+			let state_ref = app.state::<BridgeState>();
+			lock_ok(&state_ref.channels).remove(&drain_cwd);
+			clear_remote_tunnels(state_ref.inner(), &drain_cwd);
+			let labels: Vec<String> = lock_ok(&state_ref.active).keys().cloned().collect();
+			for label in labels {
+				if let Some(win) = app.get_webview_window(&label) {
+					let _ = win.emit(
+						"sidecar_exit",
+						serde_json::json!({ "code": null, "cwd": drain_cwd }),
+					);
+				}
+			}
+			break;
+		}
+		thread::sleep(Duration::from_millis(50));
+	});
+
+	Ok(state_data.to_string())
+}
+
+/// Install or reuse the versioned remote server, connect to its persistent
+/// gateway over an SSH Unix-socket tunnel, and attach this workspace.
+async fn init_remote_sidecar(
+	window: tauri::Window,
+	state: tauri::State<'_, BridgeState>,
+	window_label: String,
+	cwd: String,
+) -> Result<String, String> {
+	let init_lock = {
+		let mut locks = lock_ok(&state.remote_init_locks);
+		locks
+			.entry(window_label.clone())
+			.or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+			.clone()
+	};
+	let _init_guard = init_lock.lock().await;
+
+	#[cfg(not(unix))]
+	{
+		return init_remote_sidecar_legacy(window, state, window_label, cwd).await;
+	}
+
+	#[cfg(unix)]
+	{
+		let config = remote_workspace_config(state.inner(), &cwd)
+			.ok_or_else(|| format!("Remote workspace is not registered: {cwd}"))?;
+		log_file(&format!(
+			"init_remote_sidecar: target={} path={}",
+			config.ssh_target, config.remote_path
+		));
+
+		let existing_channel = {
+			let mut channels = lock_ok(&state.channels);
+			match channels.get(&cwd) {
+				Some(channel) if !channel.is_alive() => {
+					log_file(&format!(
+						"init_remote_sidecar: dropping dead cached channel cwd={cwd}"
+					));
+					channels.remove(&cwd);
+					None
+				}
+				other => other.cloned(),
+			}
+		};
+		if let Some(channel) = existing_channel {
+			let gateway_workspace = gateway_workspace_for_cwd(state.inner(), &cwd);
+			let response = gateway_rpc(
+				&channel,
+				&gateway_workspace,
+				serde_json::json!({
+					"id": uuid::Uuid::new_v4().to_string(),
+					"type": "get_state"
+				}),
+			)
+			.await;
+			match response {
+				Ok(response) if response.get("success").and_then(Value::as_bool) == Some(true) => {
+					lock_ok(&state.active).insert(window_label, cwd.clone());
+					let mut response = response;
+					rewrite_remote_service_ports(state.inner(), &cwd, &mut response);
+					emit_frame_to_windows(window.app_handle(), &cwd, response.clone());
+					return Ok(response.to_string());
+				}
+				Ok(response) => {
+					let detail = response
+						.get("error")
+						.and_then(Value::as_str)
+						.unwrap_or("cached remote gateway channel returned an error");
+					log_file(&format!(
+						"init_remote_sidecar: cached channel failed cwd={cwd}: {detail}"
+					));
+				}
+				Err(error) => {
+					log_file(&format!(
+						"init_remote_sidecar: cached channel probe failed cwd={cwd}: {error}"
+					));
+				}
+			}
+			channel.close();
+			stop_remote_runtime(state.inner(), &cwd);
+		}
+
+		let asset_dir = remote_server_asset_dir(&window.app_handle())?;
+		let manifest_path = asset_dir.join("manifest.json");
+		let (version, sha256) = remote_deploy::remote_server_manifest(&manifest_path)?;
+		stop_remote_runtime(state.inner(), &cwd);
+		let mut config = config;
+		let control_socket = remote::environment_control_socket_path(&config);
+		{
+			let mut runtimes = lock_ok(&state.remote_runtimes);
+			runtimes.insert(
+				cwd.clone(),
+				RemoteRuntime {
+					control_socket: control_socket.clone(),
+					tunnels: HashMap::new(),
+					gateway_tunnel: None,
+					gateway_local_socket: None,
+				},
+			);
+		}
+		if let Err(error) = remote::ensure_control_master(&config, &control_socket) {
+			log_file(&format!(
+				"init_remote_sidecar: SSH control master unavailable cwd={cwd}: {error}"
+			));
+		}
+
+		if config.pizza_command.is_some() {
+			match remote_deploy::probe_managed_gateway(&config, &control_socket, &version) {
+				Ok(Some(gateway_socket)) => {
+					log_file(&format!(
+						"init_remote_sidecar: fast reconnect cwd={cwd} version={version}"
+					));
+					let fast_install = remote_deploy::RemoteServerInstall {
+						version: version.clone(),
+						pizza_command: config.pizza_command.clone().unwrap_or_default(),
+						gateway_socket,
+						service_mode: "reconnect".to_string(),
+					};
+					match connect_remote_gateway(
+						&window,
+						state.inner(),
+						&cwd,
+						&window_label,
+						&config,
+						&control_socket,
+						&fast_install,
+					)
+					.await
+					{
+						Ok(response) => {
+							schedule_remote_provider_provisioning(
+								window.app_handle(),
+								Duration::ZERO,
+							);
+							return Ok(response);
+						}
+						Err(error) => {
+							log_file(&format!(
+								"init_remote_sidecar: fast reconnect failed cwd={cwd}: {error}"
+							));
+						}
+					}
+				}
+				Ok(None) => {}
+				Err(error) => {
+					log_file(&format!(
+						"init_remote_sidecar: fast reconnect probe skipped cwd={cwd}: {error}"
+					));
+				}
+			}
+			stop_remote_runtime(state.inner(), &cwd);
+			{
+				let mut runtimes = lock_ok(&state.remote_runtimes);
+				runtimes.insert(
+					cwd.clone(),
+					RemoteRuntime {
+						control_socket: control_socket.clone(),
+						tunnels: HashMap::new(),
+						gateway_tunnel: None,
+						gateway_local_socket: None,
+					},
+				);
+			}
+		}
+
+		let archive_path = remote_deploy::remote_install_archive(
+			&asset_dir,
+			&format!("pizza-server-{version}.tgz"),
+		);
+		let install = match remote_deploy::ensure_remote_server(
+			&config,
+			&control_socket,
+			&archive_path,
+			&version,
+			&sha256,
+		) {
+			Ok(install) => install,
+			Err(error) => {
+				stop_remote_runtime(state.inner(), &cwd);
+				return Err(format!("Remote Pizza server installation failed: {error}"));
+			}
+		};
+		log_file(&format!(
+			"init_remote_sidecar: server version={} service={} socket={}",
+			install.version, install.service_mode, install.gateway_socket
+		));
+		if config.pizza_command.as_deref() != Some(install.pizza_command.as_str()) {
+			config.pizza_command = Some(install.pizza_command.clone());
+			let workspace_snapshot = {
+				let mut workspaces = lock_ok(&state.remote_workspaces);
+				if let Some(saved) = workspaces.get_mut(&cwd) {
+					saved.pizza_command = Some(install.pizza_command.clone());
+				}
+				workspaces.clone()
+			};
+			if let Err(error) = remote::save_remote_workspaces(&workspace_snapshot) {
+				log_file(&format!(
+					"init_remote_sidecar: failed to persist managed Pizza command: {error}"
+				));
+			}
+		}
+
+		let local_agent_dir = match agent_dir() {
+			Ok(path) => path,
+			Err(error) => {
+				stop_remote_runtime(state.inner(), &cwd);
+				return Err(error);
+			}
+		};
+		match remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir) {
+			Ok(result) => {
+				log_file(&format!(
+					"init_remote_sidecar: provider sync status={} providers={} credentials={}",
+					result
+						.get("status")
+						.and_then(Value::as_str)
+						.unwrap_or("unknown"),
+					result
+						.get("personalProviderCount")
+						.and_then(Value::as_u64)
+						.unwrap_or(0),
+					result
+						.get("credentialCount")
+						.and_then(Value::as_u64)
+						.unwrap_or(0)
+				));
+			}
+			Err(error) => {
+				stop_remote_runtime(state.inner(), &cwd);
+				return Err(format!(
+					"Remote provider configuration sync failed: {error}"
+				));
+			}
+		}
+
+		let state_data = connect_remote_gateway(
+			&window,
+			state.inner(),
+			&cwd,
+			&window_label,
+			&config,
+			&control_socket,
+			&install,
+		)
+		.await?;
+		log_file("init_remote_sidecar: remote gateway attached");
+		Ok(state_data)
+	}
+}
+
+/// Legacy per-workspace SSH sidecar used on desktop platforms without Unix
+/// socket forwarding. Unix/macOS uses the managed remote gateway path above.
+#[allow(dead_code)]
+async fn init_remote_sidecar_legacy(
+	window: tauri::Window,
+	state: tauri::State<'_, BridgeState>,
+	window_label: String,
+	cwd: String,
+) -> Result<String, String> {
+	let config = remote_workspace_config(state.inner(), &cwd)
+		.ok_or_else(|| format!("Remote workspace is not registered: {cwd}"))?;
+	log_file(&format!(
+		"init_remote_sidecar: target={} path={}",
+		config.ssh_target, config.remote_path
+	));
+
+	let already_running = lock_ok(&state.sidecars).contains_key(&cwd);
+	if already_running {
+		lock_ok(&state.active).insert(window_label.clone(), cwd.clone());
+		let id = uuid::Uuid::new_v4().to_string();
+		let mut sidecars = lock_ok(&state.sidecars);
+		let sidecar = sidecars
+			.get_mut(&cwd)
+			.ok_or_else(|| "Remote sidecar disappeared".to_string())?;
+		write_rpc_line(
+			sidecar,
+			serde_json::json!({ "id": id, "type": "get_state" }),
+		)?;
+		log_file("init_remote_sidecar: switched to running remote sidecar");
+		return Ok("{}".to_string());
+	}
+
+	let mut config = config;
+	let (resolved_command, resolved_version) = remote::resolve_remote_pizza_command(&config)
+		.map_err(|error| format!("Remote Pizza detection failed: {error}"))?;
+	if config.pizza_command.as_deref() != Some(resolved_command.as_str()) {
+		config.pizza_command = Some(resolved_command.clone());
+		let workspace_snapshot = {
+			let mut workspaces = lock_ok(&state.remote_workspaces);
+			if let Some(saved) = workspaces.get_mut(&cwd) {
+				saved.pizza_command = Some(resolved_command.clone());
+			}
+			workspaces.clone()
+		};
+		if let Err(error) = remote::save_remote_workspaces(&workspace_snapshot) {
+			log_file(&format!(
+				"init_remote_sidecar: failed to persist resolved Pizza command: {error}"
+			));
+		}
+	}
+	log_file(&format!(
+		"init_remote_sidecar: resolved Pizza command={} version={}",
+		resolved_command, resolved_version
+	));
+
+	let control_socket = remote::control_socket_path(&config.id);
+	clear_remote_tunnels(state.inner(), &cwd);
+	{
+		let mut runtimes = lock_ok(&state.remote_runtimes);
+		runtimes
+			.entry(cwd.clone())
+			.or_insert_with(|| RemoteRuntime {
+				control_socket: control_socket.clone(),
+				tunnels: HashMap::new(),
+				gateway_tunnel: None,
+				gateway_local_socket: None,
+			});
+	}
+
+	// Provisioning is a first-connection barrier. The remote RPC process must
+	// start from the complete Local environment snapshot, otherwise the UI can
+	// publish a ready workspace that has no usable model.
+	let local_agent_dir = match agent_dir() {
+		Ok(path) => path,
+		Err(error) => {
+			stop_remote_runtime(state.inner(), &cwd);
+			return Err(error);
+		}
+	};
+	match remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir) {
+		Ok(result) => {
+			log_file(&format!(
+				"init_remote_sidecar: provider sync status={} providers={} credentials={}",
+				result
+					.get("status")
+					.and_then(Value::as_str)
+					.unwrap_or("unknown"),
+				result
+					.get("personalProviderCount")
+					.and_then(Value::as_u64)
+					.unwrap_or(0),
+				result
+					.get("credentialCount")
+					.and_then(Value::as_u64)
+					.unwrap_or(0)
+			));
+		}
+		Err(error) => {
+			stop_remote_runtime(state.inner(), &cwd);
+			return Err(format!(
+				"Remote provider configuration sync failed: {error}"
+			));
+		}
+	}
+
+	let mut child = match remote::spawn_remote_agent(&config, &control_socket) {
+		Ok(child) => child,
+		Err(error) => {
+			stop_remote_runtime(state.inner(), &cwd);
+			return Err(error);
+		}
+	};
+	let stdin = child.stdin.take().ok_or("no remote stdin")?;
+	let stdout = child.stdout.take().ok_or("no remote stdout")?;
+	let stderr = child.stderr.take().ok_or("no remote stderr")?;
+	let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+	let stderr_buf_for_thread = Arc::clone(&stderr_buf);
+	let stderr_thread = thread::spawn(move || {
+		let mut reader = BufReader::new(stderr);
+		let mut bytes = Vec::new();
+		let _ = reader.read_to_end(&mut bytes);
+		if let Ok(mut value) = stderr_buf_for_thread.lock() {
+			value.push_str(&String::from_utf8_lossy(&bytes));
+		}
+	});
+
+	let mut reader = BufReader::new(stdout);
+	{
+		let mut sidecars = lock_ok(&state.sidecars);
+		sidecars.insert(cwd.clone(), SidecarEntry { child, stdin });
+	}
+	lock_ok(&state.active).insert(window_label, cwd.clone());
+	{
+		let mut sidecars = lock_ok(&state.sidecars);
+		let sidecar = sidecars
+			.get_mut(&cwd)
+			.ok_or_else(|| "Remote sidecar disappeared during startup".to_string())?;
+		if let Err(error) = write_rpc_line(
+			sidecar,
+			serde_json::json!({
+				"id": uuid::Uuid::new_v4().to_string(),
+				"type": "get_state"
+			}),
+		) {
+			drop(sidecars);
+			if let Some(mut entry) = lock_ok(&state.sidecars).remove(&cwd) {
+				let _ = entry.child.kill();
+				drop(entry.stdin);
+				let _ = entry.child.wait();
+			}
+			stop_remote_runtime(state.inner(), &cwd);
+			return Err(error);
+		}
+	}
+
+	let mut first_line = String::new();
+	let bytes_read = match reader.read_line(&mut first_line) {
+		Ok(bytes_read) => bytes_read,
+		Err(error) => {
+			if let Some(mut entry) = lock_ok(&state.sidecars).remove(&cwd) {
+				let _ = entry.child.kill();
+				drop(entry.stdin);
+				let _ = entry.child.wait();
+			}
+			stop_remote_runtime(state.inner(), &cwd);
+			return Err(format!("read remote response: {error}"));
+		}
+	};
+	if bytes_read == 0 {
+		let mut sidecars = lock_ok(&state.sidecars);
+		let mut entry = sidecars
+			.remove(&cwd)
+			.ok_or_else(|| "Remote sidecar exited during startup".to_string())?;
+		drop(entry.stdin);
+		let _ = entry.child.wait();
+		drop(sidecars);
+		let _ = stderr_thread.join();
+		let detail = stderr_buf
+			.lock()
+			.map(|value| value.trim().to_string())
+			.unwrap_or_default();
+		stop_remote_runtime(state.inner(), &cwd);
+		return Err(if detail.is_empty() {
+			"Remote Pizza exited before responding".to_string()
+		} else {
+			format!("Remote Pizza exited before responding: {detail}")
+		});
+	}
+
+	if !first_line.trim_start().starts_with('{') {
+		if let Some(mut entry) = lock_ok(&state.sidecars).remove(&cwd) {
+			let _ = entry.child.kill();
+			drop(entry.stdin);
+			let _ = entry.child.wait();
+		}
+		stop_remote_runtime(state.inner(), &cwd);
+		return Err(format!(
+			"Remote Pizza returned an invalid startup response: {}",
+			first_line.trim()
+		));
+	}
+	let mut state_data: Value = serde_json::from_str(first_line.trim()).unwrap_or(Value::Null);
+	log_file(&format!(
+		"init_remote_sidecar: first response={}",
+		first_line.trim()
+	));
+	rewrite_remote_service_ports(state.inner(), &cwd, &mut state_data);
+
+	let app = window.app_handle().clone();
+	let reader_cwd = cwd.clone();
+	thread::spawn(move || {
+		log_file(&format!(
+			"remote reader thread: started for cwd={}",
+			reader_cwd
+		));
+		for line in reader.lines() {
+			let Ok(line) = line else {
+				break;
+			};
+			let trimmed = line.trim();
+			if trimmed.is_empty() || !trimmed.starts_with('{') {
+				continue;
+			}
+			let Ok(mut parsed) = serde_json::from_str::<Value>(trimmed) else {
+				continue;
+			};
+			let state_ref = app.state::<BridgeState>();
+			rewrite_remote_service_ports(state_ref.inner(), &reader_cwd, &mut parsed);
+			log_file(&format!(
+				"remote sidecar stdout [cwd={}]: {}",
+				reader_cwd, trimmed
+			));
+			emit_frame_to_windows(&app, &reader_cwd, parsed);
+		}
+		log_file(&format!("remote reader thread: EOF for cwd={}", reader_cwd));
+		{
+			let state_ref = app.state::<BridgeState>();
+			let mut sidecars = lock_ok(&state_ref.sidecars);
+			if let Some(mut entry) = sidecars.remove(&reader_cwd) {
+				let _ = entry.child.kill();
+				drop(entry.stdin);
+				let _ = entry.child.wait();
+			}
+			clear_remote_tunnels(state_ref.inner(), &reader_cwd);
+			let labels: Vec<String> = lock_ok(&state_ref.active).keys().cloned().collect();
+			for label in labels {
+				if let Some(win) = app.get_webview_window(&label) {
+					let _ = win.emit(
+						"sidecar_exit",
+						serde_json::json!({ "code": null, "cwd": reader_cwd }),
+					);
+				}
+			}
+		}
+	});
+	log_file("init_remote_sidecar: done");
+	Ok(state_data.to_string())
+}
+
 /// Kill the sidecar for `cwd` (if any) and respawn it. Used after writing
 /// a new provider API key so the freshly-written `auth.json` is picked up
 /// — the facade caches its model registry on startup and won't rescan it
@@ -1442,6 +2600,9 @@ pub async fn restart_sidecar(
 				pid
 			));
 		}
+	}
+	if remote::is_remote_workspace_key(&cwd) {
+		stop_remote_runtime(state.inner(), &cwd);
 	}
 	// Small grace period so the OS fully releases the process slot
 	// (and, for the persistent Chat workspace, the .lock file gets
@@ -1516,7 +2677,34 @@ pub async fn rpc_command(
 	// gateway_rpc runs it on a blocking thread so we don't freeze the Tauri main thread / webview
 	// event loop — the frontend needs the main thread free to receive the
 	// rpc_response event we emit after the call returns.
-	let channel_opt = lock_ok(&state.channels).get(&cwd).cloned();
+	let mut channel_opt = {
+		let mut channels = lock_ok(&state.channels);
+		match channels.get(&cwd) {
+			Some(channel) if !channel.is_alive() => {
+				log_file(&format!(
+					"rpc_command [{}] dropping dead gateway channel cwd={}",
+					window_label, cwd
+				));
+				channels.remove(&cwd);
+				None
+			}
+			other => other.cloned(),
+		}
+	};
+	if channel_opt.is_none() && remote::is_remote_workspace_key(&cwd) {
+		log_file(&format!(
+			"rpc_command [{}] no remote gateway channel; reconnecting cwd={}",
+			window_label, cwd
+		));
+		init_remote_sidecar(
+			window.clone(),
+			state.clone(),
+			window_label.to_string(),
+			cwd.clone(),
+		)
+		.await?;
+		channel_opt = lock_ok(&state.channels).get(&cwd).cloned();
+	}
 	if let Some(channel) = channel_opt {
 		let cmd_type_for_log = obj
 			.get("type")
@@ -1524,13 +2712,19 @@ pub async fn rpc_command(
 			.unwrap_or("")
 			.to_string();
 		let frame = Value::Object(obj);
-		let resp = gateway_rpc(&channel, &cwd, frame).await.map_err(|e| {
-			log_file(&format!(
-				"rpc_command [{}] gateway rpc FAILED: type={} error={}",
-				window_label, cmd_type_for_log, e
-			));
-			e
-		})?;
+		let gateway_workspace = gateway_workspace_for_cwd(state.inner(), &cwd);
+		let mut resp = gateway_rpc(&channel, &gateway_workspace, frame)
+			.await
+			.map_err(|e| {
+				log_file(&format!(
+					"rpc_command [{}] gateway rpc FAILED: type={} error={}",
+					window_label, cmd_type_for_log, e
+				));
+				e
+			})?;
+		if remote::is_remote_workspace_key(&cwd) {
+			rewrite_remote_service_ports(state.inner(), &cwd, &mut resp);
+		}
 		log_file(&format!(
 			"rpc_command [{}] gateway rpc OK: type={}",
 			window_label, cmd_type_for_log
@@ -1542,7 +2736,13 @@ pub async fn rpc_command(
 	// Sidecar mode: write to stdin (non-blocking, no await needed).
 	{
 		let mut sidecars = state.sidecars.lock().unwrap();
-		let sidecar = sidecars.get_mut(&cwd).ok_or("Sidecar is not running")?;
+		let sidecar = sidecars.get_mut(&cwd).ok_or_else(|| {
+			log_file(&format!(
+				"rpc_command [{}] no sidecar or gateway channel cwd={}",
+				window_label, cwd
+			));
+			"Sidecar is not running".to_string()
+		})?;
 		sidecar
 			.stdin
 			.write_all(line.as_bytes())
@@ -1669,13 +2869,15 @@ fn emit_frame_to_windows(app: &AppHandle, cwd: &str, mut parsed: Value) {
 		.and_then(|t| t.as_str())
 		.unwrap_or("")
 		.to_string();
+	let state = app.state::<BridgeState>();
 	if etype == "response" {
+		complete_remote_reload_waiter(state.inner(), &parsed);
+		maybe_schedule_model_config_sync(app, cwd, &parsed);
 		if let Some(obj) = parsed.as_object_mut() {
 			obj.insert("_cwd".to_string(), Value::String(cwd.to_string()));
 		}
 	}
 	emit_to_pet_window(app, &parsed);
-	let state = app.state::<BridgeState>();
 	// Snapshot the window labels and drop the lock BEFORE any webview emit:
 	// `win.emit` is synchronous cross-process IPC — holding `active` across it
 	// serializes every other command that needs the map and can deadlock with
@@ -2144,44 +3346,47 @@ fn notify_pet_window_state(app: &AppHandle, open: bool) {
 
 /// List all workspaces from ~/.pizza/agent/workspaces/*/meta.json
 #[tauri::command]
-pub async fn list_workspaces() -> Result<Vec<Value>, String> {
+pub async fn list_workspaces(state: tauri::State<'_, BridgeState>) -> Result<Vec<Value>, String> {
 	let workspaces_dir = workspace_meta_root().ok_or("could not determine home directory")?;
 
-	if !workspaces_dir.exists() {
-		return Ok(Vec::new());
-	}
-
-	let entries = std::fs::read_dir(&workspaces_dir).map_err(|e| format!("read_dir: {e}"))?;
 	let mut workspaces: Vec<Value> = Vec::new();
 
-	for entry in entries {
-		let entry = entry.map_err(|e| format!("entry: {e}"))?;
-		let meta_path = entry.path().join("meta.json");
-		if !meta_path.exists() {
-			continue;
+	if workspaces_dir.exists() {
+		let entries = std::fs::read_dir(&workspaces_dir).map_err(|e| format!("read_dir: {e}"))?;
+		for entry in entries {
+			let entry = entry.map_err(|e| format!("entry: {e}"))?;
+			let meta_path = entry.path().join("meta.json");
+			if !meta_path.exists() {
+				continue;
+			}
+			let raw = match std::fs::read_to_string(&meta_path) {
+				Ok(s) => s,
+				Err(_) => continue,
+			};
+			let mut meta: Value = match serde_json::from_str(&raw) {
+				Ok(v) => v,
+				Err(_) => continue,
+			};
+			// Annotate whether the project directory still exists. Entries whose
+			// directory was removed externally (deleted repo, cleaned /tmp, …)
+			// must not be switchable — the UI offers "remove stale entry"
+			// instead, so clicking the row never reaches init_sidecar's
+			// "Directory does not exist" error.
+			let dir_exists = meta
+				.get("cwd")
+				.and_then(|v| v.as_str())
+				.map(|cwd| std::path::Path::new(cwd).is_dir())
+				.unwrap_or(false);
+			if let Some(obj) = meta.as_object_mut() {
+				obj.insert("dir_exists".to_string(), Value::Bool(dir_exists));
+				obj.insert("kind".to_string(), Value::String("local".to_string()));
+			}
+			workspaces.push(meta);
 		}
-		let raw = match std::fs::read_to_string(&meta_path) {
-			Ok(s) => s,
-			Err(_) => continue,
-		};
-		let mut meta: Value = match serde_json::from_str(&raw) {
-			Ok(v) => v,
-			Err(_) => continue,
-		};
-		// Annotate whether the project directory still exists. Entries whose
-		// directory was removed externally (deleted repo, cleaned /tmp, …)
-		// must not be switchable — the UI offers "remove stale entry"
-		// instead, so clicking the row never reaches init_sidecar's
-		// "Directory does not exist" error.
-		let dir_exists = meta
-			.get("cwd")
-			.and_then(|v| v.as_str())
-			.map(|cwd| std::path::Path::new(cwd).is_dir())
-			.unwrap_or(false);
-		if let Some(obj) = meta.as_object_mut() {
-			obj.insert("dir_exists".to_string(), Value::Bool(dir_exists));
-		}
-		workspaces.push(meta);
+	}
+
+	for config in lock_ok(&state.remote_workspaces).values() {
+		workspaces.push(remote::remote_workspace_meta(config));
 	}
 
 	// Sort by last_accessed_at descending
@@ -2207,6 +3412,20 @@ pub async fn delete_workspace(
 	state: tauri::State<'_, BridgeState>,
 	workspace_id: String,
 ) -> Result<(), String> {
+	if let Some(remote_id) = workspace_id.strip_prefix("remote_") {
+		let cwd = remote::workspace_key(remote_id);
+		kill_sidecar_for_cwd(state.inner(), &cwd);
+		let mut workspaces = lock_ok(&state.remote_workspaces);
+		let removed = workspaces.remove(&cwd);
+		if let Err(error) = remote::save_remote_workspaces(&workspaces) {
+			if let Some(config) = removed {
+				workspaces.insert(cwd, config);
+			}
+			return Err(error);
+		}
+		return Ok(());
+	}
+
 	let ws_dir = workspace_meta_root()
 		.ok_or("could not determine home directory")?
 		.join(&workspace_id);
@@ -2338,7 +3557,35 @@ fn guess_mime_type(path: &std::path::Path, fallback: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn describe_dropped_files(paths: Vec<String>) -> Result<Vec<FileAttachmentInfo>, String> {
+pub async fn describe_dropped_files(
+	window: tauri::Window,
+	state: tauri::State<'_, BridgeState>,
+	paths: Vec<String>,
+) -> Result<Vec<FileAttachmentInfo>, String> {
+	let active_cwd = lock_ok(&state.active).get(window.label()).cloned();
+	if let Some(cwd) = active_cwd.filter(|cwd| remote::is_remote_workspace_key(cwd)) {
+		let mut files = Vec::new();
+		for raw_path in paths {
+			let path = PathBuf::from(&raw_path);
+			let metadata = std::fs::metadata(&path)
+				.map_err(|e| format!("Failed to read dropped path {}: {e}", path.display()))?;
+			if metadata.is_dir() {
+				return Err("Remote directory attachments are not supported".to_string());
+			}
+			let bytes = std::fs::read(&path)
+				.map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+			let fallback = guess_mime_type(&path, "application/octet-stream");
+			files.push(save_remote_upload(
+				state.inner(),
+				&cwd,
+				&file_name_for_path(&path),
+				&fallback,
+				&bytes,
+			)?);
+		}
+		return Ok(files);
+	}
+
 	let mut files = Vec::new();
 	for raw_path in paths {
 		let path = PathBuf::from(&raw_path);
@@ -2379,14 +3626,17 @@ pub async fn save_upload(
 			.ok_or("No active workspace for this window")?
 	};
 	let safe_name = sanitize_upload_filename(&filename);
+	let bytes = base64::engine::general_purpose::STANDARD
+		.decode(data_b64)
+		.map_err(|e| format!("Invalid upload data: {e}"))?;
+	if remote::is_remote_workspace_key(&cwd) {
+		return save_remote_upload(state.inner(), &cwd, &filename, &mime_type, &bytes);
+	}
 	let upload_dir = PathBuf::from(&cwd).join(".pizza").join("uploads");
 	std::fs::create_dir_all(&upload_dir)
 		.map_err(|e| format!("Failed to create upload directory: {e}"))?;
 	let stored_name = format!("{}-{}", uuid::Uuid::new_v4(), safe_name);
 	let path = upload_dir.join(stored_name);
-	let bytes = base64::engine::general_purpose::STANDARD
-		.decode(data_b64)
-		.map_err(|e| format!("Invalid upload data: {e}"))?;
 	std::fs::write(&path, &bytes).map_err(|e| format!("Failed to save upload: {e}"))?;
 	let relative_path = path
 		.strip_prefix(&cwd)
@@ -2405,6 +3655,9 @@ pub async fn save_upload(
 /// Reveal a workspace's cwd in the system file manager (Finder on macOS).
 #[tauri::command]
 pub async fn reveal_workspace(cwd: String) -> Result<(), String> {
+	if remote::is_remote_workspace_key(&cwd) {
+		return Err("Remote workspaces cannot be opened in the local file manager".to_string());
+	}
 	let path = expand_tilde(&cwd);
 
 	if !std::path::Path::new(&path).exists() {
@@ -2468,6 +3721,18 @@ pub struct CustomProviderTestResult {
 }
 
 fn agent_dir() -> Result<PathBuf, String> {
+	if let Some(configured) = std::env::var_os("PIZZA_CODING_AGENT_DIR") {
+		let configured = configured.to_string_lossy().to_string();
+		if configured == "~" {
+			return home_dir().ok_or_else(|| "could not determine home directory".to_string());
+		}
+		if let Some(rest) = configured.strip_prefix("~/") {
+			return home_dir()
+				.map(|home| home.join(rest))
+				.ok_or_else(|| "could not determine home directory".to_string());
+		}
+		return Ok(PathBuf::from(configured));
+	}
 	home_dir()
 		.map(|home| home.join(".pizza").join("agent"))
 		.ok_or_else(|| "could not determine home directory".to_string())
@@ -2799,6 +4064,7 @@ pub async fn list_providers(app: AppHandle) -> Result<Vec<ProviderInfo>, String>
 /// Set an API key for a provider in auth.json.
 #[tauri::command]
 pub async fn set_provider_api_key(
+	app: AppHandle,
 	state: tauri::State<'_, BridgeState>,
 	provider: String,
 	api_key: String,
@@ -2820,12 +4086,14 @@ pub async fn set_provider_api_key(
 	// to reload its in-memory credentials so a model switch uses this new key.
 	broadcast_to_all_sidecars(&state, "reload_providers");
 	broadcast_to_all_channels(state.inner(), "reload_providers").await;
+	schedule_remote_provider_provisioning(&app, Duration::ZERO);
 	Ok(())
 }
 
 /// Remove a provider's credentials from auth.json.
 #[tauri::command]
 pub async fn remove_provider_api_key(
+	app: AppHandle,
 	state: tauri::State<'_, BridgeState>,
 	provider: String,
 ) -> Result<(), String> {
@@ -2853,11 +4121,13 @@ pub async fn remove_provider_api_key(
 	// their in-memory cache (otherwise auth still resolves as configured).
 	broadcast_to_all_sidecars(&state, "reload_providers");
 	broadcast_to_all_channels(state.inner(), "reload_providers").await;
+	schedule_remote_provider_provisioning(&app, Duration::ZERO);
 	Ok(())
 }
 
 #[tauri::command]
 pub async fn save_custom_provider(
+	app: AppHandle,
 	state: tauri::State<'_, BridgeState>,
 	input: CustomProviderInput,
 ) -> Result<(), String> {
@@ -2925,6 +4195,7 @@ pub async fn save_custom_provider(
 	log_file(&format!("save_custom_provider: saved {}", provider_id));
 	broadcast_to_all_sidecars(&state, "reload_providers");
 	broadcast_to_all_channels(state.inner(), "reload_providers").await;
+	schedule_remote_provider_provisioning(&app, Duration::ZERO);
 	Ok(())
 }
 
@@ -3056,6 +4327,7 @@ pub async fn test_custom_provider(
 
 #[tauri::command]
 pub async fn remove_custom_provider(
+	app: AppHandle,
 	state: tauri::State<'_, BridgeState>,
 	provider: String,
 ) -> Result<(), String> {
@@ -3074,6 +4346,7 @@ pub async fn remove_custom_provider(
 	log_file(&format!("remove_custom_provider: removed {}", provider_id));
 	broadcast_to_all_sidecars(&state, "reload_providers");
 	broadcast_to_all_channels(state.inner(), "reload_providers").await;
+	schedule_remote_provider_provisioning(&app, Duration::ZERO);
 	Ok(())
 }
 
@@ -3219,6 +4492,9 @@ fn which(cmd: &str) -> bool {
 /// `start` on Windows).
 #[tauri::command]
 pub async fn open_in_editor(cwd: String, file_path: String) -> Result<(), String> {
+	if remote::is_remote_workspace_key(&cwd) {
+		return Err("Open in local editor is unavailable for remote workspaces".to_string());
+	}
 	let full = resolve_workspace_path(&cwd, Some(&file_path))?;
 	if !full.exists() {
 		return Err(format!("File does not exist: {}", full.display()));
@@ -3296,6 +4572,11 @@ pub async fn open_in_editor(cwd: String, file_path: String) -> Result<(), String
 /// opened.
 #[tauri::command]
 pub async fn reveal_path(cwd: String, sub_path: String) -> Result<(), String> {
+	if remote::is_remote_workspace_key(&cwd) {
+		return Err(
+			"Reveal in local file manager is unavailable for remote workspaces".to_string(),
+		);
+	}
 	let full = resolve_workspace_path(&cwd, Some(&sub_path))?;
 	if !full.exists() {
 		return Err(format!("Path does not exist: {}", full.display()));
@@ -3348,7 +4629,7 @@ const SKIP_DIRS: &[&str] = &[
 	".DS_Store",
 ];
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DirEntry {
 	pub name: String,
 	pub path: String,
@@ -3371,7 +4652,22 @@ fn resolve_workspace_path(cwd: &str, sub_path: Option<&str>) -> Result<PathBuf, 
 /// List entries in a directory within the workspace. `sub_path` is relative
 /// to `cwd`. Directories in `SKIP_DIRS` are excluded.
 #[tauri::command]
-pub async fn list_dir(cwd: String, sub_path: Option<String>) -> Result<Vec<DirEntry>, String> {
+pub async fn list_dir(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+	sub_path: Option<String>,
+) -> Result<Vec<DirEntry>, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"list_dir",
+		serde_json::json!({ "subPath": sub_path }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote list_dir response: {e}"));
+	}
 	let dir = resolve_workspace_path(&cwd, sub_path.as_deref())?;
 	if !dir.exists() {
 		return Err(format!("Directory does not exist: {}", dir.display()));
@@ -3423,7 +4719,22 @@ pub async fn list_dir(cwd: String, sub_path: Option<String>) -> Result<Vec<DirEn
 /// Read a file's text content within the workspace. `file_path` is relative
 /// to `cwd`. Files larger than 2 MB are rejected to avoid UI overload.
 #[tauri::command]
-pub async fn read_file(cwd: String, file_path: String) -> Result<String, String> {
+pub async fn read_file(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+	file_path: String,
+) -> Result<String, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"read_file",
+		serde_json::json!({ "filePath": file_path }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote read_file response: {e}"));
+	}
 	let full = resolve_workspace_path(&cwd, Some(&file_path))?;
 	if !full.exists() {
 		return Err(format!("File does not exist: {}", full.display()));
@@ -3445,7 +4756,7 @@ pub async fn read_file(cwd: String, file_path: String) -> Result<String, String>
 
 // --- Recursive file search (for the composer @ mention menu) ---
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct FileSearchEntry {
 	/// Basename of the file.
 	pub name: String,
@@ -3461,10 +4772,22 @@ pub struct FileSearchEntry {
 /// the file explorer (`list_dir`) already handles directory navigation.
 #[tauri::command]
 pub async fn search_files(
+	state: tauri::State<'_, BridgeState>,
 	cwd: String,
 	query: Option<String>,
 	limit: Option<u32>,
 ) -> Result<Vec<FileSearchEntry>, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"search_files",
+		serde_json::json!({ "query": query, "limit": limit }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote search_files response: {e}"));
+	}
 	use std::collections::VecDeque;
 	let base = resolve_workspace_path(&cwd, None)?;
 	if !base.is_dir() {
@@ -3559,7 +4882,7 @@ fn run_git_capture(cwd: &str, args: &[&str]) -> Result<String, String> {
 /// is the file path (relative to repo root), and `orig_path` is the original
 /// path for a rename/copy (the `R`/`C` codes), if any. `additions`/`deletions`
 /// come from `git diff --numstat` and are `None` for untracked/binary files.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GitStatusEntry {
 	pub xy: String,
 	pub path: String,
@@ -3636,7 +4959,7 @@ fn parse_porcelain(raw: &str, stats: &HashMap<String, (u32, u32)>) -> Vec<GitSta
 }
 
 /// Summary of the current git repo state for the right-dock Git tab.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GitStatusSummary {
 	/// True if `cwd` is inside a git work tree.
 	pub is_repo: bool,
@@ -3664,7 +4987,16 @@ pub struct GitStatusSummary {
 /// Return a `GitStatusSummary` for `cwd`. If `cwd` is not a git repo, returns
 /// `is_repo: false` with empty fields (no error) so the UI can hide the tab.
 #[tauri::command]
-pub async fn git_status(cwd: String) -> Result<GitStatusSummary, String> {
+pub async fn git_status(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+) -> Result<GitStatusSummary, String> {
+	if let Some(value) =
+		remote_fs_request(state.inner(), &cwd, "git_status", serde_json::json!({})).await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote git_status response: {e}"));
+	}
 	// Cheap repo check first — non-zero exit means "not a repo"; we surface that
 	// as a successful `is_repo: false` rather than an error.
 	let inside = run_git_capture(&cwd, &["rev-parse", "--is-inside-work-tree"]);
@@ -3794,7 +5126,23 @@ pub async fn git_status(cwd: String) -> Result<GitStatusSummary, String> {
 /// `"untracked"`). Note `--no-index` exits 1 when the files differ, which is
 /// the normal case here, so that mode bypasses the exit-status check.
 #[tauri::command]
-pub async fn git_diff(cwd: String, path: String, mode: String) -> Result<String, String> {
+pub async fn git_diff(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+	path: String,
+	mode: String,
+) -> Result<String, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"git_diff",
+		serde_json::json!({ "path": path, "mode": mode }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote git_diff response: {e}"));
+	}
 	if mode == "untracked" {
 		if path.is_empty() {
 			return Ok(String::new());
@@ -3829,7 +5177,7 @@ pub async fn git_diff(cwd: String, path: String, mode: String) -> Result<String,
 }
 
 /// One entry from `git branch --list`, with its name and tracking info.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GitBranchEntry {
 	/// Branch name (without the `*` or `remotes/` prefix).
 	pub name: String,
@@ -3885,7 +5233,16 @@ fn parse_branches(raw: &str) -> Vec<GitBranchEntry> {
 /// supported on git >= 2.41, while `for-each-ref` with a custom `--format` is
 /// stable across versions and gives tab-separated fields for safe parsing.
 #[tauri::command]
-pub async fn git_branches(cwd: String) -> Result<Vec<GitBranchEntry>, String> {
+pub async fn git_branches(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+) -> Result<Vec<GitBranchEntry>, String> {
+	if let Some(value) =
+		remote_fs_request(state.inner(), &cwd, "git_branches", serde_json::json!({})).await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote git_branches response: {e}"));
+	}
 	// Cheap repo check — non-repo returns empty list, not an error.
 	let inside = run_git_capture(&cwd, &["rev-parse", "--is-inside-work-tree"]);
 	if !matches!(inside, Ok(s) if s.trim() == "true") {
@@ -3906,7 +5263,7 @@ pub async fn git_branches(cwd: String) -> Result<Vec<GitBranchEntry>, String> {
 }
 
 /// One entry from `git log` — a read-only snapshot for the Git tab's history view.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct GitLogEntry {
 	/// Full commit hash.
 	pub hash: String,
@@ -3960,7 +5317,22 @@ fn parse_log(raw: &str) -> Vec<GitLogEntry> {
 /// the action lands in the event log. If `cwd` is not a git repo, returns an
 /// empty list (no error) so the UI can hide the section. `limit` clamped 1..=200.
 #[tauri::command]
-pub async fn git_log(cwd: String, limit: Option<u32>) -> Result<Vec<GitLogEntry>, String> {
+pub async fn git_log(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+	limit: Option<u32>,
+) -> Result<Vec<GitLogEntry>, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"git_log",
+		serde_json::json!({ "limit": limit }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote git_log response: {e}"));
+	}
 	let inside = run_git_capture(&cwd, &["rev-parse", "--is-inside-work-tree"]);
 	if !matches!(inside, Ok(s) if s.trim() == "true") {
 		return Ok(Vec::new());
@@ -3987,7 +5359,22 @@ pub async fn git_log(cwd: String, limit: Option<u32>) -> Result<Vec<GitLogEntry>
 /// what landed in a commit from the Git tab's history view. `hash` may be any
 /// hex prefix or refname the agent or user clicked.
 #[tauri::command]
-pub async fn git_show(cwd: String, hash: String) -> Result<String, String> {
+pub async fn git_show(
+	state: tauri::State<'_, BridgeState>,
+	cwd: String,
+	hash: String,
+) -> Result<String, String> {
+	if let Some(value) = remote_fs_request(
+		state.inner(),
+		&cwd,
+		"git_show",
+		serde_json::json!({ "hash": hash }),
+	)
+	.await?
+	{
+		return serde_json::from_value(value)
+			.map_err(|e| format!("Invalid remote git_show response: {e}"));
+	}
 	// Guard against option injection: a commit ref is hex (possibly with `/`,
 	// `.`, `_`, `-` for refnames) and never starts with `-`.
 	if hash.is_empty()
@@ -4101,6 +5488,64 @@ mod tests {
 			gateway_command(("pizza".into(), s(&["--verbose"]))).1,
 			s(&["--verbose"])
 		);
+	}
+
+	#[test]
+	fn gateway_requests_use_remote_path_instead_of_synthetic_workspace_key() {
+		let state = BridgeState::default();
+		lock_ok(&state.remote_workspaces).clear();
+		assert_eq!(
+			gateway_workspace_for_cwd(&state, "/Users/mac/project"),
+			"/Users/mac/project"
+		);
+
+		let remote_key = "remote://abc123";
+		lock_ok(&state.remote_workspaces).insert(
+			remote_key.to_string(),
+			remote::RemoteWorkspaceConfig {
+				id: "abc123".to_string(),
+				label: "Remote project".to_string(),
+				ssh_target: "root@example.com".to_string(),
+				port: None,
+				identity_file: None,
+				password: None,
+				remote_path: "/root/kafka".to_string(),
+				pizza_command: None,
+				created_at: 0,
+				last_accessed_at: 0,
+			},
+		);
+		assert_eq!(gateway_workspace_for_cwd(&state, remote_key), "/root/kafka");
+	}
+
+	#[test]
+	fn same_remote_workspace_matches_host_port_and_directory_only() {
+		let base = remote::RemoteWorkspaceConfig {
+			id: "first".to_string(),
+			label: "kafka".to_string(),
+			ssh_target: "root@example.com".to_string(),
+			port: None,
+			identity_file: None,
+			password: None,
+			remote_path: "/root/kafka".to_string(),
+			pizza_command: None,
+			created_at: 0,
+			last_accessed_at: 0,
+		};
+		let mut equivalent = base.clone();
+		equivalent.id = "second".to_string();
+		equivalent.label = "different label".to_string();
+		equivalent.port = Some(22);
+		equivalent.password = Some("different credential".to_string());
+		assert!(same_remote_workspace(&base, &equivalent));
+
+		let mut different_path = equivalent.clone();
+		different_path.remote_path = "/root/kafka/tests".to_string();
+		assert!(!same_remote_workspace(&base, &different_path));
+
+		let mut different_port = equivalent;
+		different_port.port = Some(2222);
+		assert!(!same_remote_workspace(&base, &different_port));
 	}
 
 	#[test]
@@ -4289,6 +5734,7 @@ pub async fn oauth_login(
 					broadcast_to_all_channels(state.inner(), "reload_providers").await;
 				}
 			});
+			schedule_remote_provider_provisioning(&app, Duration::ZERO);
 		}
 		// Ensure the child is reaped and the slot freed.
 		if let Some(state) = app.try_state::<BridgeState>() {

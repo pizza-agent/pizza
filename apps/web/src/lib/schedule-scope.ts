@@ -8,6 +8,7 @@
  * asks for exactly one workspace's tasks.
  */
 import { isMainChatCwd, normalizePathForCompare } from "./platform";
+import { resolveWorkspaceExecutionPath } from "./workspace-paths";
 
 export interface ScheduleScope {
 	scope: "main" | "workspace";
@@ -15,7 +16,8 @@ export interface ScheduleScope {
 }
 
 export function resolveScheduleScope(workspace?: string | null): ScheduleScope {
-	const cwd = normalizePathForCompare(workspace ?? "");
+	const executionPath = resolveWorkspaceExecutionPath(workspace);
+	const cwd = normalizePathForCompare(executionPath);
 	if (isMainChatCwd(cwd)) return { scope: "main" };
 	return { scope: "workspace", workspaceId: cwd || undefined };
 }
