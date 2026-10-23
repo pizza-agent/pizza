@@ -1694,7 +1694,19 @@ export class Reactor {
 		});
 
 		try {
-			const outcome = await compactWithDeadline(this.compactionPolicy, payload.reason, abortController);
+			// Summarization is mechanical — it must not burn the session
+			// thinking budget. thinking:max can spend the whole completion
+			// budget on reasoning and return stop_reason:"length" with an
+			// empty body. Force thinking off for the compaction call and
+			// restore the level afterwards.
+			const previousThinking = this.config.model.thinking_level;
+			let outcome;
+			try {
+				this.config.model.thinking_level = "off";
+				outcome = await compactWithDeadline(this.compactionPolicy, payload.reason, abortController);
+			} finally {
+				this.config.model.thinking_level = previousThinking;
+			}
 			this._emit({
 				actor_id: "compactor",
 				type: "COMPACTION_END",

@@ -533,7 +533,20 @@ export class EventSourcedRuntime {
 				caused_by: causedBy,
 			});
 			const policy = this._buildCompactionPolicy(this.getProjection());
-			const outcome = await compactWithDeadline(policy, reason, abortController);
+			// Summarization is mechanical — it must not burn the session
+			// thinking budget. thinking:max can spend the whole completion
+			// budget on reasoning and return stop_reason:"length" with an
+			// empty body ("Summarization produced an empty summary" observed
+			// live). Force thinking off for the compaction call and restore
+			// the level afterwards.
+			const previousThinking = this.config.model.thinking_level;
+			let outcome;
+			try {
+				this.config.model.thinking_level = "off";
+				outcome = await compactWithDeadline(policy, reason, abortController);
+			} finally {
+				this.config.model.thinking_level = previousThinking;
+			}
 			this.store.append({
 				actor_id: "compactor",
 				type: "COMPACTION_END",

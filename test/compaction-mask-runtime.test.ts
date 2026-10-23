@@ -112,6 +112,20 @@ describe("compaction threshold basis with understated catalog window", () => {
 		for (const dir of tempDirs.splice(0)) if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 	});
 
+	function waitForEvent(runtime: EventSourcedRuntime, type: EventType, timeoutMs = 2000): Promise<EventBase> {
+		const existing = runtime.store.query({ types: [type], reverse: true, limit: 1 })[0];
+		if (existing) return Promise.resolve(existing);
+		return new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => { unsubscribe(); reject(new Error(`Timed out waiting for ${type}`)); }, timeoutMs);
+			const unsubscribe = runtime.subscribe((event) => {
+				if (event.type !== type) return;
+				clearTimeout(timeout);
+				unsubscribe();
+				resolve(event);
+			}, { types: [type] });
+		});
+	}
+
 	function makeTempDir(): string {
 		const dir = join(tmpdir(), `pizza-basis-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(dir, { recursive: true });
@@ -181,4 +195,49 @@ describe("compaction threshold basis with understated catalog window", () => {
 		expect(policy2.contextWindow()).toBe(20_000);
 		runtime.dispose();
 	});
+
+	it("forces thinking off during summarization and restores it afterwards", async () => {
+		const cwd = makeTempDir();
+		const levels: (string | undefined)[] = [];
+		const runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: { get: () => undefined, list: () => [] },
+			llmClient: {
+				async complete() {
+					levels.push(runtime.getThinkingLevel());
+					// Turn calls return ~1600 chars ≈ 400 tokens so the context
+					// estimate crosses the 190-token trigger; the summarization
+					// call returns a small summary.
+					const isTurn = levels.length <= 2;
+					return {
+						content: [{ type: "text", text: isTurn ? "x".repeat(1600) : "summary ok" } as ContentBlock],
+						provider: "test", model: "test",
+						usage: { input: 200, output: 50, cache_read: 0, cache_write: 0, total: 250, cost: 0 },
+						stopReason: "stop",
+					};
+				},
+			},
+			classifierConfig: { approve_unknown: false },
+			systemPrompt: "",
+			model: { provider: "test", model_id: "test", thinking_level: "max" },
+			tools: [],
+			// Tiny window so one turn triggers a real (summary) compaction.
+			compactionEngineSettings: { contextWindow: 200, reserveTokens: 0, keepRecentTokens: 10, strategy: "summary" },
+		});
+		// Two turns so compactablePairs exceeds keepRecentTokens on the first.
+		await runtime.prompt("seed one turn that overflows the 200-token window");
+		await runtime.prompt("and a second overflowing turn");
+		await waitForEvent(runtime, "COMPACTION_END", 5000).catch(() => {
+					const types = runtime.store.query({}).map((e) => e.type);
+					const aborted = runtime.store.query({ types: ["COMPACTION_ABORTED"] }).map((e) => JSON.stringify(e.payload));
+					throw new Error("no COMPACTION_END; events=" + types.join(",") + " aborted=" + aborted.join("|"));
+				});
+		// The summarization call ran with thinking forced off; level restored after.
+		expect(levels.length).toBeGreaterThan(1); // at least turn + summary call
+		expect(levels[levels.length - 1]).toBe("off");
+		expect(runtime.getThinkingLevel()).toBe("max");
+		runtime.dispose();
+	});
 });
+
