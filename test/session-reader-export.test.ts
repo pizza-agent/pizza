@@ -116,4 +116,39 @@ describe("readSessionForExport", () => {
 		expect(r2.entries).toHaveLength(1);
 		expect((r2.entries[0] as any).message.content).toBe("session two message");
 	});
+
+	it("includes the context parent's entries for a forked session", () => {
+		const mgr = new SessionManager(store, store);
+		const parent = mgr.createSession("user_explicit", "Parent");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "parent message" } });
+		store.append({
+			actor_id: "coder_agent",
+			type: "AGENT_MESSAGE_END",
+			payload: {
+				content: [{ type: "text", text: "parent reply" }],
+				model: { provider: "anthropic", model_id: "claude" },
+				usage: { input: 5, output: 5, cache_read: 0, cache_write: 0, total: 10, cost: 0 },
+				stop_reason: "stop",
+			},
+		});
+		// Create a new session that inherits the parent's context (like a jump-continuation).
+		const forked = mgr.createSession("fork", undefined, {
+			parentSessionId: parent.session_id,
+			contextParentSessionId: parent.session_id,
+		});
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "fork message" } });
+		store.close();
+
+		const result = readSessionForExport(`event-session:${workspaceId}:${forked.session_id}`, agentDir);
+		const texts = result.entries.map((e) => {
+			const c = (e as any).message?.content;
+			return typeof c === "string" ? c : (c?.[0]?.text ?? "");
+		});
+		expect(texts).toEqual(["parent message", "parent reply", "fork message"]);
+		// The fork's own first entry chains onto the parent's last entry.
+		const lastParent = result.entries[1];
+		const firstFork = result.entries[2];
+		expect(firstFork.parentId).toBe(lastParent.id);
+	});
 });
+
