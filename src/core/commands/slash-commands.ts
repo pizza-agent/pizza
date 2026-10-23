@@ -15,6 +15,7 @@ export interface BuiltinSlashCommand {
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+	{ name: "help", description: "Show all commands" },
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "export", description: "Export session to HTML" },

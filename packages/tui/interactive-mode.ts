@@ -2951,6 +2951,11 @@ export class InteractiveMode {
         this.editor.setText("");
         return;
       }
+      if (text === "/help") {
+        this.handleHelpCommand();
+        this.editor.setText("");
+        return;
+      }
       if (text === "/stats") {
         this.handleStatsCommand();
         this.editor.setText("");
@@ -5524,6 +5529,25 @@ export class InteractiveMode {
     }
   }
 
+  private handleHelpCommand(): void {
+    const lines: string[] = [`${theme.bold("Commands")}`];
+    for (const c of BUILTIN_SLASH_COMMANDS) {
+      lines.push(`${theme.fg("accent", `/${c.name}`)}  ${theme.fg("dim", c.description)}`);
+    }
+    const extensionCommands = this.extensionRunnerValue.getRegisteredCommands();
+    if (extensionCommands.length > 0) {
+      lines.push("");
+      lines.push(theme.bold("Extension commands"));
+      for (const c of extensionCommands) {
+        lines.push(`${theme.fg("accent", `/${c.invocationName}`)}  ${theme.fg("dim", c.description ?? "")}`);
+      }
+    }
+    lines.push("");
+    lines.push(theme.fg("dim", "Type /hotkeys for key bindings, !<cmd> to run bash inline, !! to exclude from context, @file to attach files."));
+    this.chatContainer.addChild(new Spacer(1));
+    this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
+    this.ui.requestRender();
+  }
   private handleRenameCommand(name: string): void {
     const sessionId = this.projectionSessionManager?.getActiveSessionId();
     if (!sessionId) {
