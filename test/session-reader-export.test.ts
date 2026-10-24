@@ -150,5 +150,15 @@ describe("readSessionForExport", () => {
 		const firstFork = result.entries[2];
 		expect(firstFork.parentId).toBe(lastParent.id);
 	});
-});
 
+	it("returns an empty transcript for a session that does not exist", () => {
+		const mgr = new SessionManager(store, store);
+		mgr.createSession("user_explicit", "Real Session");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "someone else's message" } });
+		store.close();
+		// A bogus id used to degenerate the range query to "all events" and
+		// leak other sessions' entries into the export.
+		const result = readSessionForExport(`event-session:${workspaceId}:sess_does_not_exist`, agentDir);
+		expect(result.entries).toHaveLength(0);
+	});
+});

@@ -201,9 +201,6 @@ export function readSessionForExport(inputPath: string, agentDir: string = getAg
 		// Rebuild the transcript by replaying the session’s event range — the
 		// event-sourced model never writes SESSION_ENTRY_APPENDED for normal
 		// conversation, so reading only those yields an empty transcript.
-		const session = store.getSessionIndex()?.sessions.find((s) => s.session_id === sessionId);
-		const start = session?.event_range.start_event_id;
-		const end = session?.event_range.end_event_id;
 
 		const index = store.getSessionIndex();
 		const findSession = (id: string) => index?.sessions.find((s) => s.session_id === id);
@@ -211,15 +208,20 @@ export function readSessionForExport(inputPath: string, agentDir: string = getAg
 		// Replay a session’s own event range into export entries.
 		const entriesFor = (id: string, depth: number): SessionEntry[] => {
 			const sess = findSession(id);
-			const start = sess?.event_range.start_event_id;
-			const end = sess?.event_range.end_event_id;
+			// Unknown session → no events. Without this guard the range query
+			// degenerates to "everything" and the export silently mixes in
+			// other sessions’ transcripts (observed live: --export on a
+			// bogus id produced another session’s entries).
+			if (!sess) return [];
+			const start = sess.event_range.start_event_id;
+			const end = sess.event_range.end_event_id;
 			const rangeEvents = store
 				.query({
 					after: start && start !== "ORIGIN" ? start : undefined,
 					before: end && end !== "HEAD" ? end : undefined,
 					types: EXPORT_ENTRY_TYPES,
 				})
-				.filter((event) => !sess || !event.thread_id || event.thread_id === sess.thread_id);
+				.filter((event) => !event.thread_id || event.thread_id === sess.thread_id);
 
 			const out: SessionEntry[] = [];
 			let previousId: string | null = null;
