@@ -380,7 +380,11 @@ export class Reactor {
 		return this.abortController?.signal.aborted ?? false;
 	}
 
-	/** Interrupt the reactor. */
+	/** Interrupt the reactor. Bare Esc (no content) is a HARD interrupt:
+	 * it aborts the in-flight turn AND drops every queued follow-up —
+	 * matching the user-facing "stop everything" intent. A steer
+	 * (USER_INTERRUPT with content) aborts the turn but keeps the new
+	 * message queued for the next turn. */
 	interrupt(): void {
 		this._stopStreamIdleWatchdog();
 		this.abortController?.abort();

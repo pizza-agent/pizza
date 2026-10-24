@@ -828,7 +828,10 @@ export class EventSourcedRuntime {
 	}
 
 	/**
-	 * Fork session at a specific event.
+	 * Fork session at a specific event. See SessionProjection.fork() —
+	 * this creates a BRANCH VIEW starting at the event, not a rewind:
+	 * post-event history stays inside the view because a contiguous
+	 * event range cannot exclude descendants.
 	 */
 	fork(eventId: string): SessionDescriptor {
 		const desc = this.sessionManager?.forkAt(eventId) as any;
@@ -871,6 +874,10 @@ export class EventSourcedRuntime {
 		return sessionId ? this.sessionManager?.getSession(sessionId) : undefined;
 	}
 
+	// NOTE: checkpoints exist only at this API level — there is currently
+	// no UI entry point that calls createCheckpoint/restoreCheckpoint. The
+	// machinery is wired end-to-end (adapter + CHECKPOINT_* events) but is
+	// dormant until a command or mode opts in.
 	async createCheckpoint(label?: string): Promise<CheckpointRef> {
 		const checkpoint = await this.runtimeAdapter.createCheckpoint({
 			cwd: this.config.cwd,

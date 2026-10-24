@@ -312,6 +312,11 @@ export class InteractiveMode {
   private _streamRenderAt = 0;
   private _streamRenderPending: ReturnType<typeof setTimeout> | undefined;
   private ui!: TUI;
+  /** The transcript renders into the terminal’s native scrollback — the
+   * TUI runs in regular (non-alt-screen) mode, so history paging is the
+   * terminal’s job, not ours. An app-internal ScrollView would need the
+   * alt-screen viewport (TuiAltScreen), which is a deliberate non-goal.
+   */
   private chatContainer!: Container;
   private pendingMessagesContainer!: Container;
   private statusContainer!: Container;
@@ -1068,6 +1073,9 @@ export class InteractiveMode {
     this.headerContainer.addChild(new Spacer(1));
 
     this.ui.addChild(this.chatContainer);
+    // NOTE: the chat lives in the terminal’s native scrollback, not an
+    // app-internal ScrollView — paging back through the transcript is
+    // the terminal’s job in regular mode.
     this.ui.addChild(this.pendingMessagesContainer);
     this.ui.addChild(this.statusContainer);
     this.renderWidgets(); // Initialize with default spacer
@@ -3061,7 +3069,10 @@ export class InteractiveMode {
         }
       }
 
-      // Queue input during compaction (extension commands execute immediately)
+      // Messages typed while compaction runs are queued, not steered —
+      // interrupting mid-compaction would lose the summary and leave the
+      // context in a worse state than before. They are delivered as a
+      // steer once the compaction settles (see flushCompactionQueue).
       if (this.isCompacting) {
         if (this.isExtensionCommand(text)) {
           this.editor.addToHistory?.(text);
@@ -3073,8 +3084,9 @@ export class InteractiveMode {
         return;
       }
 
-      // If streaming, use prompt() with steer behavior
-      // This handles extension commands (execute immediately), prompt template expansion, and queueing
+      // Enter while streaming is a STEER: it aborts the in-flight turn
+      // and replaces it with this message (not a polite queue — that is
+      // what Alt+Enter/followUp is for).
       if (this.isStreaming) {
         this.editor.addToHistory?.(text);
         this.editor.setText("");
@@ -3950,7 +3962,9 @@ export class InteractiveMode {
     ).trim();
     if (!text) return;
 
-    // Queue input during compaction (extension commands execute immediately)
+    // While compaction runs, a follow-up is queued instead of interrupting
+    // — the compaction boundary must settle first or the message would be
+    // delivered against a context that is about to change.
     if (this.isCompacting) {
       if (this.isExtensionCommand(text)) {
         this.editor.addToHistory?.(text);
@@ -3962,8 +3976,9 @@ export class InteractiveMode {
       return;
     }
 
-    // Alt+Enter queues a follow-up message (waits until agent finishes)
-    // This handles extension commands (execute immediately), prompt template expansion, and queueing
+    // Alt+Enter while streaming is a FOLLOW-UP: it queues behind the
+    // in-flight turn instead of interrupting it (the polite counterpart
+    // of Enter-as-steer).
     if (this.isStreaming) {
       this.editor.addToHistory?.(text);
       this.editor.setText("");

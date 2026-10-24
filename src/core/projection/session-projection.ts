@@ -204,7 +204,16 @@ export class SessionProjection {
 	}
 
 	/**
-	 * Fork: create new session descriptor from a specific event.
+	 * Fork: create a new session VIEW starting at a specific event.
+	 *
+	 * This is a branch view, not a rewind: the forked range is
+	 * [at_event_id → HEAD] (exclusive of the fork point), so events that
+	 * came after at_event_id remain inside the view. Because the event log
+	 * is immutable and a session range is one contiguous span, "drop
+	 * everything after point E and continue from there" cannot be
+	 * expressed — the descendants of E are unavoidable. If a true rewind
+	 * is ever wanted, it needs a different mechanism (e.g. a summary
+	 * boundary or an exclusion set), not a wider range.
 	 */
 	fork(at_event_id: string): SessionDescriptor {
 		return {
