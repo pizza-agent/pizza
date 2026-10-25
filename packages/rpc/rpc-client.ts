@@ -63,6 +63,13 @@ export type RpcEventListener = (event: EventBase) => void;
 /** Keep at most this many bytes of child stderr in memory (tail). */
 const STDERR_TAIL_CAP = 64 * 1024;
 
+/**
+ * How long start() watches for an immediate exit before declaring the
+ * agent alive. Long enough to catch fatal startup paths (lock conflicts,
+ * bad config) that exit after CLI init but before the first RPC.
+ */
+const STARTUP_GRACE_MS = 1_500;
+
 // ============================================================================
 // RPC Client
 // ============================================================================
@@ -149,13 +156,20 @@ export class RpcClient {
 			}
 		});
 
-		// Wait a moment for process to initialize
-		await new Promise((resolve) => setTimeout(resolve, 100));
-
-		if (this.process.exitCode !== null || this.process.signalCode !== null || !this.process.pid) {
-			throw new Error(
-				`Agent process failed to start (exitCode=${this.process.exitCode}, signal=${this.process.signalCode}). Stderr: ${this.stderr}`,
-			);
+		// Wait for the process to prove it can stay up. Fatal startup
+		// failures (e.g. "Another main agent instance is already running",
+		// workspace lock conflicts) print to stderr and exit a few hundred
+		// ms in — a single short check would miss them, letting the caller
+		// pool a corpse that dies right after. Poll so we reject with the
+		// real stderr instead.
+		const deadline = Date.now() + STARTUP_GRACE_MS;
+		while (Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			if (this.process.exitCode !== null || this.process.signalCode !== null || !this.process.pid) {
+				throw new Error(
+					`Agent process failed to start (exitCode=${this.process.exitCode}, signal=${this.process.signalCode}). Stderr: ${this.stderr}`,
+				);
+			}
 		}
 	}
 

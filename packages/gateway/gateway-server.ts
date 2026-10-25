@@ -61,6 +61,12 @@ export function gatewaySocketPath(socketBasename = "gateway", socketDirectory = 
  * user connect. No-op on Windows (named pipes use ACLs, and chmod on a pipe
  * path is meaningless).
  */
+/** An agent that stays up this long counts as a healthy spawn (crash counters reset). */
+const AGENT_STABLE_MS = 30_000;
+/** First retry delay after a spawn crash; doubles each consecutive crash. */
+const SPAWN_BACKOFF_BASE_MS = 2_000;
+const SPAWN_BACKOFF_MAX_MS = 30_000;
+
 function restrictSocketPermissions(path: string): void {
 	if (platform() === "win32") return;
 	try {
@@ -175,6 +181,8 @@ interface PoolEntry {
 	 * interactive one when a desktop window attaches.
 	 */
 	headless: boolean;
+	/** When the agent process was spawned — used to detect crash loops. */
+	spawnedAt: number;
 	/** Idle-eviction timer handle. */
 	idleTimer?: NodeJS.Timeout;
 }
@@ -368,12 +376,48 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	 * "Agent process stopped" forever. */
 	const spawning = new Map<string, Promise<PoolEntry>>();
 
+	/**
+	 * Consecutive spawn-crash bookkeeping per cwd. An agent that exits within
+	 * {@link AGENT_STABLE_MS} of being spawned — or whose `start()` rejects —
+	 * bumps its counter and earns an exponential backoff. Without this, a
+	 * workspace that can never start (e.g. the main-agent lock held by a
+	 * stray `pizza --main`) crash-loops forever: the scheduler-guard tick and
+	 * every channel retry spawn a fresh process that dies instantly, spamming
+	 * the log and returning an opaque "Agent process stopped" to the UI.
+	 */
+	const spawnCrashes = new Map<string, { count: number; nextAllowedAt: number; reason: string }>();
+
+	function lastStderrLine(raw: string): string {
+		// Strip ANSI escapes (chalk colors) before surfacing to clients/logs.
+		const clean = raw.replace(/\x1b\[[0-9;]*m/g, "");
+		return clean.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "unknown";
+	}
+
+	function recordSpawnCrash(cwd: string, reason: string): void {
+		const count = (spawnCrashes.get(cwd)?.count ?? 0) + 1;
+		const delay = Math.min(SPAWN_BACKOFF_BASE_MS * 2 ** (count - 1), SPAWN_BACKOFF_MAX_MS);
+		spawnCrashes.set(cwd, { count, nextAllowedAt: Date.now() + delay, reason: lastStderrLine(reason) });
+		console.error(
+			`Gateway: agent for ${cwd} crashed on spawn (crash #${count}, retry in ${Math.round(delay / 1000)}s): ${lastStderrLine(reason)}`,
+		);
+	}
+
+	/** Reject while `cwd` is in its crash-backoff window. */
+	function assertSpawnAllowed(cwd: string): void {
+		const crash = spawnCrashes.get(cwd);
+		if (!crash || Date.now() >= crash.nextAllowedAt) return;
+		throw new Error(
+			`agent for ${cwd} keeps exiting right after spawn (attempt ${crash.count + 1} allowed in ~${Math.ceil((crash.nextAllowedAt - Date.now()) / 1000)}s): ${crash.reason}`,
+		);
+	}
+
 	/** Find or spawn the RpcClient for `cwd`. */
 	async function getOrCreateAgent(cwd: string, opts?: { interactive?: boolean }): Promise<PoolEntry> {
 		const existing = pool.get(cwd);
 		if (existing) return existing;
 		const inFlight = spawning.get(cwd);
 		if (inFlight) return inFlight;
+		assertSpawnAllowed(cwd);
 		const spawnPromise = spawnAgent(cwd, opts).finally(() => {
 			spawning.delete(cwd);
 		});
@@ -417,7 +461,15 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		const client = options.createAgent
 			? options.createAgent(cwd, { interactive })
 			: new RpcClient({ cwd, cliPath, binary, env: makeEnv(interactive), args: extraArgs });
-		await client.start();
+		try {
+			await client.start();
+		} catch (error) {
+			// The process died during the startup grace window (lock conflict,
+			// bad config). Count it toward the backoff so a broken cwd doesn't
+			// get re-spawned on every scheduler tick / channel retry.
+			recordSpawnCrash(cwd, error instanceof Error ? error.message : String(error));
+			throw error;
+		}
 		// stop() may have run while start() was in flight — it tears down the
 		// POOL, so an entry registered after that point would leak a live agent
 		// process past gateway shutdown. Kill it and bail instead.
@@ -432,6 +484,7 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 			busy: false,
 			queue: [],
 			headless: !interactive,
+			spawnedAt: Date.now(),
 		};
 		pool.set(cwd, entry);
 		scheduleIdleEviction(entry);
@@ -441,6 +494,14 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		// timing out against a corpse for 30s (or waiting for idle eviction).
 		entry.client.onExit(() => {
 			if (pool.get(cwd) === entry) {
+				// Died before proving stable → crash-loop fodder (the backoff
+				// map keeps us from spawning it again on the next request).
+				// Longer-lived exits are just crashes — clear the record.
+				if (Date.now() - entry.spawnedAt < AGENT_STABLE_MS) {
+					recordSpawnCrash(cwd, entry.client.getStderr?.() ?? "agent exited");
+				} else {
+					spawnCrashes.delete(cwd);
+				}
 				void teardownAgent(cwd, "agent exited").catch(() => {});
 			}
 		});
