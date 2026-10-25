@@ -151,6 +151,33 @@ describe("readSessionForExport", () => {
 		expect(firstFork.parentId).toBe(lastParent.id);
 	});
 
+	const messageTexts = (result: ReturnType<typeof readSessionForExport>) =>
+		result.entries.map((e) => (e as any).message?.content).filter((c) => typeof c === "string");
+
+	it("does not duplicate the parent's turns for a history-preserving fork", () => {
+		const mgr = new SessionManager(store, store);
+		const parent = mgr.createSession("user_explicit", "Parent");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "parent message" } });
+		const forked = mgr.forkFromSession(parent.session_id);
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "fork message" } });
+		store.close();
+
+		const result = readSessionForExport(`event-session:${workspaceId}:${forked.session_id}`, agentDir);
+		expect(messageTexts(result)).toEqual(["parent message", "fork message"]);
+	});
+
+	it("does not prepend a lineage-only parent's turns to a fresh child session", () => {
+		const mgr = new SessionManager(store, store);
+		const parent = mgr.createSession("user_explicit", "Parent");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "parent message" } });
+		const child = mgr.createSession("user_explicit", "Child", { parentSessionId: parent.session_id });
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "child message" } });
+		store.close();
+
+		const result = readSessionForExport(`event-session:${workspaceId}:${child.session_id}`, agentDir);
+		expect(messageTexts(result)).toEqual(["child message"]);
+	});
+
 	it("returns an empty transcript for a session that does not exist", () => {
 		const mgr = new SessionManager(store, store);
 		mgr.createSession("user_explicit", "Real Session");

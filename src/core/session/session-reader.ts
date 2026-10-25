@@ -242,9 +242,11 @@ export function readSessionForExport(inputPath: string, agentDir: string = getAg
 			// A session forked with inherited context reads through its parent:
 			// prepend the context parent’s entries so the export shows the
 			// transcript the session actually saw (mirrors the projection’s
-			// context_parent_session_id chain; falls back to parent_session_id).
+			// context_parent_session_id chain). parent_session_id is lineage
+			// only: a history-preserving fork already spans the parent’s range,
+			// and a fresh child never saw the parent’s turns.
 			if (sess && depth < 8) {
-				const parentId = sess.context_parent_session_id ?? sess.parent_session_id;
+				const parentId = sess.context_parent_session_id;
 				if (parentId && parentId !== id) {
 					const parentEntries = entriesFor(parentId, depth + 1);
 					for (const entry of out) if (!entry.parentId) entry.parentId = parentEntries[parentEntries.length - 1]?.id ?? null;

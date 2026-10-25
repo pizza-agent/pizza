@@ -56,6 +56,7 @@ export class SessionFacade {
 	readonly resourceLoader: ResourceLoader | undefined;
 	private disposers: Array<() => void>;
 	private disposed = false;
+	private disposeAsyncPromise: Promise<void> | undefined;
 
 	constructor(config: SessionFacadeConfig) {
 		this.runtime = config.runtime;
@@ -343,7 +344,14 @@ export class SessionFacade {
 		this.runtime.setSystemPrompt(prompt);
 	}
 
-	async disposeAsync(): Promise<void> {
+	disposeAsync(): Promise<void> {
+		// Idempotent: several shutdown paths (print mode, main's finally,
+		// signal handlers) may each call this; session_shutdown must fire once.
+		this.disposeAsyncPromise ??= this._disposeAsync();
+		return this.disposeAsyncPromise;
+	}
+
+	private async _disposeAsync(): Promise<void> {
 		// Emit session_shutdown so extensions can release external resources
 		// (MCP child processes, sockets, helper sessions). Without this they
 		// leak and keep the event loop — and the process — alive past
@@ -363,10 +371,19 @@ export class SessionFacade {
 		// Extension cleanup (e.g. MCP server close) runs concurrently with
 		// the runtime teardown instead of serially, and the whole phase is
 		// bounded so a wedged handler cannot stall process exit.
-		await Promise.race([
-			Promise.all([emitShutdown ?? Promise.resolve(), this.runtime.disposeAsync()]),
-			new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-		]);
+		// The bound timer is cleared once teardown settles — a pending timer
+		// would otherwise hold the event loop open for the full bound.
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([
+				Promise.all([emitShutdown ?? Promise.resolve(), this.runtime.disposeAsync()]),
+				new Promise<void>((resolve) => {
+					timer = setTimeout(resolve, 5000);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	dispose(): void {
