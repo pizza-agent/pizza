@@ -139,6 +139,16 @@ export interface GatewayServerOptions {
 	 * orphan sidecar processes. Default: 60_000. 0 disables.
 	 */
 	schedulerGuardInterval?: number;
+	/**
+	 * Unix only. How long (ms) a listener that accepts connections but never
+	 * answers ping may stay silent before it is considered hung and its
+	 * socket is taken over. Far above a busy gateway's reply latency, yet
+	 * below desktop's 15s readiness deadline and its supervisor's 3-miss
+	 * kill window for the spawned child (~16s), so a replacement spawned
+	 * by the desktop finishes its takeover before either gives up on it.
+	 * Default: 10_000.
+	 */
+	unresponsiveOwnerTimeout?: number;
 }
 
 /** One entry in the agent process pool, keyed by workspace cwd. */
@@ -199,6 +209,12 @@ export interface GatewayServerEvents {
 	 * longer serve clients and shuts down. Emitted before stop() runs.
 	 */
 	displaced: (socketPath: string) => void;
+	/**
+	 * The previous owner accepted connections but never answered ping within
+	 * `unresponsiveOwnerTimeout`; this instance took the socket over. The
+	 * hung owner exits via its `displaced` watchdog once its loop recovers.
+	 */
+	takeover: (socketPath: string) => void;
 	/** An unexpected error. */
 	error: (error: Error) => void;
 }
@@ -218,6 +234,7 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	const healthCheckInterval = options.agentHealthCheckInterval ?? 60_000;
 	const healthCheckTimeout = options.agentHealthTimeout ?? 10_000;
 	const schedulerGuardInterval = options.schedulerGuardInterval ?? 60_000;
+	const unresponsiveOwnerTimeout = options.unresponsiveOwnerTimeout ?? 10_000;
 	const emitter = new EventEmitter();
 
 	const pool = new Map<string, PoolEntry>();
@@ -1222,33 +1239,43 @@ function nextMessageId(): string {
 	}
 
 	/**
-	 * Probe whether a listener still owns the gateway socket. Used on
-	 * EADDRINUSE: the classic "stale socket
-	 * from a crashed daemon" is only ONE cause — another is a LIVE gateway
-	 * that was merely slow to answer (busy fanning out agent events).
-	 * Unlinking the path out from under a live daemon orphans it (nobody can
-	 * connect to its inode anymore) while a second daemon spawns besides it —
-	 * the source of desktop reconnect storms and duplicated agents.
+	 * Classify whoever owns the gateway socket. Used on EADDRINUSE: the
+	 * classic "stale socket from a crashed daemon" is only ONE cause —
+	 * another is a LIVE gateway that is merely slow to answer (busy fanning
+	 * out agent events). Unlinking the path out from under a live daemon
+	 * orphans it while a second daemon spawns besides it — the source of
+	 * desktop reconnect storms and duplicated agents.
+	 *
+	 *  - `absent`: nothing accepts connections, or the owner hung up on us
+	 *    (it died while we waited) — the path is stale.
+	 *  - `alive`: the owner answered (any reply proves its loop runs). With
+	 *    `replyTimeoutMs <= 0`, an accepted connection alone counts.
+	 *  - `unresponsive`: the kernel accepts on its behalf but its event loop
+	 *    has not answered for `replyTimeoutMs` — a hung daemon.
 	 */
-	const isSocketOwnerAlive = (): Promise<boolean> =>
+	const probeSocketOwner = (replyTimeoutMs: number): Promise<"absent" | "alive" | "unresponsive"> =>
 		new Promise((resolve) => {
 			let settled = false;
-			const finish = (alive: boolean) => {
+			const finish = (state: "absent" | "alive" | "unresponsive") => {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
 				socket.destroy();
-				resolve(alive);
+				resolve(state);
 			};
-			const timer = setTimeout(() => finish(false), 3000);
+			let timer = setTimeout(() => finish("absent"), 3000);
 			const socket = connect(socketPath);
 			socket.on("connect", () => {
-				// A listener exists even if its JS event loop is blocked. Never
-				// steal its socket; the desktop supervisor handles hung children.
-				finish(true);
+				if (replyTimeoutMs <= 0) return finish("alive");
+				clearTimeout(timer);
+				timer = setTimeout(() => finish("unresponsive"), replyTimeoutMs);
+				socket.write(`${serializeJsonLine({ type: "ping" })}\n`);
 			});
-			socket.on("data", () => finish(true));
-			socket.on("error", () => finish(false));
+			socket.on("data", () => finish("alive"));
+			socket.on("error", () => finish("absent"));
+			// The owner closing our accepted connection without a reply means
+			// it exited (e.g. killed by the desktop supervisor) — stale now.
+			socket.on("close", () => finish("absent"));
 		});
 
 	/** Set once we actually own the socket; a duplicate never does. */
@@ -1273,7 +1300,7 @@ function nextMessageId(): string {
 		// gateway. Probe BEFORE listening: listening on an occupied pipe
 		// crashes Bun's Windows runtime (internal assertion failure) instead
 		// of surfacing EADDRINUSE.
-		if (platform() === "win32" && (await isSocketOwnerAlive())) {
+		if (platform() === "win32" && (await probeSocketOwner(0)) !== "absent") {
 			reportDuplicate();
 			return;
 		}
@@ -1302,26 +1329,39 @@ function nextMessageId(): string {
 					return;
 				}
 				if (error.code === "EADDRINUSE") {
-					// Another process holds the socket. It is stale ONLY if it
-					// has no listener (connection refused). A live gateway must
+					// Another process holds the socket. A live gateway must
 					// keep the path — this process exits instead of stealing
 					// it, which would orphan the running daemon and duplicate
-					// the agent pool.
-					void isSocketOwnerAlive().then((alive) => {
-						if (alive) {
+					// the agent pool. Only a missing listener, or one silent
+					// for the whole unresponsive window, gives up the path.
+					const probedInode = socketInode();
+					void probeSocketOwner(unresponsiveOwnerTimeout).then((state) => {
+						// Another candidate waiting on the same owner may have
+						// taken the path over meanwhile — that one is the new
+						// owner; unlinking its fresh socket would orphan it.
+						const current = socketInode();
+						if (state === "alive" || (current !== undefined && current !== probedInode)) {
 							// A live gateway owns the socket — this process is a
-							// duplicate spawned by a race or a transient ping
-							// miss. NEVER steal the path; report and let the
-							// caller exit.
+							// duplicate spawned by a race. NEVER steal the path;
+							// report and let the caller exit.
 							resolve(true);
 							return;
+						}
+						if (state === "unresponsive") {
+							// Hung owner: without a takeover nothing (absent the
+							// desktop supervisor) would ever replace it. Its
+							// ownership watchdog stops it if its loop recovers.
+							emitter.emit("takeover", socketPath as never);
 						}
 						try {
 							unlinkSync(socketPath);
 						} catch {
 							/* ignore */
 						}
-						// onListening is already registered by the first listen().
+						// onListening is already registered by the first listen();
+						// re-arm onError so losing a rebind race re-probes
+						// instead of surfacing as an unhandled 'error' event.
+						server!.once("error", onError);
 						server!.listen(socketPath);
 					});
 					return;
@@ -1362,24 +1402,47 @@ function nextMessageId(): string {
 			sock.destroy();
 		}
 		activeSockets.clear();
-		// Close the server.
+		// Only touch the socket path if it is OURS: a duplicate that never
+		// listened, or a displaced zombie whose path was taken over, would
+		// otherwise unlink the live gateway's socket out from under it.
+		const ownsPath = listening && platform() !== "win32" && socketPathIsOurs();
+		// Close the server. On Unix, libuv unlinks the bound path on close
+		// regardless of what now lives there — for a displaced listener that
+		// is the successor's socket. Leave it unclosed (unref'd so it cannot
+		// keep the process alive); the process exits right after.
 		await new Promise<void>((resolve) => {
 			if (!server) return resolve();
+			if (listening && platform() !== "win32" && !ownsPath) {
+				server.unref();
+				return resolve();
+			}
 			server.close(() => resolve());
 		});
-		// Remove the socket file (Unix only) — but only if it is OURS: a
-		// duplicate that never listened, or a displaced zombie whose path was
-		// stolen, would otherwise unlink the live gateway's socket out from
-		// under it.
-		if (listening && platform() !== "win32") {
+		if (ownsPath) {
 			try {
-				const s = statSync(socketPath);
-				if (socketIno === 0 || (s.dev === socketDev && s.ino === socketIno)) {
-					unlinkSync(socketPath);
-				}
+				unlinkSync(socketPath);
 			} catch {
-				/* already gone or unreadable */
+				/* already gone */
 			}
+		}
+	}
+
+	function socketInode(): string | undefined {
+		try {
+			const s = statSync(socketPath);
+			return `${s.dev}:${s.ino}`;
+		} catch {
+			return undefined;
+		}
+	}
+
+	function socketPathIsOurs(): boolean {
+		try {
+			const s = statSync(socketPath);
+			return socketIno === 0 || (s.dev === socketDev && s.ino === socketIno);
+		} catch {
+			// Gone: closing would only race a successor binding the path.
+			return false;
 		}
 	}
 
