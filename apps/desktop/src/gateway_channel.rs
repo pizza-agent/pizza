@@ -689,7 +689,10 @@ fn supervise_gateway_child(mut child: std::process::Child, path: PathBuf, interv
 			None => misses += 1,
 		}
 		if misses >= 3 {
-			log::error!("Gateway PID {} is unresponsive or displaced; terminating it for reconnect", child.id());
+			log::error!(
+				"Gateway PID {} is unresponsive or displaced; terminating it for reconnect",
+				child.id()
+			);
 			let _ = child.kill();
 			let _ = child.wait();
 			return;
@@ -771,8 +774,15 @@ fn query_gateway_status(socket_path: &PathBuf) -> Option<GatewayStatus> {
 						.collect()
 				})
 				.unwrap_or_default();
-			let pid = parsed.get("pid").and_then(|p| p.as_u64()).and_then(|p| u32::try_from(p).ok());
-			Ok(GatewayStatus { pid, version, agents })
+			let pid = parsed
+				.get("pid")
+				.and_then(|p| p.as_u64())
+				.and_then(|p| u32::try_from(p).ok());
+			Ok(GatewayStatus {
+				pid,
+				version,
+				agents,
+			})
 		})();
 		let _ = tx.send(result);
 	});
@@ -1150,7 +1160,10 @@ mod tests {
 	#[cfg(unix)]
 	#[test]
 	fn supervisor_reaps_a_child_that_never_answers_health_checks() {
-		let child = std::process::Command::new("/bin/sleep").arg("60").spawn().unwrap();
+		let child = std::process::Command::new("/bin/sleep")
+			.arg("60")
+			.spawn()
+			.unwrap();
 		let pid = child.id();
 		let path = std::env::temp_dir().join(format!("pizza-no-gateway-{pid}.sock"));
 		let start = std::time::Instant::now();
@@ -1159,7 +1172,9 @@ mod tests {
 		assert!(!std::process::Command::new("/bin/kill")
 			.args(["-0", &pid.to_string()])
 			.stderr(std::process::Stdio::null())
-			.status().unwrap().success());
+			.status()
+			.unwrap()
+			.success());
 	}
 
 	#[test]

@@ -615,9 +615,18 @@ fn log_provider_sync(context: &str, cwd: &str, result: Result<Value, String>) {
 	match result {
 		Ok(result) => log_file(&format!(
 			"{context}: provider sync cwd={cwd} status={} providers={} credentials={}",
-			result.get("status").and_then(Value::as_str).unwrap_or("unknown"),
-			result.get("personalProviderCount").and_then(Value::as_u64).unwrap_or(0),
-			result.get("credentialCount").and_then(Value::as_u64).unwrap_or(0)
+			result
+				.get("status")
+				.and_then(Value::as_str)
+				.unwrap_or("unknown"),
+			result
+				.get("personalProviderCount")
+				.and_then(Value::as_u64)
+				.unwrap_or(0),
+			result
+				.get("credentialCount")
+				.and_then(Value::as_u64)
+				.unwrap_or(0)
 		)),
 		Err(error) => log_file(&format!(
 			"{context}: provider sync failed cwd={cwd} (continuing): {error}"

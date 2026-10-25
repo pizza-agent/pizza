@@ -820,7 +820,9 @@ pub fn provision_remote_provider_config(
 	local_agent_dir: &Path,
 ) -> Result<Value, String> {
 	if !config.sync_credentials {
-		return Ok(json!({ "status": "skipped", "personalProviderCount": 0, "credentialCount": 0 }));
+		return Ok(
+			json!({ "status": "skipped", "personalProviderCount": 0, "credentialCount": 0 }),
+		);
 	}
 	let envelope = build_local_provider_provisioning_envelope(local_agent_dir)?;
 	let payload = serde_json::to_vec(&envelope)

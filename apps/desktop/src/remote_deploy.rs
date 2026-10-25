@@ -106,7 +106,11 @@ fn validate_version(version: &str) -> Result<(), String> {
 }
 
 fn validate_sha256(sha256: &str) -> Result<(), String> {
-	if sha256.len() != 64 || !sha256.chars().all(|character| character.is_ascii_hexdigit()) {
+	if sha256.len() != 64
+		|| !sha256
+			.chars()
+			.all(|character| character.is_ascii_hexdigit())
+	{
 		return Err("Remote server archive SHA-256 is invalid".to_string());
 	}
 	Ok(())
@@ -120,7 +124,12 @@ fn version_key(version: &str) -> Option<(u64, u64, u64, bool)> {
 		None => (version, None),
 	};
 	let mut parts = core.split('.').map(|part| part.parse::<u64>().ok());
-	let key = (parts.next()??, parts.next()??, parts.next()??, pre.is_none());
+	let key = (
+		parts.next()??,
+		parts.next()??,
+		parts.next()??,
+		pre.is_none(),
+	);
 	parts.next().is_none().then_some(key)
 }
 
@@ -149,7 +158,9 @@ fn node_mirror() -> Result<String, String> {
 	if !(mirror.starts_with("https://") || mirror.starts_with("http://"))
 		|| mirror.chars().any(|c| c.is_whitespace() || c.is_control())
 	{
-		return Err(format!("PIZZA_REMOTE_NODE_MIRROR is not a valid URL: {mirror}"));
+		return Err(format!(
+			"PIZZA_REMOTE_NODE_MIRROR is not a valid URL: {mirror}"
+		));
 	}
 	Ok(mirror)
 }
@@ -363,10 +374,12 @@ fi
 		.get("HOME")
 		.filter(|value| value.starts_with('/'))
 		.ok_or_else(|| "Managed gateway probe returned no HOME".to_string())?;
-	let version = values.get("VERSION").map(String::as_str).unwrap_or_default();
+	let version = values
+		.get("VERSION")
+		.map(String::as_str)
+		.unwrap_or_default();
 	let decision = install_decision(version, true, expected_version);
-	if values.get("READY").map(String::as_str) != Some("1")
-		|| decision == InstallDecision::Install
+	if values.get("READY").map(String::as_str) != Some("1") || decision == InstallDecision::Install
 	{
 		return Ok(None);
 	}
@@ -543,7 +556,8 @@ fn local_cache_dir() -> Result<PathBuf, String> {
 }
 
 fn sha256_hex_file(path: &Path) -> Result<String, String> {
-	let mut file = std::fs::File::open(path).map_err(|e| format!("Open {}: {e}", path.display()))?;
+	let mut file =
+		std::fs::File::open(path).map_err(|e| format!("Open {}: {e}", path.display()))?;
 	let mut hasher = Sha256::new();
 	let mut buffer = [0u8; 64 * 1024];
 	loop {
@@ -561,7 +575,11 @@ fn sha256_hex_file(path: &Path) -> Result<String, String> {
 /// Download the pinned Node runtime on the desktop (which usually has better
 /// connectivity or proxy settings than the server) and cache it.
 /// Must run on a blocking thread, not inside an async task.
-fn local_node_archive(node_version: &str, node_arch: &str, expected: &str) -> Result<PathBuf, String> {
+fn local_node_archive(
+	node_version: &str,
+	node_arch: &str,
+	expected: &str,
+) -> Result<PathBuf, String> {
 	let name = format!("node-v{node_version}-{node_arch}.tar.gz");
 	let dir = local_cache_dir()?;
 	let path = dir.join(&name);
@@ -570,7 +588,9 @@ fn local_node_archive(node_version: &str, node_arch: &str, expected: &str) -> Re
 	}
 	std::fs::create_dir_all(&dir).map_err(|e| format!("Create {}: {e}", dir.display()))?;
 	let url = format!("{}/v{node_version}/{name}", node_mirror()?);
-	crate::bridge::log_file(&format!("remote deploy: downloading Node runtime locally from {url}"));
+	crate::bridge::log_file(&format!(
+		"remote deploy: downloading Node runtime locally from {url}"
+	));
 	let bytes = tauri::async_runtime::block_on(async {
 		reqwest::get(&url)
 			.await
@@ -717,11 +737,18 @@ pub fn remote_server_manifest(manifest_path: &Path) -> Result<RemoteServerManife
 fn parse_remote_server_manifest(raw: &str) -> Result<RemoteServerManifest, String> {
 	let probe: serde_json::Value =
 		serde_json::from_str(raw).map_err(|e| format!("Invalid remote server manifest: {e}"))?;
-	if probe.get("schemaVersion").and_then(serde_json::Value::as_u64) != Some(MANIFEST_SCHEMA_VERSION) {
-		return Err("Unsupported remote server manifest schema. Rebuild the desktop application.".to_string());
+	if probe
+		.get("schemaVersion")
+		.and_then(serde_json::Value::as_u64)
+		!= Some(MANIFEST_SCHEMA_VERSION)
+	{
+		return Err(
+			"Unsupported remote server manifest schema. Rebuild the desktop application."
+				.to_string(),
+		);
 	}
-	let parsed: RawManifest =
-		serde_json::from_value(probe).map_err(|e| format!("Invalid remote server manifest: {e}"))?;
+	let parsed: RawManifest = serde_json::from_value(probe)
+		.map_err(|e| format!("Invalid remote server manifest: {e}"))?;
 	validate_version(&parsed.version)?;
 	validate_sha256(&parsed.sha256)?;
 	validate_version(&parsed.node_runtime.version)?;
@@ -810,8 +837,14 @@ mod tests {
 
 	#[test]
 	fn managed_gateway_socket_uses_remote_home_without_double_slash() {
-		assert_eq!(managed_gateway_socket("/root/"), "/root/.pizza/gateway.sock");
-		assert_eq!(managed_gateway_socket("/home/dev"), "/home/dev/.pizza/gateway.sock");
+		assert_eq!(
+			managed_gateway_socket("/root/"),
+			"/root/.pizza/gateway.sock"
+		);
+		assert_eq!(
+			managed_gateway_socket("/home/dev"),
+			"/home/dev/.pizza/gateway.sock"
+		);
 	}
 
 	#[test]
@@ -827,11 +860,26 @@ mod tests {
 
 	#[test]
 	fn install_decision_never_downgrades() {
-		assert_eq!(install_decision("0.4.4", true, "0.4.4"), InstallDecision::Reuse);
-		assert_eq!(install_decision("0.4.5", true, "0.4.4"), InstallDecision::KeepNewer);
-		assert_eq!(install_decision("0.4.3", true, "0.4.4"), InstallDecision::Install);
-		assert_eq!(install_decision("", true, "0.4.4"), InstallDecision::Install);
-		assert_eq!(install_decision("0.4.5", false, "0.4.4"), InstallDecision::Install);
+		assert_eq!(
+			install_decision("0.4.4", true, "0.4.4"),
+			InstallDecision::Reuse
+		);
+		assert_eq!(
+			install_decision("0.4.5", true, "0.4.4"),
+			InstallDecision::KeepNewer
+		);
+		assert_eq!(
+			install_decision("0.4.3", true, "0.4.4"),
+			InstallDecision::Install
+		);
+		assert_eq!(
+			install_decision("", true, "0.4.4"),
+			InstallDecision::Install
+		);
+		assert_eq!(
+			install_decision("0.4.5", false, "0.4.4"),
+			InstallDecision::Install
+		);
 	}
 
 	#[test]
