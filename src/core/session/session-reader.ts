@@ -260,9 +260,11 @@ export function readSessionForExport(inputPath: string, agentDir: string = getAg
 
 		// Without a session descriptor there is no range — fall back to
 		// "everything between this SESSION_CREATED and the next one" rather
-		// than an empty transcript.
-		if (entries.length === 0 && createdEvent) {
-			const fallback = store.query({ types: EXPORT_ENTRY_TYPES });
+		// than an empty transcript. A session that IS indexed but has no
+		// entries is genuinely empty and must not take this path, or it would
+		// pick up every later session's events.
+		if (entries.length === 0 && createdEvent && !findSession(sessionId)) {
+			const fallback = store.query({ types: [...EXPORT_ENTRY_TYPES, "SESSION_CREATED"] });
 			let previousId: string | null = null;
 			for (const event of fallback) {
 				if (event.sequence <= createdEvent.sequence) continue;

@@ -188,4 +188,15 @@ describe("readSessionForExport", () => {
 		const result = readSessionForExport(`event-session:${workspaceId}:sess_does_not_exist`, agentDir);
 		expect(result.entries).toHaveLength(0);
 	});
+
+	it("returns an empty transcript for an indexed session with no entries", () => {
+		const mgr = new SessionManager(store, store);
+		const empty = mgr.createSession("user_explicit", "Empty");
+		mgr.createSession("user_explicit", "Other");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "other session message" } });
+		store.close();
+
+		const result = readSessionForExport(`event-session:${workspaceId}:${empty.session_id}`, agentDir);
+		expect(result.entries).toHaveLength(0);
+	});
 });
