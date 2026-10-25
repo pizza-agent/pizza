@@ -101,6 +101,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         shell: bash
 
+      # Registers arm64 binfmt handlers so `docker run --platform linux/arm64`
+      # works when build-remote-server.mjs cross-builds node-pty.
+      - name: Set up QEMU (Linux)
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+
       # tauri.updater.conf.json enables signed updater artifacts (.app.tar.gz,
       # AppImage, setup.exe + .sig). Kept out of tauri.conf.json so local
       # builds work without the signing key.

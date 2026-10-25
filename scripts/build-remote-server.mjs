@@ -121,9 +121,14 @@ async function nodeRuntimeChecksums() {
 	return checksums;
 }
 
+// Require a Linux-container daemon: Windows runners ship a Windows-only
+// Docker that accepts `docker info` but cannot run Linux images.
 function dockerAvailable() {
-	const result = spawnSync("docker", ["info"], { stdio: "ignore" });
-	return result.status === 0;
+	const result = spawnSync("docker", ["info", "--format", "{{.OSType}}"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	return result.status === 0 && result.stdout.trim() === "linux";
 }
 
 /**
@@ -233,7 +238,9 @@ async function main() {
 		execFileSync(
 			"npm",
 			["ci", "--omit=dev", "--omit=optional", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"],
-			{ cwd: pkgRoot, stdio: "inherit" },
+			// shell required on Windows: npm resolves to npm.cmd, which execFile
+			// cannot run directly.
+			{ cwd: pkgRoot, stdio: "inherit", shell: process.platform === "win32" },
 		);
 		const nodeModules = join(pkgRoot, "node_modules");
 		pruneNodeModules(nodeModules);
