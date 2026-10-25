@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowUp, Square, Mic, Plus, ChevronDown, Check, X, Loader2, Shield, ShieldCheck, Paperclip, Sparkles, MessageSquarePlus, FolderOpen, Clock, Terminal, ChevronRight, Search, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn, isTauri, samePath, pathBasename } from "@/lib/utils";
+import { isRemoteWorkspaceKey } from "@/lib/platform";
 import {
 	loadFileAttachment,
 	loadPathAttachments,
@@ -572,7 +573,7 @@ export function Composer({
 
 		// Workspaces.
 		for (const ws of workspaces ?? []) {
-			const name = pathBasename(ws.cwd);
+			const name = ws.display_name ?? pathBasename(ws.cwd);
 			items.push({
 				category: "workspace",
 				label: name,
@@ -1581,14 +1582,16 @@ ${insert}`;
 											<span className="truncate text-[10px] text-muted">{formatFileSize(f.size)}</span>
 										)}
 									</div>
-									<button
-										type="button"
-										onClick={() => revealInFinder(f.absolutePath)}
-										className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-bg/60 hover:text-fg"
-										title={t("composer.revealInFinder")}
-									>
-										<FolderOpen className="h-3.5 w-3.5" />
-									</button>
+										{!isRemoteWorkspaceKey(workspace) && (
+											<button
+												type="button"
+												onClick={() => revealInFinder(f.absolutePath)}
+												className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition-colors hover:bg-bg/60 hover:text-fg"
+												title={t("composer.revealInFinder")}
+											>
+												<FolderOpen className="h-3.5 w-3.5" />
+											</button>
+										)}
 									<button
 										type="button"
 										onClick={() => removeFile(i)}

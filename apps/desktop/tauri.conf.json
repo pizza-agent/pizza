@@ -61,7 +61,8 @@
 			"prebuilds-bin/": "prebuilds/",
 			"../../dist/package.json": "package.json",
 			"../../dist/providers.json": "providers.json",
-			"../../dist/photon_rs_bg.wasm": "photon_rs_bg.wasm"
+			"../../dist/photon_rs_bg.wasm": "photon_rs_bg.wasm",
+			"../../dist/remote/": "remote/"
 		}
 	},
 	"plugins": {

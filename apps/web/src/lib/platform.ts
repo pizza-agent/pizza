@@ -49,6 +49,13 @@ export function samePath(a: string | null | undefined, b: string | null | undefi
 /** The persistent Chat workspace is always `~/.pizza/main`. */
 export const MAIN_CHAT_CWD = "~/.pizza/main";
 
+/** Synthetic workspace key used by SSH-backed desktop workspaces. */
+export const REMOTE_WORKSPACE_PREFIX = "remote://";
+
+export function isRemoteWorkspaceKey(path: string | null | undefined): boolean {
+	return typeof path === "string" && path.startsWith(REMOTE_WORKSPACE_PREFIX);
+}
+
 /** True when `cwd` refers to the persistent Chat workspace (`~/.pizza/main`),
  * whether still tilde-prefixed or already expanded to an absolute path. */
 export function isMainChatCwd(cwd: string | null | undefined): boolean {

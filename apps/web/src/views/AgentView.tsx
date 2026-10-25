@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { sendCommandAwait, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
+import { sendCommandAwait, sendCommandRaw, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
 import type { RpcSessionState, TypedEvent } from "@/lib/types";
 import { Conversation, type TimelineItem } from "@/components/Conversation";
 import { Tooltip } from "@/components/Tooltip";
@@ -12,7 +12,7 @@ import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/compo
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
-import { cn, samePath } from "@/lib/utils";
+import { cn, isRemoteWorkspaceKey, samePath } from "@/lib/utils";
 import { StreamDeltaBuffer } from "@/lib/stream-deltas";
 import { parseAgentMessage } from "@/lib/agent-messages";
 import type { LayoutOutletContext } from "@/components/Layout";
@@ -1150,7 +1150,7 @@ export default function AgentView({
 	}, []);
 
 	const handleSend = useCallback(
-		async (message: string, images?: ComposerImage[], files?: LoadedFileAttachment[]) => {
+		(message: string, images?: ComposerImage[], files?: LoadedFileAttachment[]) => {
 			setError("");
 			const payloadImages = images?.map((img) => ({ data: img.data, mimeType: img.mimeType }));
 			// prompt/follow_up responses only arrive after the entire agent turn
@@ -1167,7 +1167,7 @@ export default function AgentView({
 				const cmd = state?.isStreaming
 					? { type: "follow_up", message, images: payloadImages, files: payloadFiles }
 					: { type: "prompt", message, images: payloadImages, files: payloadFiles };
-				sendCommandAwait(cmd, 600000).catch((e) => {
+				sendCommandRaw(cmd).catch((e) => {
 					setError(e instanceof Error ? e.message : String(e));
 				});
 			} catch (e) {
@@ -1363,6 +1363,8 @@ export default function AgentView({
 		Array.isArray(readyPrompts) && typeof readyPrompts[greetingIdx] === "string"
 			? (readyPrompts[greetingIdx] as string)
 			: t("agent.readyPrompt");
+	const remoteProviderMissing =
+		isRemoteWorkspaceKey(workspace) && state !== null && state.model === undefined;
 
 	return (
 		<div className="flex h-full flex-col">
@@ -1414,13 +1416,24 @@ export default function AgentView({
 					/>
 				)}
 			</div>
+			{remoteProviderMissing && (
+				<div className="border-b border-warning/30 bg-warning/10 px-6 py-2 text-xs leading-relaxed text-warning">
+					{t("agent.remoteProviderMissing")}
+				</div>
+			)}
 			<div ref={scrollRef} className="flex-1 overflow-y-auto">
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
 						{loadingHistory || waitingForWorkspace ? (
 							<div className="flex flex-col items-center gap-3">
 								<Spinner />
-								<p className="text-xs text-muted">{t("common.loadingHistory")}</p>
+								<p className="text-xs text-muted">
+									{t(
+										waitingForWorkspace
+											? "common.switchingWorkspace"
+											: "common.loadingHistory",
+									)}
+								</p>
 							</div>
 						) : (
 							<EmptyState
