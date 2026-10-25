@@ -888,7 +888,7 @@
     },
     "about": {
       "title": "About",
-      "tagline": "An open-source, event-driven agent — every conversation, tool call, and file edit is an event in an immutable log.",
+      "tagline": "An open-source, event-driven agent — without while true. Every conversation, tool call, and file edit is an event in an immutable log.",
       "version": "Version",
       "repository": "GitHub repository",
       "license": "License",
