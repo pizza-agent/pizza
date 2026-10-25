@@ -321,6 +321,10 @@ pub struct BridgeState {
 	/// this, rapid workspace clicks can attach out of order and leave the
 	/// bridge's active pointer on the older selection.
 	remote_init_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+	/// Serializes server install/start per SSH environment (keyed by its
+	/// control socket path), so two windows opening projects on the same host
+	/// never upload and install concurrently.
+	remote_install_locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
 }
 
 /// A running `pizza auth login --mode jsonl` child plus its stdin writer.
@@ -343,6 +347,7 @@ impl Default for BridgeState {
 			remote_runtimes: Mutex::new(HashMap::new()),
 			remote_provisioning: Mutex::new(RemoteProvisioningLane::default()),
 			remote_init_locks: Mutex::new(HashMap::new()),
+			remote_install_locks: Mutex::new(HashMap::new()),
 		}
 	}
 }
@@ -595,6 +600,29 @@ fn remote_server_asset_dir(app: &AppHandle) -> Result<PathBuf, String> {
 		.ok_or_else(|| {
 			"Remote server package is missing. Rebuild the desktop application.".to_string()
 		})
+}
+
+/// Run blocking SSH work (probes, uploads, installs) off the async runtime.
+async fn run_blocking<T: Send + 'static>(
+	task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+	tauri::async_runtime::spawn_blocking(task)
+		.await
+		.map_err(|e| format!("remote task failed: {e}"))?
+}
+
+fn log_provider_sync(context: &str, cwd: &str, result: Result<Value, String>) {
+	match result {
+		Ok(result) => log_file(&format!(
+			"{context}: provider sync cwd={cwd} status={} providers={} credentials={}",
+			result.get("status").and_then(Value::as_str).unwrap_or("unknown"),
+			result.get("personalProviderCount").and_then(Value::as_u64).unwrap_or(0),
+			result.get("credentialCount").and_then(Value::as_u64).unwrap_or(0)
+		)),
+		Err(error) => log_file(&format!(
+			"{context}: provider sync failed cwd={cwd} (continuing): {error}"
+		)),
+	}
 }
 
 fn clear_remote_tunnels(state: &BridgeState, cwd: &str) {
@@ -2137,8 +2165,8 @@ async fn init_remote_sidecar(
 		}
 
 		let asset_dir = remote_server_asset_dir(&window.app_handle())?;
-		let manifest_path = asset_dir.join("manifest.json");
-		let (version, sha256) = remote_deploy::remote_server_manifest(&manifest_path)?;
+		let manifest = remote_deploy::remote_server_manifest(&asset_dir.join("manifest.json"))?;
+		let version = manifest.version.clone();
 		stop_remote_runtime(state.inner(), &cwd);
 		let mut config = config;
 		let control_socket = remote::environment_control_socket_path(&config);
@@ -2154,14 +2182,26 @@ async fn init_remote_sidecar(
 				},
 			);
 		}
-		if let Err(error) = remote::ensure_control_master(&config, &control_socket) {
+		let master_result = {
+			let (config, control_socket) = (config.clone(), control_socket.clone());
+			run_blocking(move || remote::ensure_control_master(&config, &control_socket)).await
+		};
+		if let Err(error) = master_result {
 			log_file(&format!(
 				"init_remote_sidecar: SSH control master unavailable cwd={cwd}: {error}"
 			));
 		}
 
 		if config.pizza_command.is_some() {
-			match remote_deploy::probe_managed_gateway(&config, &control_socket, &version) {
+			let probe = {
+				let (config, control_socket, version) =
+					(config.clone(), control_socket.clone(), version.clone());
+				run_blocking(move || {
+					remote_deploy::probe_managed_gateway(&config, &control_socket, &version)
+				})
+				.await
+			};
+			match probe {
 				Ok(Some(gateway_socket)) => {
 					log_file(&format!(
 						"init_remote_sidecar: fast reconnect cwd={cwd} version={version}"
@@ -2219,17 +2259,19 @@ async fn init_remote_sidecar(
 			}
 		}
 
-		let archive_path = remote_deploy::remote_install_archive(
-			&asset_dir,
-			&format!("pizza-server-{version}.tgz"),
-		);
-		let install = match remote_deploy::ensure_remote_server(
-			&config,
-			&control_socket,
-			&archive_path,
-			&version,
-			&sha256,
-		) {
+		let install_lock = lock_ok(&state.remote_install_locks)
+			.entry(control_socket.clone())
+			.or_insert_with(|| Arc::new(Mutex::new(())))
+			.clone();
+		let install_result = {
+			let (config, control_socket) = (config.clone(), control_socket.clone());
+			run_blocking(move || {
+				let _guard = lock_ok(&install_lock);
+				remote_deploy::ensure_remote_server(&config, &control_socket, &asset_dir, &manifest)
+			})
+			.await
+		};
+		let install = match install_result {
 			Ok(install) => install,
 			Err(error) => {
 				stop_remote_runtime(state.inner(), &cwd);
@@ -2256,38 +2298,23 @@ async fn init_remote_sidecar(
 			}
 		}
 
-		let local_agent_dir = match agent_dir() {
-			Ok(path) => path,
-			Err(error) => {
-				stop_remote_runtime(state.inner(), &cwd);
-				return Err(error);
+		// Credential sync is opt-in per workspace and never blocks the
+		// connection: the remote host may have its own provider setup.
+		let provision = match agent_dir() {
+			Ok(local_agent_dir) => {
+				let (config, control_socket) = (config.clone(), control_socket.clone());
+				run_blocking(move || {
+					remote::provision_remote_provider_config(
+						&config,
+						&control_socket,
+						&local_agent_dir,
+					)
+				})
+				.await
 			}
+			Err(error) => Err(error),
 		};
-		match remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir) {
-			Ok(result) => {
-				log_file(&format!(
-					"init_remote_sidecar: provider sync status={} providers={} credentials={}",
-					result
-						.get("status")
-						.and_then(Value::as_str)
-						.unwrap_or("unknown"),
-					result
-						.get("personalProviderCount")
-						.and_then(Value::as_u64)
-						.unwrap_or(0),
-					result
-						.get("credentialCount")
-						.and_then(Value::as_u64)
-						.unwrap_or(0)
-				));
-			}
-			Err(error) => {
-				stop_remote_runtime(state.inner(), &cwd);
-				return Err(format!(
-					"Remote provider configuration sync failed: {error}"
-				));
-			}
-		}
+		log_provider_sync("init_remote_sidecar", &cwd, provision);
 
 		let state_data = connect_remote_gateway(
 			&window,
@@ -2373,41 +2400,12 @@ async fn init_remote_sidecar_legacy(
 			});
 	}
 
-	// Provisioning is a first-connection barrier. The remote RPC process must
-	// start from the complete Local environment snapshot, otherwise the UI can
-	// publish a ready workspace that has no usable model.
-	let local_agent_dir = match agent_dir() {
-		Ok(path) => path,
-		Err(error) => {
-			stop_remote_runtime(state.inner(), &cwd);
-			return Err(error);
-		}
-	};
-	match remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir) {
-		Ok(result) => {
-			log_file(&format!(
-				"init_remote_sidecar: provider sync status={} providers={} credentials={}",
-				result
-					.get("status")
-					.and_then(Value::as_str)
-					.unwrap_or("unknown"),
-				result
-					.get("personalProviderCount")
-					.and_then(Value::as_u64)
-					.unwrap_or(0),
-				result
-					.get("credentialCount")
-					.and_then(Value::as_u64)
-					.unwrap_or(0)
-			));
-		}
-		Err(error) => {
-			stop_remote_runtime(state.inner(), &cwd);
-			return Err(format!(
-				"Remote provider configuration sync failed: {error}"
-			));
-		}
-	}
+	// Sync before the remote RPC process starts so it sees the provider
+	// snapshot; opt-in per workspace and never fatal.
+	let provision = agent_dir().and_then(|local_agent_dir| {
+		remote::provision_remote_provider_config(&config, &control_socket, &local_agent_dir)
+	});
+	log_provider_sync("init_remote_sidecar", &cwd, provision);
 
 	let mut child = match remote::spawn_remote_agent(&config, &control_socket) {
 		Ok(child) => child,
@@ -3422,6 +3420,9 @@ pub async fn delete_workspace(
 				workspaces.insert(cwd, config);
 			}
 			return Err(error);
+		}
+		if let Some(config) = removed {
+			remote::forget_remote_workspace_secret(&config);
 		}
 		return Ok(());
 	}
@@ -5509,8 +5510,10 @@ mod tests {
 				port: None,
 				identity_file: None,
 				password: None,
+				password_in_keychain: false,
 				remote_path: "/root/kafka".to_string(),
 				pizza_command: None,
+				sync_credentials: true,
 				created_at: 0,
 				last_accessed_at: 0,
 			},
@@ -5527,8 +5530,10 @@ mod tests {
 			port: None,
 			identity_file: None,
 			password: None,
+			password_in_keychain: false,
 			remote_path: "/root/kafka".to_string(),
 			pizza_command: None,
+			sync_credentials: true,
 			created_at: 0,
 			last_accessed_at: 0,
 		};

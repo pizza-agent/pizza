@@ -10,8 +10,7 @@
  *  - scheme allowlist: http/https only. file:, chrome:, devtools:, about:,
  *    data:, view-source:, javascript: are blocked outright.
  *  - loopback origins (127.0.0.0/8, ::1, *.localhost) are allowed — testing
- *    local dev servers is a primary use case (same posture as ZCode's
- *    control-browser skill).
+ *    local dev servers is a primary use case.
  *  - other private ranges (10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7,
  *    fe80::/10, 0.0.0.0) are "ask" under the "on" approval policy and allowed
  *    (with an audit event) under "auto".

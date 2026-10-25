@@ -39,6 +39,7 @@ export function RemoteWorkspaceDialog({
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 	const [remotePath, setRemotePath] = useState("");
+	const [syncCredentials, setSyncCredentials] = useState(true);
 	const [directoryListing, setDirectoryListing] = useState<RemoteDirectoryListing | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [browsing, setBrowsing] = useState(false);
@@ -55,6 +56,7 @@ export function RemoteWorkspaceDialog({
 		setPassword("");
 		setShowPassword(false);
 		setRemotePath("");
+		setSyncCredentials(true);
 		setDirectoryListing(null);
 		setError(null);
 		setBrowsing(false);
@@ -168,6 +170,7 @@ export function RemoteWorkspaceDialog({
 			identityFile: identityFile.trim() || undefined,
 			password: password || undefined,
 			remotePath: trimmedPath,
+			syncCredentials,
 		};
 		setError(null);
 		setConnecting(true);
@@ -417,6 +420,21 @@ export function RemoteWorkspaceDialog({
 						className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 					/>
 				</Field>
+
+				<label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border px-3 py-2.5">
+					<input
+						type="checkbox"
+						checked={syncCredentials}
+						onChange={(event) => setSyncCredentials(event.target.checked)}
+						className="mt-0.5 accent-accent"
+					/>
+					<span className="space-y-0.5">
+						<span className="block text-xs font-medium text-fg">{t("remoteWorkspace.syncCredentials")}</span>
+						<span className="block text-[11px] leading-relaxed text-muted">
+							{t("remoteWorkspace.syncCredentialsHint")}
+						</span>
+					</span>
+				</label>
 			</div>
 		</Modal>
 	);

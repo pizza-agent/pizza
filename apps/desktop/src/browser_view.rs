@@ -1,4 +1,4 @@
-//! Native embedded browser pane with multi-tab support (ZCode-IAB parity).
+//! Native embedded browser pane with multi-tab support.
 //!
 //! Each tab is a real child webview (WKWebView/WebView2/webkitgtk) with its
 //! own label `browser-view-<tabId>`, created over the BrowserPane's viewport
@@ -26,9 +26,8 @@ use crate::bridge::log_file;
 /// `browser-view*` (glob) emit-only access.
 pub const BROWSER_VIEW_LABEL: &str = "browser-view";
 
-/// Chrome-shaped UA presented by every tab (ZCode's Electron IAB keeps
-/// Chromium's default UA; a bare WKWebView UA reads as an unknown client to
-/// risk engines like Baidu's, which answers with CAPTCHAs).
+/// Chrome-shaped UA presented by every tab. A bare WKWebView UA reads as an
+/// unknown client to risk engines like Baidu's, which answers with CAPTCHAs.
 const BROWSER_VIEW_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /// Keep memory bounded the same way the mirror engine's tab registry does.
@@ -158,9 +157,8 @@ fn label_tab_id(label: &str) -> String {
 fn create_tab_webview(window: &Window, tab_id: &str, start: &tauri::Url) -> tauri::Result<Webview> {
 	let app = window.app_handle();
 	let navigation_app = app.clone();
-	// Persistent profile shared by all tabs (ZCode parity: its Electron IAB
-	// uses the `persist:zcode-embedded-browser` partition). Cookies/history
-	// survive restarts, so risk engines see a long-lived browser.
+	// Persistent profile shared by all tabs. Cookies/history survive
+	// restarts, so risk engines see a long-lived browser.
 	let data_dir = match app.path().home_dir() {
 		Ok(home) => home.join(".pizza").join("browser-view"),
 		Err(_) => std::env::temp_dir().join("pizza-browser-view"),
@@ -627,8 +625,7 @@ pub fn browser_view_refresh(app: AppHandle) -> Result<(), String> {
 	Ok(())
 }
 
-/// Open the native DevTools window for a tab (ZCode parity — its Electron
-/// IAB exposes webContents.openDevTools).
+/// Open the native DevTools window for a tab.
 #[tauri::command]
 pub fn browser_view_open_devtools(app: AppHandle, tab_id: String) -> Result<(), String> {
 	let tab_id = sanitize_tab_id(&tab_id)?;

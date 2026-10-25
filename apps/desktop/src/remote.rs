@@ -59,6 +59,10 @@ fi
 exit 127
 "#;
 
+fn default_true() -> bool {
+	true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteWorkspaceConfig {
@@ -67,10 +71,18 @@ pub struct RemoteWorkspaceConfig {
 	pub ssh_target: String,
 	pub port: Option<u16>,
 	pub identity_file: Option<String>,
+	/// In memory: the SSH password. On disk it is only written when the OS
+	/// secret store is unavailable; otherwise `password_in_keychain` is set.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub password: Option<String>,
+	#[serde(default, skip_serializing_if = "std::ops::Not::not")]
+	pub password_in_keychain: bool,
 	pub remote_path: String,
 	pub pizza_command: Option<String>,
+	/// Whether local provider credentials (API keys) are pushed to this host.
+	/// Defaults to true for workspaces saved before the option existed.
+	#[serde(default = "default_true")]
+	pub sync_credentials: bool,
 	pub created_at: i64,
 	pub last_accessed_at: i64,
 }
@@ -92,6 +104,8 @@ pub struct AddRemoteWorkspaceInput {
 	pub password: Option<String>,
 	pub remote_path: String,
 	pub pizza_command: Option<String>,
+	#[serde(default = "default_true")]
+	pub sync_credentials: bool,
 }
 
 #[derive(Deserialize)]
@@ -358,8 +372,10 @@ fn ssh_config_from_input(input: RemoteSshInput) -> Result<RemoteWorkspaceConfig,
 			.map(|value| value.trim().to_string())
 			.filter(|value| !value.is_empty()),
 		password: input.password.filter(|value| !value.is_empty()),
+		password_in_keychain: false,
 		remote_path: "/".to_string(),
 		pizza_command: None,
+		sync_credentials: false,
 		created_at: timestamp,
 		last_accessed_at: timestamp,
 	})
@@ -803,6 +819,9 @@ pub fn provision_remote_provider_config(
 	control_socket: &Path,
 	local_agent_dir: &Path,
 ) -> Result<Value, String> {
+	if !config.sync_credentials {
+		return Ok(json!({ "status": "skipped", "personalProviderCount": 0, "credentialCount": 0 }));
+	}
 	let envelope = build_local_provider_provisioning_envelope(local_agent_dir)?;
 	let payload = serde_json::to_vec(&envelope)
 		.map_err(|e| format!("Failed to serialize provider provisioning envelope: {e}"))?;
@@ -1018,11 +1037,13 @@ pub fn add_remote_workspace(
 			.map(|value| value.trim().to_string())
 			.filter(|value| !value.is_empty()),
 		password: input.password.filter(|value| !value.is_empty()),
+		password_in_keychain: false,
 		remote_path: input.remote_path.trim().to_string(),
 		pizza_command: input
 			.pizza_command
 			.map(|value| value.trim().to_string())
 			.filter(|value| !value.is_empty()),
+		sync_credentials: input.sync_credentials,
 		created_at: timestamp,
 		last_accessed_at: timestamp,
 	};
@@ -1080,11 +1101,80 @@ pub fn load_remote_workspaces() -> HashMap<String, RemoteWorkspaceConfig> {
 	store
 		.workspaces
 		.into_iter()
-		.filter_map(|config| {
-			let key = workspace_key(&config.id);
-			Some((key, config))
+		.map(|mut config| {
+			if config.password_in_keychain && config.password.is_none() {
+				config.password = secret_store::load(&config.id);
+				if config.password.is_none() {
+					crate::bridge::log_file(&format!(
+						"remote workspace {}: SSH password missing from keychain",
+						config.id
+					));
+				}
+			}
+			(workspace_key(&config.id), config)
 		})
 		.collect()
+}
+
+/// Remove a workspace's stored SSH password from the OS secret store.
+pub fn forget_remote_workspace_secret(config: &RemoteWorkspaceConfig) {
+	if config.password_in_keychain {
+		secret_store::delete(&config.id);
+	}
+}
+
+/// SSH passwords live in the macOS Keychain. Other platforms fall back to the
+/// 0600 workspace store file.
+#[cfg(target_os = "macos")]
+mod secret_store {
+	use security_framework::passwords::{
+		delete_generic_password, get_generic_password, set_generic_password,
+	};
+
+	const SERVICE: &str = "ai.pizza.gui.remote-ssh";
+
+	pub fn store(id: &str, password: &str) -> Result<(), String> {
+		set_generic_password(SERVICE, id, password.as_bytes()).map_err(|e| e.to_string())
+	}
+
+	pub fn load(id: &str) -> Option<String> {
+		get_generic_password(SERVICE, id)
+			.ok()
+			.and_then(|bytes| String::from_utf8(bytes).ok())
+	}
+
+	pub fn delete(id: &str) {
+		let _ = delete_generic_password(SERVICE, id);
+	}
+}
+
+#[cfg(not(target_os = "macos"))]
+mod secret_store {
+	pub fn store(_id: &str, _password: &str) -> Result<(), String> {
+		Err("no OS secret store".to_string())
+	}
+
+	pub fn load(_id: &str) -> Option<String> {
+		None
+	}
+
+	pub fn delete(_id: &str) {}
+}
+
+/// Move passwords into the secret store when possible; the returned entry is
+/// what gets written to disk.
+fn persisted_entry(config: &RemoteWorkspaceConfig) -> RemoteWorkspaceConfig {
+	let mut entry = config.clone();
+	if let Some(password) = config.password.as_deref().filter(|value| !value.is_empty()) {
+		match secret_store::store(&config.id, password) {
+			Ok(()) => {
+				entry.password = None;
+				entry.password_in_keychain = true;
+			}
+			Err(_) => entry.password_in_keychain = false,
+		}
+	}
+	entry
 }
 
 pub fn save_remote_workspaces(
@@ -1095,7 +1185,7 @@ pub fn save_remote_workspaces(
 		std::fs::create_dir_all(parent)
 			.map_err(|e| format!("Failed to create remote workspace directory: {e}"))?;
 	}
-	let mut entries: Vec<_> = workspaces.values().cloned().collect();
+	let mut entries: Vec<_> = workspaces.values().map(persisted_entry).collect();
 	entries.sort_by(|a, b| b.last_accessed_at.cmp(&a.last_accessed_at));
 	let store = RemoteWorkspaceStore {
 		version: REMOTE_STORAGE_VERSION,
@@ -1103,8 +1193,18 @@ pub fn save_remote_workspaces(
 	};
 	let payload = serde_json::to_vec_pretty(&store).map_err(|e| e.to_string())?;
 	let temp_path = path.with_extension("json.tmp");
+	// The mode below only applies on creation, so never reuse a stale file.
+	let _ = std::fs::remove_file(&temp_path);
 	{
-		let mut file = std::fs::File::create(&temp_path)
+		let mut options = std::fs::OpenOptions::new();
+		options.write(true).create(true).truncate(true);
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::OpenOptionsExt;
+			options.mode(0o600);
+		}
+		let mut file = options
+			.open(&temp_path)
 			.map_err(|e| format!("Failed to write remote workspace store: {e}"))?;
 		file.write_all(&payload)
 			.map_err(|e| format!("Failed to write remote workspace store: {e}"))?;
@@ -1138,6 +1238,7 @@ pub fn remote_workspace_meta(config: &RemoteWorkspaceConfig) -> Value {
 			"has_password": config.password.as_deref().is_some_and(|value| !value.is_empty()),
 			"remote_path": config.remote_path,
 			"pizza_command": pizza_command(config),
+			"sync_credentials": config.sync_credentials,
 		}
 	})
 }
@@ -1369,6 +1470,7 @@ mod tests {
 			password: None,
 			remote_path: "/srv/project with spaces".to_string(),
 			pizza_command: Some("pizza".to_string()),
+			sync_credentials: true,
 		}
 	}
 
@@ -1387,8 +1489,10 @@ mod tests {
 			port: Some(2222),
 			identity_file: None,
 			password: None,
+			password_in_keychain: false,
 			remote_path: "/srv/project with spaces".to_string(),
 			pizza_command: Some("/opt/pizza bin/pizza".to_string()),
+			sync_credentials: true,
 			created_at: 1,
 			last_accessed_at: 1,
 		};
@@ -1429,8 +1533,10 @@ mod tests {
 			port: None,
 			identity_file: Some("~/.ssh/id_ed25519".to_string()),
 			password: None,
+			password_in_keychain: false,
 			remote_path: "/root/one".to_string(),
 			pizza_command: None,
+			sync_credentials: true,
 			created_at: 0,
 			last_accessed_at: 0,
 		};
@@ -1459,8 +1565,10 @@ mod tests {
 			port: None,
 			identity_file: None,
 			password: None,
+			password_in_keychain: false,
 			remote_path: "/srv/project".to_string(),
 			pizza_command: None,
+			sync_credentials: true,
 			created_at: 10,
 			last_accessed_at: 20,
 		};
@@ -1500,8 +1608,10 @@ mod tests {
 			port: None,
 			identity_file: None,
 			password: None,
+			password_in_keychain: false,
 			remote_path: "/srv/project".to_string(),
 			pizza_command: None,
+			sync_credentials: true,
 			created_at: 1,
 			last_accessed_at: 1,
 		};

@@ -5,6 +5,10 @@
  *   pizza gateway stop      Gracefully stop the gateway and all its agents.
  *   pizza gateway restart   Stop the gateway, then start a fresh one.
  *   pizza gateway start     Start the gateway if it isn't already running.
+ *
+ * Exit codes are scriptable: `status` and `start` exit non-zero when the
+ * gateway is not (or could not be made) reachable, `stop` when it is still
+ * running afterwards. `stop --drain` waits for busy agents to go idle first.
  */
 
 import { connect } from "node:net";
@@ -17,6 +21,9 @@ import { gatewaySocketPath, ensureGateway } from "../packages/gateway/index.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 import { getAgentDir } from "./config.js";
 import { mergePathValues, resolveLoginShellPath } from "./utils/login-shell-path.js";
+
+/** Upper bound for `--drain` to wait on busy agents. */
+const DRAIN_TIMEOUT_MS = 30_000;
 
 /** One-line JSONL over a Unix socket. Returns the first parsed response. */
 function sendOne<T>(socketPath: string, message: Record<string, unknown>, timeoutMs = 5000): Promise<T> {
@@ -88,17 +95,20 @@ interface StatusResult {
 async function cmdStatus(socketPath: string): Promise<void> {
 	if (!existsSync(socketPath)) {
 		console.log(chalk.yellow("Gateway is not running (socket not found)."));
+		process.exitCode = 1;
 		return;
 	}
 	if (!(await pingGateway(socketPath))) {
 		console.log(chalk.yellow("Gateway is not responding (socket exists but ping failed)."));
 		console.log(chalk.dim(`  Socket: ${socketPath}`));
 		console.log(chalk.dim("  Try: pizza gateway restart"));
+		process.exitCode = 1;
 		return;
 	}
 	const r = await sendOne<StatusResult>(socketPath, { type: "status" }, 5000);
 	if (r.type !== "status_result") {
 		console.log(chalk.red(`Unexpected response: ${JSON.stringify(r)}`));
+		process.exitCode = 1;
 		return;
 	}
 	console.log(chalk.green("Gateway is running"));
@@ -118,7 +128,23 @@ async function cmdStatus(socketPath: string): Promise<void> {
 	}
 }
 
-async function cmdStop(socketPath: string): Promise<void> {
+/** Wait (bounded) until no agent in the pool is mid-turn. */
+async function waitForIdleAgents(socketPath: string): Promise<void> {
+	const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		let status: StatusResult;
+		try {
+			status = await sendOne<StatusResult>(socketPath, { type: "status" }, 3000);
+		} catch {
+			return;
+		}
+		if (status.type !== "status_result" || !status.agents.some((a) => a.busy)) return;
+		await new Promise((r) => setTimeout(r, 1000));
+	}
+	console.log(chalk.yellow(`Agents still busy after ${DRAIN_TIMEOUT_MS / 1000}s; stopping anyway.`));
+}
+
+async function cmdStop(socketPath: string, drain = false): Promise<void> {
 	if (!existsSync(socketPath) || !(await pingGateway(socketPath))) {
 		console.log(chalk.yellow("Gateway is not running."));
 		// Clean up stale socket.
@@ -127,6 +153,10 @@ async function cmdStop(socketPath: string): Promise<void> {
 			console.log(chalk.dim("  Removed stale socket."));
 		}
 		return;
+	}
+	if (drain) {
+		console.log(chalk.dim("Waiting for busy agents to finish..."));
+		await waitForIdleAgents(socketPath);
 	}
 	console.log(chalk.dim("Sending shutdown..."));
 	try {
@@ -144,6 +174,7 @@ async function cmdStop(socketPath: string): Promise<void> {
 		await new Promise((r) => setTimeout(r, 200));
 	}
 	console.log(chalk.yellow("Gateway did not stop within 5s — try killall pizza."));
+	process.exitCode = 1;
 }
 
 async function cmdStart(socketPath: string): Promise<void> {
@@ -190,10 +221,12 @@ async function cmdStart(socketPath: string): Promise<void> {
 	}
 	console.log(chalk.red("Gateway failed to start within 15s."));
 	console.log(chalk.dim("Try running: pizza --mode gateway"));
+	process.exitCode = 1;
 }
 
-async function cmdRestart(socketPath: string): Promise<void> {
-	await cmdStop(socketPath);
+async function cmdRestart(socketPath: string, drain: boolean): Promise<void> {
+	await cmdStop(socketPath, drain);
+	process.exitCode = undefined;
 	await cmdStart(socketPath);
 }
 
@@ -208,6 +241,9 @@ ${chalk.bold("Commands:")}
   start      Start the gateway if it isn't already running
   stop       Gracefully stop the gateway and all its agents
   restart    Stop the gateway, then start a fresh one
+
+${chalk.bold("Options:")}
+  --drain    (stop, restart) Wait up to ${DRAIN_TIMEOUT_MS / 1000}s for busy agents to finish first
 `);
 }
 
@@ -218,19 +254,20 @@ export async function handleGatewayCommand(args: string[]): Promise<boolean> {
 	// PIZZA_GATEWAY_SOCKET lets you target a non-default socket, e.g. the
 	// dev desktop's gateway-dev.sock: `PIZZA_GATEWAY_SOCKET=~/.pizza/gateway-dev.sock pizza gateway status`
 	const socketPath = process.env.PIZZA_GATEWAY_SOCKET ?? gatewaySocketPath();
+	const drain = args.includes("--drain");
 
 	switch (sub) {
 		case "status":
 			await cmdStatus(socketPath);
 			return true;
 		case "stop":
-			await cmdStop(socketPath);
+			await cmdStop(socketPath, drain);
 			return true;
 		case "start":
 			await cmdStart(socketPath);
 			return true;
 		case "restart":
-			await cmdRestart(socketPath);
+			await cmdRestart(socketPath, drain);
 			return true;
 		case "-h":
 		case "--help":

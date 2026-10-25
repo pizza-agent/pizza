@@ -1,6 +1,6 @@
 {
 	"name": "@tomsun28/pizza",
-	"version": "0.4.3",
+	"version": "0.4.4",
 	"description": "Pizza - Pizza is an event-driven agent. Every conversation, tool call, and file edit is an event in an immutable log. Your UI, the LLM context, and the session tree are all projections of that log.",
 	"type": "module",
 	"pizzaConfig": {
@@ -46,7 +46,7 @@
 		"build:release": "npm run build && npm run vendor-tools",
 		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets",
 		"build:remote-server": "node scripts/build-remote-server.mjs",
-		"build:desktop": "npm run build:binary && npm run build:remote-server && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
+		"build:desktop": "npm run clean && npm run build:binary && npm run build:remote-server && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
 		"dev:desktop": "npm run build && npm run fix:pty-permissions && npm run prepare-desktop-resources && npm run prepare-desktop-vendor && node scripts/dev-desktop.mjs",
 		"fix:pty-permissions": "node scripts/fix-pty-permissions.mjs",
 		"prepare-desktop-vendor": "node scripts/prepare-desktop-vendor.mjs",

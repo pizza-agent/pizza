@@ -1,7 +1,5 @@
 /**
- * Web element picker — ported from ZCode's
- * packages/ui/src/lib/webElementPickerScript.ts (Apache-2.0, zai-org/ZCode),
- * adapted to Pizza's bridge exec transport.
+ * Web element picker, driven over Pizza's bridge exec transport.
  *
  * The picker runs entirely inside the embedded page: hover shows a highlight
  * overlay + info popover (tag / size / color / font), click captures the
