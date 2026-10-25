@@ -10,6 +10,8 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+![Pizza desktop demo](./resources/demo-desktop.gif)
+
 ## About It
 
 ### Under the hood
@@ -62,8 +64,6 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 ### Desktop
 
 Download the installer for your platform (macOS / Linux / Windows) from [GitHub Releases](https://github.com/pizza-agent/pizza/releases), install and launch.
-
-![Pizza desktop demo](./resources/demo-desktop.gif)
 
 **For macOS users**: Since the app is unsigned, you may see "Pizza.app is damaged and can't be opened". Run the following command in Terminal to fix this:
 

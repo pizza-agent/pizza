@@ -10,6 +10,8 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+![Pizza desktop demo](./resources/demo-desktop.gif)
+
 ## 关于它
 
 ### 底层设计
@@ -62,8 +64,6 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
 ### 桌面应用
 
 从 [GitHub Releases](https://github.com/pizza-agent/pizza/releases) 下载对应平台的安装包（macOS / Linux / Windows），安装后打开即可使用。
-
-![Pizza 桌面端演示](./resources/demo-desktop.gif)
 
 **对 macOS 用户**：由于应用未经签名，打开时可能会提示"Pizza.app 已损坏，无法打开。"请在终端执行以下命令即可解决：
 
