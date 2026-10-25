@@ -69,5 +69,6 @@ export interface WorkspaceMeta {
 		has_password?: boolean;
 		remote_path: string;
 		pizza_command?: string;
+		sync_credentials?: boolean;
 	};
 }

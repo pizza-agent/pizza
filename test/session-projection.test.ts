@@ -226,9 +226,9 @@ describe("SessionProjection", () => {
 
 		expect(timeline).toHaveLength(3);
 		expect(timeline[0].kind).toBe("user_message");
-		expect(timeline[0].summary).toContain("User:");
+		expect(timeline[0].summary).toBe("Hello");
 		expect(timeline[2].kind).toBe("agent_message");
-		expect(timeline[2].summary).toContain("Agent");
+		expect(timeline[2].summary).toBe("Hi");
 	});
 
 	it("should fork session from a specific event", () => {

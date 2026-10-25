@@ -15,7 +15,7 @@ import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentC
 import { scheduledCwdsOnDisk, normalizeCwd } from "../packages/gateway/scheduler-guard.js";
 import { writeTasks } from "../src/core/scheduler/index.js";
 import type { ScheduledTask } from "../src/core/scheduler/index.js";
-import type { RpcCommand, RpcResponse } from "@tomsun28/pizza-protocol";
+import type { RpcCommand, RpcResponse } from "../packages/protocol/index.js";
 
 class FakeAgent implements AgentConnection {
 	readonly cwd: string;

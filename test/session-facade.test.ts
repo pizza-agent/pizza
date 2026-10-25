@@ -110,6 +110,25 @@ describe("SessionFacade", () => {
 		facade.dispose();
 	});
 
+	it("disposeAsync emits session_shutdown once and leaves no pending timer", async () => {
+		const { runtime, settingsManager, modelRegistry } = makeFacade();
+		const emit = vi.fn(async () => {});
+		const extensionRunner = { hasHandlers: (type: string) => type === "session_shutdown", emit } as any;
+		const facade = new SessionFacade({ runtime, settingsManager, modelRegistry, extensionRunner });
+
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		try {
+			await Promise.all([facade.disposeAsync(), facade.disposeAsync()]);
+			await facade.disposeAsync();
+			// A leftover 5s bound timer would keep one-shot CLI runs alive.
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+		expect(emit).toHaveBeenCalledTimes(1);
+		expect(emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+	});
+
 	it("exposes model, thinking, tools, and system prompt via runtime events", () => {
 		const { facade, runtime } = makeFacade();
 

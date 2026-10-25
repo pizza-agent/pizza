@@ -56,12 +56,6 @@ const files = {
 		const old = match?.[2];
 		return { result: content.replace(regex, `$1"${version}"`), old };
 	},
-	"packages/protocol/package.json": (content, version) => {
-		const json = JSON.parse(content);
-		const old = json.version;
-		json.version = version;
-		return { result: JSON.stringify(json, null, "\t") + "\n", old };
-	},
 	"apps/web/package.json": (content, version) => {
 		const json = JSON.parse(content);
 		const old = json.version;

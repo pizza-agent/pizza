@@ -322,6 +322,8 @@ export interface RemoteWorkspaceInput {
 	password?: string | null;
 	remotePath: string;
 	pizzaCommand?: string | null;
+	/** Push local provider credentials (API keys) to this host. */
+	syncCredentials?: boolean;
 }
 
 /** Validate an SSH target and persist it as a desktop workspace. */

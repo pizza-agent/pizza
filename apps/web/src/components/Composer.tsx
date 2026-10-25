@@ -298,7 +298,7 @@ export function Composer({
 	const { t } = useTranslation();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	// Transient web-element contexts (browser pane picker) — in-memory only,
-	// cleared on send; never persisted into drafts (ZCode parity).
+	// cleared on send; never persisted into drafts.
 	const webElementContexts = useSyncExternalStore(
 		subscribeWebElementContexts,
 		() => getWebElementContexts(workspace),

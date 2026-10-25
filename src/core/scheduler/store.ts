@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 
 import { join } from "node:path";
-import type { ScheduledTask, ScheduledTaskRun } from "@tomsun28/pizza-protocol";
+import type { ScheduledTask, ScheduledTaskRun } from "../../../packages/protocol/index.js";
 
 const SCHEMA_VERSION = 1;
 

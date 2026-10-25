@@ -57,7 +57,7 @@
   "remoteWorkspace": {
     "title": "连接远程服务器",
     "description": "Pizza 会在远程机器上运行，项目、Agent、终端和 Git 状态都保留在远端。先连接服务器，再从服务器上选择项目目录。首次连接会自动安装或更新远端 Pizza 服务端。",
-    "installPrerequisite": "远端安装使用独立的版本目录和私有 Node.js 运行时；系统用户服务可用时注册 systemd/launchd，不可用时自动降级为后台进程。无需手动安装 Pizza。",
+    "installPrerequisite": "远端安装使用独立的版本目录和私有 Node.js 运行时，服务器上无需预装任何东西。Linux 上可用时注册 systemd 用户服务，否则以后台进程运行。",
     "starting": "正在连接远程服务器并启动远端 Pizza...",
     "progressTitle": "正在准备远程工作区",
     "progressHint": "正在检查服务器、安装或启动远端 Pizza，并加载所选项目。完成后会自动进入该工作区。",
@@ -73,7 +73,7 @@
     "portHint": "默认：22",
     "portInvalid": "端口必须在 1 到 65535 之间。",
     "password": "密码",
-    "passwordHint": "只用于 SSH 登录，并保存在本机 Pizza 配置目录。",
+    "passwordHint": "只用于 SSH 登录。保存在 macOS 钥匙串中（其他系统保存在本机 Pizza 配置目录）。",
     "passwordPlaceholder": "SSH 密码",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
@@ -91,6 +91,8 @@
     "remotePath": "远程项目目录",
     "remotePathHint": "从服务器目录中选择，或手动填写绝对路径。",
     "remotePathRequired": "请输入远程项目目录。",
+    "syncCredentials": "同步本机模型凭证到此服务器",
+    "syncCredentialsHint": "把本机的模型提供商和 API Key 复制到服务器，供远端 Agent 使用。共享或不受信任的机器请关闭，改为在服务器上单独配置模型。",
     "connect": "连接",
     "connecting": "连接中"
   },

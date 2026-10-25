@@ -215,7 +215,11 @@ function computeContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	// A reserve that swallows the whole window would make this always
+	// true — compaction then fires on every turn only to abort with
+	// Nothing to compact. Cap the effective reserve at 80% of the window.
+	const reserve = Math.min(settings.reserveTokens, Math.floor(contextWindow * 0.8));
+	return contextTokens > contextWindow - reserve;
 }
 
 // ============================================================================

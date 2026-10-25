@@ -29,9 +29,7 @@ jobs:
         run: npm test
       - name: Publish to npm
         # prepublishOnly re-runs clean+build+vendor-tools to ensure the
-        # tarball includes vendor binaries. @tomsun28/pizza-protocol is
-        # bundled via bundleDependencies so it does not need a separate
-        # npm publish.
+        # tarball includes vendor binaries.
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -66,4 +66,4 @@ export type {
 	TimeOfDay,
 	Weekday,
 	DayOfMonth,
-} from "@tomsun28/pizza-protocol";
+} from "../../../packages/protocol/index.js";

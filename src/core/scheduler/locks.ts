@@ -23,7 +23,7 @@
  * by virtue of running on the Node.js event loop.
  */
 
-import type { ConcurrencyPolicy, ScheduledTask } from "@tomsun28/pizza-protocol";
+import type { ConcurrencyPolicy, ScheduledTask } from "../../../packages/protocol/index.js";
 
 /** Result of an acquire attempt. */
 export type AcquireResult =

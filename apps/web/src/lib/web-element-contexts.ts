@@ -1,9 +1,7 @@
 /**
- * Web element context store + composer wiring — ported from ZCode's
- * packages/ui/src/lib/webElementContext.ts / useWebElementContexts
- * (Apache-2.0, zai-org/ZCode), adapted to Pizza's composer.
+ * Web element context store + composer wiring.
  *
- * Semantics (ZCode parity):
+ * Semantics:
  *  - picked elements arrive as transient in-memory attachments shown as a
  *    chip row above the composer input — NOT as text dumped into the input
  *  - on submit the contexts are spliced into the outgoing prompt as a
@@ -24,8 +22,7 @@ const WEB_ELEMENT_CONTEXT_BLOCK_TITLE = "# Web page elements:";
 const MAX_MARKDOWN_FIELD_LENGTH = 8_000;
 
 // ---------------------------------------------------------------------------
-// Transient store (module-level, per workspace — mirrors ZCode's composer-
-// memory semantics)
+// Transient store (module-level, per workspace, in-memory only)
 // ---------------------------------------------------------------------------
 
 const store = new Map<string, WebElementContextAttachment[]>();
@@ -88,7 +85,7 @@ export function dispatchWebElementContextAdd(
 }
 
 // ---------------------------------------------------------------------------
-// Prompt composition (ZCode wire format)
+// Prompt composition
 // ---------------------------------------------------------------------------
 
 function truncateMarkdownValue(value: string | undefined): string {
@@ -111,7 +108,7 @@ function formatAttributes(attributes: Record<string, string> | undefined): strin
 		.join(" ");
 }
 
-/** One context as a "## Element" Markdown section (ZCode field-line format). */
+/** One context as a "## Element" Markdown section (one field per line). */
 export function buildWebElementContextMarkdown(payload: WebElementContextPayload): string {
 	const lines = [
 		"## Element",
@@ -144,7 +141,7 @@ export function buildWebElementContextMarkdown(payload: WebElementContextPayload
 }
 
 /** Compose the outgoing prompt: user text + one Markdown block for all
- *  contexts (ZCode's buildPromptWithWebElementContexts). */
+ *  contexts. */
 export function buildPromptWithWebElementContexts(
 	text: string,
 	contexts: readonly WebElementContextAttachment[],

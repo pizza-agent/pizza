@@ -29,6 +29,12 @@ export interface UserApprovalEvent extends EventBase {
 	payload: {
 		/** Approved intent event_id */
 		intent_event_id: string;
+		/** "once" (default) or "session" — session-scoped approval adds the
+		 *  classification category to the runtime’s allowed set so later gated
+		 *  calls in the same category auto-run for this session only. */
+		scope?: "once" | "session";
+		/** IntentClassification.category the approval covered (e.g. file_write). */
+		category?: string;
 	};
 }
 

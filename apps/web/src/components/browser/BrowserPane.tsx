@@ -79,8 +79,7 @@ async function fetchBrowserState(): Promise<RpcBrowserState | undefined> {
 /**
  * Mirror implementation — used in the plain-browser (web) build where no
  * child webview exists: a managed Chromium renders the page and this pane
- * mirrors its frames over a local WebSocket (same approach as ZCode's web
- * build).
+ * mirrors its frames over a local WebSocket.
  */
 function MirrorBrowserPane() {
 	const { t } = useTranslation();
@@ -394,16 +393,9 @@ function MirrorBrowserPane() {
 }
 
 /**
- * Native implementation — Tauri desktop only. The page lives in a real child
- * webview rendered natively over the pane (ZCode desktop IAB equivalent):
- * no mirroring, native scrolling/input, the user interacts with the actual
- * page. Agent commands (`_browser …`) are routed here by the sidecar through
- * BROWSER_NATIVE_CMD events and executed via the in-page bridge.
- */
-/**
  * Native implementation — Tauri desktop only, multi-tab. Each tab is a real
- * child webview rendered natively over the pane (ZCode desktop IAB
- * equivalent). Agent commands (`_browser …`) arrive as BROWSER_NATIVE_CMD
+ * child webview rendered natively over the pane: no mirroring, native
+ * scrolling/input. Agent commands (`_browser …`) arrive as BROWSER_NATIVE_CMD
  * events and run against the active tab via the in-page bridge.
  */
 function NativeBrowserPane({ workspace }: { workspace?: string | null }) {
@@ -653,7 +645,7 @@ function NativeBrowserPane({ workspace }: { workspace?: string | null }) {
 		);
 	}, []);
 
-	// --- Web element picker (ZCode parity) -------------------------------
+	// --- Web element picker ----------------------------------------------
 	const cancelPicking = useCallback(async () => {
 		pickRunRef.current += 1;
 		setIsPicking(false);

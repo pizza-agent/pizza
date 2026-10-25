@@ -169,7 +169,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 					({ id, provider }) => `${id} ${provider} ${provider}/${id} ${provider} ${id}`,
 				)
 			: this.allModels;
-		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+		this.selectedIndex = 0;
 		this.updateList();
 	}
 

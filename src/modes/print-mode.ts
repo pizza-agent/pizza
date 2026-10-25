@@ -95,7 +95,7 @@ export async function runPrintModeWithFacade(facade: SessionFacade, options: Pri
 		if (disposed) return;
 		disposed = true;
 		unsubscribe?.();
-		await Promise.resolve(facade.dispose());
+		await facade.disposeAsync();
 	};
 
 	const signalCleanupHandlers = registerPrintModeSignalHandlers(disposeRuntime);

@@ -32,7 +32,11 @@ export type TimelineEntryKind =
 	| "session_boundary"
 	| "compaction"
 	| "error"
-	| "checkpoint";
+	| "checkpoint"
+	| "bash_command"
+	| "user_action"
+	| "runtime"
+	| "other";
 
 /** A single entry in the timeline */
 export interface TimelineEntry {

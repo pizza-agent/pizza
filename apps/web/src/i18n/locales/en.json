@@ -56,7 +56,7 @@
   "remoteWorkspace": {
     "title": "Connect remote server",
     "description": "Pizza runs on the remote machine and keeps the project, agent, terminal, and Git state there. Connect first, then choose a project folder on that server. The first connection automatically installs or updates the remote Pizza server.",
-    "installPrerequisite": "Remote installation uses a versioned directory and a private Node.js runtime. It registers a systemd/launchd user service when available and falls back to a detached process otherwise. Manual Pizza installation is not required.",
+    "installPrerequisite": "Remote installation uses a versioned directory and a private Node.js runtime; nothing needs to be installed on the server. On Linux it registers a systemd user service when available and otherwise runs as a detached process.",
     "starting": "Connecting to the remote server and starting remote Pizza...",
     "progressTitle": "Preparing remote workspace",
     "progressHint": "Checking the server, installing or starting remote Pizza, and loading the selected project. The workspace opens automatically when ready.",
@@ -72,7 +72,7 @@
     "portHint": "Default: 22",
     "portInvalid": "Port must be between 1 and 65535.",
     "password": "Password",
-    "passwordHint": "Used only for SSH login and saved in the local Pizza config.",
+    "passwordHint": "Used only for SSH login. Saved in the macOS Keychain (other systems: the local Pizza config).",
     "passwordPlaceholder": "SSH password",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
@@ -90,6 +90,8 @@
     "remotePath": "Remote project directory",
     "remotePathHint": "Selected from the server, or entered manually as an absolute path.",
     "remotePathRequired": "Enter the remote project directory.",
+    "syncCredentials": "Sync local model credentials to this server",
+    "syncCredentialsHint": "Copies your local providers and API keys to the server so remote agents can use them. Turn off for shared or untrusted machines and configure models on the server instead.",
     "connect": "Connect",
     "connecting": "Connecting"
   },

@@ -417,15 +417,32 @@ function resolveClassifierConfig(config: ClassifierConfig): ResolvedClassifierCo
 function parseBuiltinInvocation(command: string): { command: "read" | "write" | "edit"; path?: string } | undefined {
 	const firstLine = command.split("\n", 1)[0]?.trim() ?? "";
 	const parts = splitShellWords(firstLine);
-	const builtin = parts[0]?.toLowerCase();
+	const token = parts[0]?.toLowerCase();
+	// Underscore built-ins (_read/_write/_edit) run through the same `cli`
+	// tool as plain built-ins — the model reached them in exactly the way
+	// the default `tools: ["cli"]` list advertises. Classify them by their
+	// file semantics, or the approvals.writes/edits gates never see the
+	// primary file-mutation path.
+	const builtin = token === "_read" ? "read"
+		: token === "_write" ? "write"
+		: token === "_edit" ? "edit"
+		: token;
 	if (builtin !== "read" && builtin !== "write" && builtin !== "edit") return undefined;
 
 	let path: string | undefined;
+	// Flags that consume a following VALUE (not the path): --content/-c,
+	// --edits JSON, --range. Skip their values so they are never mistaken
+	// for the file argument.
+	const VALUE_FLAGS = new Set(["--path", "-p", "--content", "-c", "--edits", "-e", "--range", "-r"]);
 	for (let i = 1; i < parts.length; i++) {
 		const arg = parts[i]!;
-		if ((arg === "--path" || arg === "-p") && parts[i + 1]) {
-			path = parts[i + 1];
-			break;
+		if (VALUE_FLAGS.has(arg) && parts[i + 1]) {
+			if (arg === "--path" || arg === "-p") {
+				path = parts[i + 1];
+				break;
+			}
+			i++; // consume the flag value
+			continue;
 		}
 		if (!arg.startsWith("-") && !path) {
 			path = arg;
@@ -433,7 +450,7 @@ function parseBuiltinInvocation(command: string): { command: "read" | "write" | 
 		}
 	}
 
-	return { command: builtin, path };
+	return { command: builtin as "read" | "write" | "edit", path };
 }
 
 

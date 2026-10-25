@@ -303,16 +303,25 @@ class TreeList implements Component {
 				entry.type === "custom" ||
 				entry.type === "model_change" ||
 				entry.type === "thinking_level_change" ||
-				entry.type === "session_info";
+				entry.type === "session_info" ||
+				// Low-level timeline entries (reactor machinery, approvals,
+				// runtime lifecycle) are noise in the default tree view; the
+				// "all" filter still reveals them.
+				(entry.type === "timeline" && (entry.kind === "runtime" || entry.kind === "other"));
 
 			switch (this.filterMode) {
 				case "user-only":
 					// Just user messages
-					passesFilter = entry.type === "message" && entry.message.role === "user";
+					passesFilter =
+						(entry.type === "message" && entry.message.role === "user") ||
+						(entry.type === "timeline" && entry.kind === "user_message");
 					break;
 				case "no-tools":
 					// Default minus tool results
-					passesFilter = !isSettingsEntry && !(entry.type === "message" && entry.message.role === "toolResult");
+					passesFilter =
+						!isSettingsEntry &&
+						!(entry.type === "message" && entry.message.role === "toolResult") &&
+						!(entry.type === "timeline" && entry.kind === "tool_execution");
 					break;
 				case "labeled-only":
 					// Just labeled entries
@@ -552,6 +561,9 @@ class TreeList implements Component {
 			case "label":
 				parts.push("label", entry.label ?? "");
 				break;
+			case "timeline":
+				parts.push(entry.kind, entry.summary);
+				break;
 		}
 
 		return parts.join(" ");
@@ -777,6 +789,40 @@ class TreeList implements Component {
 					? [theme.fg("dim", "[title: "), theme.fg("dim", entry.name), theme.fg("dim", "]")].join("")
 					: [theme.fg("dim", "[title: "), theme.italic(theme.fg("dim", "empty")), theme.fg("dim", "]")].join("");
 				break;
+			case "timeline": {
+				// Entries synthesized from the timeline projection (TUI /history).
+				const summary = normalize(entry.summary);
+				switch (entry.kind) {
+					case "user_message":
+						result = theme.fg("accent", "user: ") + summary;
+						break;
+					case "agent_message":
+						result = theme.fg("success", "assistant: ") + summary;
+						break;
+					case "tool_execution":
+						result = theme.fg("muted", summary);
+						break;
+					case "bash_command":
+						result = theme.fg("dim", summary);
+						break;
+					case "error":
+						result = theme.fg("error", summary);
+						break;
+					case "user_action":
+						result = theme.fg("warning", summary);
+						break;
+					case "runtime":
+						result = theme.fg("muted", summary);
+						break;
+					case "other":
+						result = theme.fg("dim", summary);
+						break;
+					default:
+						result = theme.fg("dim", `[${entry.kind}]: `) + summary;
+						break;
+				}
+				break;
+			}
 			default:
 				result = "";
 		}

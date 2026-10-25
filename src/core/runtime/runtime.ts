@@ -114,6 +114,22 @@ export class EventSourcedRuntime {
 	private reactor: Reactor | null = null;
 	private config: EventSourcedRuntimeConfig;
 	private readonly ownsStore: boolean;
+	/**
+	 * Largest provider-observed prompt size for the CURRENT model (input +
+	 * cache_read + cache_write — tokens actually present in the context).
+	 * This is hard evidence of the model’s real serving capacity. When the
+	 * catalog contextWindow is understated (e.g. swe-2 catalog reported 262k
+	 * while the endpoint serves 440k+), this floor prevents both truncation
+	 * and the compaction threshold from acting on the wrong number. Reset on
+	 * model change because capacity evidence is per-model.
+	 */
+	private observedContextMax = 0;
+	/** Snapshot of the declared context window taken at construction — the
+	 * pristine basis for the compaction threshold. config.contextBudget is
+	 * deliberately mutable (the observed-capacity callback widens it so
+	 * truncation never chops context the provider already accepted), so it
+	 * cannot serve as the declared term anymore. */
+	private declaredContextBudget: number;
 	private readonly rawStore: EventStore;
 
 	/** Working directory for this runtime */
@@ -133,6 +149,10 @@ export class EventSourcedRuntime {
 	private _resolveSettled: (() => void) | undefined;
 	constructor(config: EventSourcedRuntimeConfig) {
 		this.config = config;
+		// Pristine declared window — the compaction threshold basis. config
+		// .contextBudget is intentionally mutable (widened by the observed-
+		// capacity callback) and therefore can no longer serve as "declared".
+		this.declaredContextBudget = config.contextBudget ?? 128000;
 		this.ownsStore = config.ownsStore ?? !config.store;
 
 		// 1. Create or use provided EventStore
@@ -223,10 +243,14 @@ export class EventSourcedRuntime {
 				retryAssistantErrorCompletions: this.config.retryAssistantErrorCompletions,
 				compactionPolicy: this._buildCompactionPolicy(projection),
 			onObservedContextTokens: (tokens) => {
-				// Self-correct an understated contextBudget: if the provider
-				// demonstrably served a prompt larger than our configured
-				// window, the catalog value was wrong — widen so truncation
-				// and the compaction threshold stop firing early.
+				// Record the largest prompt the provider demonstrably served.
+				// This is the strongest evidence of the real context window —
+				// stronger than the model catalog, which can understate it.
+				if (Number.isFinite(tokens) && tokens > this.observedContextMax) {
+					this.observedContextMax = tokens;
+				}
+				// Also widen the truncation budget so buildContext never chops
+				// history the provider already accepted.
 				if (Number.isFinite(tokens) && tokens > (this.config.contextBudget ?? 128000)) {
 					this.config.contextBudget = tokens;
 				}
@@ -509,7 +533,20 @@ export class EventSourcedRuntime {
 				caused_by: causedBy,
 			});
 			const policy = this._buildCompactionPolicy(this.getProjection());
-			const outcome = await compactWithDeadline(policy, reason, abortController);
+			// Summarization is mechanical — it must not burn the session
+			// thinking budget. thinking:max can spend the whole completion
+			// budget on reasoning and return stop_reason:"length" with an
+			// empty body ("Summarization produced an empty summary" observed
+			// live). Force thinking off for the compaction call and restore
+			// the level afterwards.
+			const previousThinking = this.config.model.thinking_level;
+			let outcome;
+			try {
+				this.config.model.thinking_level = "off";
+				outcome = await compactWithDeadline(policy, reason, abortController);
+			} finally {
+				this.config.model.thinking_level = previousThinking;
+			}
 			this.store.append({
 				actor_id: "compactor",
 				type: "COMPACTION_END",
@@ -545,7 +582,23 @@ export class EventSourcedRuntime {
 			projection,
 			llmClient: this.config.llmClient,
 			model: this.config.model,
-			getContextWindow: () => this.config.compactionEngineSettings?.contextWindow ?? this.config.contextBudget ?? 128000,
+			getContextWindow: () => {
+				// An explicitly configured engine window is authoritative —
+				// observed evidence must not extend it.
+				const explicit = this.config.compactionEngineSettings?.contextWindow;
+				if (explicit) return explicit;
+				// Otherwise the threshold basis is the largest of:
+				//   declared  — the catalog/resolved window (possibly understated),
+				//   observed  — the largest prompt the provider already served.
+				// NOT observed + reserve: the trigger is window×95%, and prompt
+				// estimates are capped near observed by the truncation budget, so
+				// a +reserve margin would put the trigger ~1.2× above anything
+				// reachable and silently disable auto-compaction whenever
+				// observed ≳ declared but < ~19×reserve. The observed frontier
+				// itself is the better basis — with an accurate catalog this
+				// reduces to declared exactly.
+				return Math.max(this.declaredContextBudget, this.observedContextMax);
+			},
 			settings: {
 				contextWindow: this.config.contextBudget ?? 128000,
 				...this.config.compactionEngineSettings,
@@ -567,7 +620,14 @@ export class EventSourcedRuntime {
 		// and threshold compaction can never fire.
 		if (typeof contextWindow === "number" && contextWindow > 0) {
 			this.config.contextBudget = contextWindow;
+			// New declared basis for the compaction threshold — the old
+			// model’s window must not outlive the switch.
+			this.declaredContextBudget = contextWindow;
 		}
+		// Capacity evidence is per-model: discard it on switch, or an old
+		// model’s observed serving size would delay the new model’s
+		// compaction threshold by exactly that amount.
+		this.observedContextMax = 0;
 		this.store.append({
 			actor_id: "user",
 			type: "MODEL_CHANGED",
@@ -729,11 +789,15 @@ export class EventSourcedRuntime {
 	/**
 	 * Approve a pending intent.
 	 */
-	approve(intentEventId: string): void {
+	approve(intentEventId: string, options?: { scope?: "once" | "session"; category?: string }): void {
 		this.store.append({
 			actor_id: "user",
 			type: "USER_APPROVAL",
-			payload: { intent_event_id: intentEventId },
+			payload: {
+				intent_event_id: intentEventId,
+				scope: options?.scope ?? "once",
+				category: options?.category,
+			},
 		});
 	}
 
@@ -764,7 +828,10 @@ export class EventSourcedRuntime {
 	}
 
 	/**
-	 * Fork session at a specific event.
+	 * Fork session at a specific event. See SessionProjection.fork() —
+	 * this creates a BRANCH VIEW starting at the event, not a rewind:
+	 * post-event history stays inside the view because a contiguous
+	 * event range cannot exclude descendants.
 	 */
 	fork(eventId: string): SessionDescriptor {
 		const desc = this.sessionManager?.forkAt(eventId) as any;
@@ -807,6 +874,10 @@ export class EventSourcedRuntime {
 		return sessionId ? this.sessionManager?.getSession(sessionId) : undefined;
 	}
 
+	// NOTE: checkpoints exist only at this API level — there is currently
+	// no UI entry point that calls createCheckpoint/restoreCheckpoint. The
+	// machinery is wired end-to-end (adapter + CHECKPOINT_* events) but is
+	// dormant until a command or mode opts in.
 	async createCheckpoint(label?: string): Promise<CheckpointRef> {
 		const checkpoint = await this.runtimeAdapter.createCheckpoint({
 			cwd: this.config.cwd,

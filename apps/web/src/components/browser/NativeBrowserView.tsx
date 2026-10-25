@@ -1,6 +1,6 @@
 /**
  * NativeBrowserView — the multi-tab embedded browser pane for the Tauri
- * desktop (ZCode-IAB parity).
+ * desktop.
  *
  * Each tab is a real child webview owned by the Rust host, rendered
  * natively over this component's placeholder area. This component:

@@ -2548,15 +2548,17 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pizza-gui"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "base64 0.22.1",
  "env_logger",
  "log",
  "percent-encoding",
  "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

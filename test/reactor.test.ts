@@ -1128,4 +1128,69 @@ describe("Reactor (event-driven core)", () => {
 
 		runtime.dispose();
 	});
+	it("session-scoped approval auto-runs later gated calls in the same category", async () => {
+		const cwd = makeTempDir();
+		const registry = makeCliRegistry();
+
+		let calls = 0;
+		const client: LLMClient = {
+			async complete(): Promise<LLMResponse> {
+				calls++;
+				// Two successive gated writes (same file_write category), then done.
+				if (calls === 1) {
+					return {
+						content: [{ type: "tool_call", id: "w1", name: "cli", arguments: { command: "echo a > a.txt" } } as ContentBlock],
+						provider: "test", model: "test",
+						usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+						stopReason: "tool_use",
+					};
+				}
+				if (calls === 2) {
+					return {
+						content: [{ type: "tool_call", id: "w2", name: "cli", arguments: { command: "echo b > b.txt" } } as ContentBlock],
+						provider: "test", model: "test",
+						usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+						stopReason: "tool_use",
+					};
+				}
+				return {
+					content: [{ type: "text", text: "done" } as ContentBlock],
+					provider: "test", model: "test",
+					usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+					stopReason: "stop",
+				};
+			},
+		};
+
+		let approvalRequests = 0;
+		const runtime = new EventSourcedRuntime({
+			cwd, agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			classifierConfig: { safe_mode: true },
+			approvalHandler: { requestApproval: () => { approvalRequests++; }, cancelApproval: () => {} },
+			systemPrompt: "",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		const promptPromise = runtime.prompt("write two files");
+		await new Promise<void>((resolve) => {
+			const unsub = runtime.store.subscribe((event) => {
+				if (event.type === "INTENT_TOOL_CALL") { unsub(); resolve(); }
+			});
+		});
+		// Approve the FIRST gated call with session scope.
+		const intent = runtime.store.query({ types: ["INTENT_TOOL_CALL"] });
+		runtime.approve(intent[0].event_id, { scope: "session", category: "file_write" });
+		await promptPromise;
+
+		// Second file_write must have auto-run with no new dialog.
+		expect(approvalRequests).toBe(1);
+		const ends = runtime.store.query({ types: ["TOOL_EXECUTION_END"] });
+		expect(ends).toHaveLength(2);
+		expect(ends.every((e) => !(e.payload as { is_error: boolean }).is_error)).toBe(true);
+		runtime.dispose();
+	});
+
 });

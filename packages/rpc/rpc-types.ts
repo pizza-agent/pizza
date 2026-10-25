@@ -1,6 +1,6 @@
 /**
  * Agent-side RPC types — re-exports the dependency-free protocol types
- * from @tomsun28/pizza-protocol and provides typed overrides for fields that
+ * from packages/protocol and provides typed overrides for fields that
  * reference agent internals (AgentMessage, CompactionResult, etc.).
  */
 
@@ -26,7 +26,7 @@ export {
 	type RpcExtensionPermissionState,
 	classifyLine,
 	PROTOCOL_VERSION,
-} from "@tomsun28/pizza-protocol";
+} from "../protocol/index.js";
 
 import type {
 	RpcSessionState as ProtocolSessionState,
@@ -40,7 +40,7 @@ import type {
 	ConcurrencyPolicy,
 	SchedulerPolicy,
 	ModelTestResult,
-} from "@tomsun28/pizza-protocol";
+} from "../protocol/index.js";
 
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
 import type { Model } from "@earendil-works/pi-ai/compat";
@@ -127,10 +127,10 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "approve"; success: true }
 	| { id?: string; type: "response"; command: "reject"; success: true }
 	| { id?: string; type: "response"; command: "set_safe_mode"; success: true; data: { safeMode: boolean } }
-	| { id?: string; type: "response"; command: "set_approval_policy"; success: true; data: { approvalPolicy: import("@tomsun28/pizza-protocol").ApprovalPolicy } }
-	| { id?: string; type: "response"; command: "get_approval_policy"; success: true; data: { approvalPolicy: import("@tomsun28/pizza-protocol").ApprovalPolicy } }
-	| { id?: string; type: "response"; command: "get_approval_gates"; success: true; data: { gates: import("@tomsun28/pizza-protocol").ApprovalGates } }
-	| { id?: string; type: "response"; command: "set_approval_gates"; success: true; data: { gates: import("@tomsun28/pizza-protocol").ApprovalGates } }
+	| { id?: string; type: "response"; command: "set_approval_policy"; success: true; data: { approvalPolicy: import("../protocol/index.js").ApprovalPolicy } }
+	| { id?: string; type: "response"; command: "get_approval_policy"; success: true; data: { approvalPolicy: import("../protocol/index.js").ApprovalPolicy } }
+	| { id?: string; type: "response"; command: "get_approval_gates"; success: true; data: { gates: import("../protocol/index.js").ApprovalGates } }
+	| { id?: string; type: "response"; command: "set_approval_gates"; success: true; data: { gates: import("../protocol/index.js").ApprovalGates } }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { sessionId: string } }
 	| { id?: string; type: "response"; command: "get_skills"; success: true; data: { skills: RpcSkillInfo[] } }
 	| {

@@ -380,7 +380,11 @@ export class Reactor {
 		return this.abortController?.signal.aborted ?? false;
 	}
 
-	/** Interrupt the reactor. */
+	/** Interrupt the reactor. Bare Esc (no content) is a HARD interrupt:
+	 * it aborts the in-flight turn AND drops every queued follow-up —
+	 * matching the user-facing "stop everything" intent. A steer
+	 * (USER_INTERRUPT with content) aborts the turn but keeps the new
+	 * message queued for the next turn. */
 	interrupt(): void {
 		this._stopStreamIdleWatchdog();
 		this.abortController?.abort();
@@ -1071,7 +1075,15 @@ export class Reactor {
 			classification?: IntentClassification;
 		};
 
-		if (payload.requires_approval) {
+		// Session-scoped "always allow": a category the user approved for
+		// this session skips the dialog entirely (TurnState.allowedCategories
+		// is memory-only; nothing is persisted). Local flag — payload is the
+		// logged event object and must not be mutated.
+		const category = payload.classification?.category;
+		const needsApproval =
+			payload.requires_approval &&
+			!(category !== undefined && this.turnState.allowedCategories.has(category));
+		if (needsApproval) {
 			if (!this.config.approvalHandler) {
 				this._emitToolExecutionRejected(payload.tool_call_id, payload.tool_name, {
 					content: [{ type: "text", text: "Tool execution requires approval, but no approval handler is available." }],
@@ -1624,25 +1636,33 @@ export class Reactor {
 		return "scheduled";
 	}
 
-	/** Walk causal chain back to find the highest retry_attempt seen. */
+	/** Retries belong to the current LLM call, not earlier successful tool rounds. */
 	private _attemptCount(eventId: string): number {
-		const chain = this.config.store.getCausalChain(eventId);
-		let attempt = 0;
-		for (const e of chain) {
+		const visited = new Set<string>();
+		let currentId: string | undefined = eventId;
+		while (currentId && !visited.has(currentId)) {
+			visited.add(currentId);
+			const e = this.config.store.get(currentId);
+			if (!e) break;
 			if (e.type === "AGENT_TURN_REQUESTED") {
-				const p = e.payload as { retry_attempt?: number };
-				if (p.retry_attempt !== undefined && p.retry_attempt > attempt) {
-					attempt = p.retry_attempt;
-				}
+				const p = e.payload as { reason?: string; retry_attempt?: number };
+				return p.reason === "retry" ? (p.retry_attempt ?? 0) : 0;
 			}
+			currentId = e.caused_by;
 		}
-		return attempt;
+		return 0;
 	}
 
 	// ─── USER_APPROVAL ──────────────────────────────────────────────────────
 
 	private async _onUserApproval(event: EventBase): Promise<void> {
-		const payload = event.payload as { intent_event_id: string };
+		const payload = event.payload as { intent_event_id: string; scope?: "once" | "session"; category?: string };
+		// Session-scoped approval: remember the category so later gated calls
+		// in the same category auto-run without another dialog. Recorded in
+		// memory only — the event just documents the user’s choice.
+		if (payload.scope === "session" && payload.category) {
+			this.turnState.allowedCategories.add(payload.category);
+		}
 		const pending = this._pendingApprovals.get(payload.intent_event_id);
 		if (pending) {
 			this._pendingApprovals.delete(payload.intent_event_id);
@@ -1678,7 +1698,19 @@ export class Reactor {
 		});
 
 		try {
-			const outcome = await compactWithDeadline(this.compactionPolicy, payload.reason, abortController);
+			// Summarization is mechanical — it must not burn the session
+			// thinking budget. thinking:max can spend the whole completion
+			// budget on reasoning and return stop_reason:"length" with an
+			// empty body. Force thinking off for the compaction call and
+			// restore the level afterwards.
+			const previousThinking = this.config.model.thinking_level;
+			let outcome;
+			try {
+				this.config.model.thinking_level = "off";
+				outcome = await compactWithDeadline(this.compactionPolicy, payload.reason, abortController);
+			} finally {
+				this.config.model.thinking_level = previousThinking;
+			}
 			this._emit({
 				actor_id: "compactor",
 				type: "COMPACTION_END",

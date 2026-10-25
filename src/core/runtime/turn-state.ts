@@ -87,6 +87,10 @@ export class TurnState {
 	readonly retryTimers = new Map<string, RetryTimer>();
 	readonly turnTrackers = new Map<string, TurnTracker>();
 	readonly pendingApprovals = new Map<string, PendingApproval>();
+	/** IntentClassification categories the user approved for the whole
+	 * session ("Always allow" in the approval dialog). Session-scoped by
+	 * design: held in memory, never persisted, cleared on restart. */
+	readonly allowedCategories = new Set<string>();
 	/** Stable log boundary for this run, including across replay pages. */
 	private replayRunStartSequence: number | undefined;
 

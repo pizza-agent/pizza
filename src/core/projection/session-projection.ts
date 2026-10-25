@@ -182,6 +182,7 @@ export class SessionProjection {
 			timestamp: e.timestamp,
 			summary: this._summarizeEvent(e),
 			caused_by: e.caused_by,
+			metadata: { event_type: e.type },
 		}))];
 	}
 
@@ -203,7 +204,16 @@ export class SessionProjection {
 	}
 
 	/**
-	 * Fork: create new session descriptor from a specific event.
+	 * Fork: create a new session VIEW starting at a specific event.
+	 *
+	 * This is a branch view, not a rewind: the forked range is
+	 * [at_event_id → HEAD] (exclusive of the fork point), so events that
+	 * came after at_event_id remain inside the view. Because the event log
+	 * is immutable and a session range is one contiguous span, "drop
+	 * everything after point E and continue from there" cannot be
+	 * expressed — the descendants of E are unavoidable. If a true rewind
+	 * is ever wanted, it needs a different mechanism (e.g. a summary
+	 * boundary or an exclusion set), not a wider range.
 	 */
 	fork(at_event_id: string): SessionDescriptor {
 		return {
@@ -296,12 +306,18 @@ export class SessionProjection {
 			case "USER_MESSAGE": {
 				const payload = event.payload as { content: string | unknown[] };
 				const content = typeof payload.content === "string" ? payload.content : "[Content]";
-				return `User: ${content.slice(0, 80)}${content.length > 80 ? "..." : ""}`;
+				return `${content.slice(0, 80)}${content.length > 80 ? "..." : ""}`;
 			}
 
 			case "AGENT_MESSAGE_END": {
-				const payload = event.payload as { stop_reason: string };
-				return `Agent (stop: ${payload.stop_reason})`;
+				const payload = event.payload as {
+					stop_reason: string;
+					content?: Array<{ type: string; text?: string }>;
+				};
+				const text = payload.content?.find((b) => b.type === "text")?.text ?? "";
+				const cleaned = text.replace(/[\n\t]/g, " ").trim();
+				if (cleaned) return `${cleaned.slice(0, 80)}${cleaned.length > 80 ? "..." : ""}`;
+				return `(agent ${payload.stop_reason})`;
 			}
 
 			case "TOOL_EXECUTION_END": {
@@ -322,8 +338,81 @@ export class SessionProjection {
 				return `Forked to new session`;
 			}
 
+			case "BASH_EXECUTION": {
+				const payload = event.payload as { command?: string; exit_code?: number; cancelled?: boolean };
+				const cmd = (payload.command ?? "").replace(/[\n\t]/g, " ").slice(0, 80);
+				return `[bash]${payload.cancelled ? " (cancelled)" : ""} ${cmd}`;
+			}
+
+			case "USER_INTERRUPT":
+				return "User interrupted";
+			case "USER_APPROVAL":
+				return "User approved";
+			case "USER_REJECTION":
+				return "User rejected";
+			case "USER_FOLLOWUP_QUEUED": {
+				const payload = event.payload as { content?: string };
+				return `Queued follow-up: ${(payload.content ?? "").slice(0, 60)}`;
+			}
+			case "USER_CONFIG_CHANGE":
+				return "User changed configuration";
+			case "MODEL_CHANGED": {
+				const payload = event.payload as { model_id?: string; provider?: string };
+				return `Model changed${payload.model_id ? `: ${payload.model_id}` : ""}`;
+			}
+			case "THINKING_LEVEL_CHANGED": {
+				const payload = event.payload as { level?: string };
+				return `Thinking level: ${payload.level ?? "?"}`;
+			}
+			case "CUSTOM_MESSAGE": {
+				const payload = event.payload as { custom_type?: string; content?: string };
+				return `[${payload.custom_type ?? "custom"}] ${(payload.content ?? "").slice(0, 60)}`;
+			}
+			case "BRANCH_SUMMARY": {
+				const payload = event.payload as { summary?: string };
+				return `Branch summary: ${(payload.summary ?? "").slice(0, 60)}`;
+			}
+			case "AGENT_TURN_START":
+			case "AGENT_TURN_END":
+			case "AGENT_TURN_REQUESTED":
+			case "AGENT_TURN_COMPLETED":
+				return `Agent ${event.type.replace("AGENT_TURN_", "").toLowerCase()}`;
+			case "RUNTIME_STARTED":
+				return "Runtime started";
+			case "RUNTIME_PAUSED":
+				return "Runtime paused";
+			case "RUNTIME_RESUMED":
+				return "Runtime resumed";
+			case "TOOL_EXECUTION_START": {
+				const payload = event.payload as { tool_name?: string };
+				return `Tool started: ${payload.tool_name ?? "?"}`;
+			}
+			case "INTENT_TOOL_CALL": {
+				const payload = event.payload as { tool_name?: string; name?: string };
+				return `Tool call: ${payload.tool_name ?? payload.name ?? "?"}`;
+			}
+			case "AGENT_ERROR":
+			case "RUNTIME_ERROR": {
+				const payload = event.payload as { error_message?: string; error?: string };
+				return `Error: ${(payload.error_message ?? payload.error ?? "unknown").slice(0, 80)}`;
+			}
+			case "SESSION_JUMPED":
+				return "Session jumped (navigated)";
+			case "SESSION_RENAMED": {
+				const payload = event.payload as { name?: string };
+				return `Session renamed${payload.name ? `: ${payload.name}` : ""}`;
+			}
+			case "CHECKPOINT_CREATED": {
+				const payload = event.payload as { label?: string };
+				return `Checkpoint${payload.label ? `: ${payload.label}` : ""}`;
+			}
+			case "COMPACTION_START":
+				return "Context compaction started";
+			case "COMPACTION_ABORTED":
+				return "Context compaction aborted";
+
 			default:
-				return event.type;
+				return event.type.replace(/_/g, " ").toLowerCase();
 		}
 	}
 
@@ -360,10 +449,12 @@ export class SessionProjection {
 		switch (type) {
 			case "USER_MESSAGE":
 				return "user_message";
-			case "AGENT_MESSAGE_START":
-			case "AGENT_MESSAGE_CHUNK":
 			case "AGENT_MESSAGE_END":
 				return "agent_message";
+			case "AGENT_MESSAGE_START":
+			case "AGENT_MESSAGE_CHUNK":
+				// Message scaffolding (stream lifecycle), not user-visible content.
+				return "other";
 			case "TOOL_EXECUTION_START":
 			case "TOOL_EXECUTION_UPDATE":
 			case "TOOL_EXECUTION_END":
@@ -404,8 +495,31 @@ export class SessionProjection {
 			case "CHECKPOINT_RESTORED":
 			case "CHECKPOINT_FAILED":
 				return "checkpoint";
+			case "BASH_EXECUTION":
+				return "bash_command";
+			case "USER_APPROVAL":
+			case "USER_REJECTION":
+			case "USER_INTERRUPT":
+			case "USER_FOLLOWUP_QUEUED":
+			case "USER_FOLLOWUP_DROPPED":
+				return "user_action";
+			case "USER_CONFIG_CHANGE":
+				return "runtime";
+			case "RUNTIME_STARTED":
+			case "RUNTIME_PAUSED":
+			case "RUNTIME_RESUMED":
+			case "MODEL_CHANGED":
+			case "THINKING_LEVEL_CHANGED":
+			case "SESSION_JUMPED":
+			case "SESSION_RENAMED":
+			case "THREAD_STATUS_CHANGED":
+			case "CUSTOM_MESSAGE":
+			case "BRANCH_SUMMARY":
+			case "COMMAND_EXECUTED":
+			case "SESSION_ENTRY_APPENDED":
+				return "runtime";
 			default:
-				return "agent_message";
+				return "other";
 		}
 	}
 

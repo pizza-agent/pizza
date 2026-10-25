@@ -303,6 +303,35 @@ describe("Reactor stage-2: policies + queues", () => {
 		runtime.dispose();
 	});
 
+	it("resets the retry budget after successful tool rounds in a long task", async () => {
+		const cwd = makeTempDir();
+		let calls = 0;
+		const runtime = new EventSourcedRuntime({
+			cwd, agentDir: cwd, toolRegistry: makeEchoRegistry(),
+			systemPrompt: "", model: { provider: "test", model_id: "test" }, tools: [],
+			retryPolicy: { maxAttempts: 1, isRetryable: () => true, nextDelayMs: () => 1 },
+			llmClient: { async complete(): Promise<LLMResponse> {
+				calls++;
+				const error = calls === 1 || calls === 3 || calls === 5;
+				return {
+					provider: "test", model: "test",
+					usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+					stopReason: error ? "error" : calls < 6 ? "tool_use" : "stop",
+					errorMessage: error ? "The socket connection was closed unexpectedly" : undefined,
+					content: error ? [] : calls < 6
+						? [{ type: "tool_call", id: `echo-${calls}`, name: "echo", arguments: { text: String(calls) } }]
+						: [{ type: "text", text: "finished" }],
+				};
+			} },
+		});
+		try {
+			await runtime.prompt("long task");
+			expect(calls).toBe(6);
+			expect(runtime.store.query({ types: ["RETRY_SCHEDULED"] }).map(e => (e.payload as { attempt: number }).attempt)).toEqual([1, 1, 1]);
+			expect(runtime.store.query({ types: ["AGENT_TURN_COMPLETED"], reverse: true, limit: 1 })[0].payload).toMatchObject({ reason: "stop" });
+		} finally { runtime.dispose(); }
+	});
+
 	it("completes with error when retry backoff is exhausted", async () => {
 		const cwd = makeTempDir();
 

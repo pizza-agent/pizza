@@ -15,6 +15,7 @@ export interface BuiltinSlashCommand {
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+	{ name: "help", description: "Show all commands" },
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "export", description: "Export session to HTML" },
@@ -24,6 +25,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 	{ name: "rewind", description: "Create a new fork from a previous user message" },
 	{ name: "history", description: "Navigate session tree (switch branches)" },
+	{ name: "rename", description: "Rename the current session" },
 	{ name: "login", description: "Login with OAuth provider" },
 	{ name: "logout", description: "Logout from OAuth provider" },
 	{ name: "compact", description: "Manually compact the session context" },

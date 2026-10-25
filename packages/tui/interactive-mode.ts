@@ -32,6 +32,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import {
   CombinedAutocompleteProvider,
+  type AutocompleteProvider,
   type Component,
   Container,
   fuzzyFilter,
@@ -311,12 +312,17 @@ export class InteractiveMode {
   private _streamRenderAt = 0;
   private _streamRenderPending: ReturnType<typeof setTimeout> | undefined;
   private ui!: TUI;
+  /** The transcript renders into the terminal’s native scrollback — the
+   * TUI runs in regular (non-alt-screen) mode, so history paging is the
+   * terminal’s job, not ours. An app-internal ScrollView would need the
+   * alt-screen viewport (TuiAltScreen), which is a deliberate non-goal.
+   */
   private chatContainer!: Container;
   private pendingMessagesContainer!: Container;
   private statusContainer!: Container;
   private defaultEditor!: CustomEditor;
   private editor!: EditorComponent;
-  private autocompleteProvider: CombinedAutocompleteProvider | undefined;
+  private autocompleteProvider: AutocompleteProvider | undefined;
   private fdPath: string | undefined;
   private editorContainer!: Container;
   private footer!: FooterComponent;
@@ -984,6 +990,26 @@ export class InteractiveMode {
       this.facadeCwd,
       fdPath,
     );
+    // Suppress the description column when it would just repeat the label
+    // (a file in cwd gets label=NOTES.md AND description=NOTES.md — the
+    // duplicated name reads like a rendering bug).
+    const innerProvider = this.autocompleteProvider;
+    this.autocompleteProvider = {
+      ...innerProvider,
+      triggerCharacters: innerProvider.triggerCharacters,
+      async getSuggestions(lines, cursorLine, cursorCol, options) {
+        const suggestions = await innerProvider.getSuggestions(lines, cursorLine, cursorCol, options);
+        if (!suggestions) return suggestions;
+        return {
+          ...suggestions,
+          items: suggestions.items.map((item) =>
+            item.description === item.label ? { ...item, description: undefined } : item,
+          ),
+        };
+      },
+      applyCompletion: innerProvider.applyCompletion.bind(innerProvider),
+      shouldTriggerFileCompletion: innerProvider.shouldTriggerFileCompletion?.bind(innerProvider),
+    } as AutocompleteProvider;
     this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
     if (this.editor !== this.defaultEditor) {
       this.editor.setAutocompleteProvider?.(this.autocompleteProvider);
@@ -1047,6 +1073,9 @@ export class InteractiveMode {
     this.headerContainer.addChild(new Spacer(1));
 
     this.ui.addChild(this.chatContainer);
+    // NOTE: the chat lives in the terminal’s native scrollback, not an
+    // app-internal ScrollView — paging back through the transcript is
+    // the terminal’s job in regular mode.
     this.ui.addChild(this.pendingMessagesContainer);
     this.ui.addChild(this.statusContainer);
     this.renderWidgets(); // Initialize with default spacer
@@ -2432,6 +2461,15 @@ export class InteractiveMode {
         this.hideApprovalDialog();
         if (eid) this.facade.runtime.reject(eid);
       },
+      () => {
+        const eid = this.pendingApprovalEventId;
+        this.pendingApprovalEventId = undefined;
+        this.hideApprovalDialog();
+        if (eid) {
+          this.facade.runtime.approve(eid, { scope: "session", category: classification.category });
+          this.showStatus(`Auto-approving ${classification.category} for this session`);
+        }
+      }
     );
     // Render the approval dialog as a centered overlay ON TOP of the
     // existing UI (instead of swapping out the editor). This avoids the
@@ -2921,6 +2959,11 @@ export class InteractiveMode {
         this.editor.setText("");
         return;
       }
+      if (text === "/help") {
+        this.handleHelpCommand();
+        this.editor.setText("");
+        return;
+      }
       if (text === "/stats") {
         this.handleStatsCommand();
         this.editor.setText("");
@@ -2961,6 +3004,12 @@ export class InteractiveMode {
       }
       if (text === "/history") {
         this.showTreeSelector();
+        this.editor.setText("");
+        return;
+      }
+      if (text === "/rename" || text.startsWith("/rename ")) {
+        const name = text.startsWith("/rename ") ? text.slice(8).trim() : "";
+        this.handleRenameCommand(name);
         this.editor.setText("");
         return;
       }
@@ -3020,7 +3069,10 @@ export class InteractiveMode {
         }
       }
 
-      // Queue input during compaction (extension commands execute immediately)
+      // Messages typed while compaction runs are queued, not steered —
+      // interrupting mid-compaction would lose the summary and leave the
+      // context in a worse state than before. They are delivered as a
+      // steer once the compaction settles (see flushCompactionQueue).
       if (this.isCompacting) {
         if (this.isExtensionCommand(text)) {
           this.editor.addToHistory?.(text);
@@ -3032,8 +3084,9 @@ export class InteractiveMode {
         return;
       }
 
-      // If streaming, use prompt() with steer behavior
-      // This handles extension commands (execute immediately), prompt template expansion, and queueing
+      // Enter while streaming is a STEER: it aborts the in-flight turn
+      // and replaces it with this message (not a polite queue — that is
+      // what Alt+Enter/followUp is for).
       if (this.isStreaming) {
         this.editor.addToHistory?.(text);
         this.editor.setText("");
@@ -3180,6 +3233,13 @@ export class InteractiveMode {
         // bashExecution messages are already rendered by handleBashCommand;
         // skip here to avoid duplicate display from the BASH_EXECUTION event.
         if (msg.role === "bashExecution") {
+          break;
+        }
+        // compactionSummary arrives with the COMPACTION_END commit; the
+        // compaction_finished handler rebuilds the chat from the projection
+        // (which already injects the summary at the boundary), so rendering
+        // it again here double-draws the [compaction] block.
+        if (msg.role === "compactionSummary") {
           break;
         }
         if (msg.role === "user") {
@@ -3384,16 +3444,14 @@ export class InteractiveMode {
           this.autoCompactionLoader = undefined;
           this.statusContainer.clear();
         }
-        // Rebuild chat from projection
+        // Rebuild chat from projection — buildContext already injects the
+        // compaction summary (its boundary scan covers summary and mask
+        // compactions alike), the same path restart replay uses. Adding
+        // the summary explicitly here rendered the block twice, and the
+        // message_committed fired for COMPACTION_END is skipped below
+        // for the same reason.
         this.chatContainer.clear();
         this.rebuildChatFromMessages();
-        this.addMessageToChat(
-          createCompactionSummaryMessage(
-            event.summary,
-            event.tokensBefore,
-            new Date().toISOString(),
-          ),
-        );
         this.footer.invalidate();
         void this.flushCompactionQueue({ willRetry: false });
         this.ui.requestRender();
@@ -3411,7 +3469,16 @@ export class InteractiveMode {
           this.autoCompactionLoader = undefined;
           this.statusContainer.clear();
         }
-        this.showStatus("Auto-compaction cancelled");
+        // COMPACTION_ABORTED fires for user cancel, timeout, AND plain
+        // errors (e.g. "Nothing to compact" on a short session). Surface
+        // the real reason instead of always saying "cancelled".
+        if (event.reason === "error") {
+          this.showWarning(`Compaction failed: ${event.message ?? "unknown error"}`);
+        } else if (event.reason === "timeout") {
+          this.showWarning("Compaction timed out");
+        } else {
+          this.showStatus("Auto-compaction cancelled");
+        }
         void this.flushCompactionQueue({ willRetry: false });
         this.ui.requestRender();
         break;
@@ -3748,7 +3815,11 @@ export class InteractiveMode {
     // Show compaction info if session was compacted
     const allEntries = this.facade.getProjection().getTimeline();
     const compactionCount = allEntries.filter(
-      (e: any) => e.kind === "compaction",
+      // Only completed compactions count — request/start/abort events
+      // share the "compaction" kind.
+      (e: any) =>
+        e.kind === "compaction" &&
+        (e.metadata?.event_type === "COMPACTION_END" || e.summary?.includes("compacted")),
     ).length;
     if (compactionCount > 0) {
       const times =
@@ -3801,7 +3872,7 @@ export class InteractiveMode {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
     this.unregisterSignalHandlers();
-    this.facade.dispose();
+    await this.facade.disposeAsync();
 
     // Wait for any pending renders to complete
     // requestRender() uses process.nextTick(), so we wait one tick
@@ -3891,7 +3962,9 @@ export class InteractiveMode {
     ).trim();
     if (!text) return;
 
-    // Queue input during compaction (extension commands execute immediately)
+    // While compaction runs, a follow-up is queued instead of interrupting
+    // — the compaction boundary must settle first or the message would be
+    // delivered against a context that is about to change.
     if (this.isCompacting) {
       if (this.isExtensionCommand(text)) {
         this.editor.addToHistory?.(text);
@@ -3903,8 +3976,9 @@ export class InteractiveMode {
       return;
     }
 
-    // Alt+Enter queues a follow-up message (waits until agent finishes)
-    // This handles extension commands (execute immediately), prompt template expansion, and queueing
+    // Alt+Enter while streaming is a FOLLOW-UP: it queues behind the
+    // in-flight turn instead of interrupting it (the polite counterpart
+    // of Enter-as-steer).
     if (this.isStreaming) {
       this.editor.addToHistory?.(text);
       this.editor.setText("");
@@ -3914,6 +3988,10 @@ export class InteractiveMode {
     }
     // If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
     else if (this.editor.onSubmit) {
+      // Mirror the Enter path: clear the editor or the submitted text
+      // lingers as a stale draft alongside the sent message. History
+      // bookkeeping stays inside onSubmit, same as the Enter path.
+      this.editor.setText("");
       this.editor.onSubmit(text);
     }
   }
@@ -3953,14 +4031,18 @@ export class InteractiveMode {
   private async cycleModel(direction: "forward" | "backward"): Promise<void> {
     try {
       const result = await this.cycleModelFacade(direction);
-      if (result === undefined) {
-        this.showStatus("Only one model available");
+      if (result.success === false) {
+        this.showStatus(result.message ?? "Only one model available");
       } else {
         this.footer.invalidate();
         this.updateEditorBorderColor();
+        const thinkingLevel =
+          result.model.reasoning
+            ? ((this.facade.thinkingLevel ?? "off") as ThinkingLevel)
+            : undefined;
         const thinkingStr =
-          result.model.reasoning && result.thinkingLevel !== "off"
-            ? ` (thinking: ${result.thinkingLevel})`
+          thinkingLevel && thinkingLevel !== "off"
+            ? ` (thinking: ${thinkingLevel})`
             : "";
         this.showStatus(
           `Switched to ${result.model.name || result.model.id}${thinkingStr}`,
@@ -4699,17 +4781,31 @@ export class InteractiveMode {
     // Convert timeline entries to SessionTreeNode[] for TreeSelectorComponent
     // In the event-sourced model there is no intra-session branching, so this is a flat list
     const tree: SessionTreeNode[] = [];
+    // Link nodes into a single chronological chain (each entry is the child
+    // of the previous one) so the selector renders the flat history in
+    // order instead of treating every entry as a separate root.
+    let previous: SessionTreeNode | undefined;
     for (let i = 0; i < timeline.length; i++) {
       const entry = timeline[i]!;
-      tree.push({
+      const node: SessionTreeNode = {
         entry: {
-          type: entry.kind,
+          type: "timeline",
+          kind: entry.kind,
+          summary: entry.summary,
+          durationMs: entry.duration_ms,
+          metadata: entry.metadata,
           id: entry.event_id,
           parentId: i > 0 ? timeline[i - 1]!.event_id : null,
           timestamp: new Date(entry.timestamp).toISOString(),
-        } as any as SessionEntry,
+        } satisfies SessionEntry,
         children: [],
-      });
+      };
+      if (previous) {
+        previous.children.push(node);
+      } else {
+        tree.push(node);
+      }
+      previous = node;
     }
 
     if (tree.length === 0) {
@@ -5448,6 +5544,39 @@ export class InteractiveMode {
     }
   }
 
+  private handleHelpCommand(): void {
+    const lines: string[] = [`${theme.bold("Commands")}`];
+    for (const c of BUILTIN_SLASH_COMMANDS) {
+      lines.push(`${theme.fg("accent", `/${c.name}`)}  ${theme.fg("dim", c.description)}`);
+    }
+    const extensionCommands = this.extensionRunnerValue.getRegisteredCommands();
+    if (extensionCommands.length > 0) {
+      lines.push("");
+      lines.push(theme.bold("Extension commands"));
+      for (const c of extensionCommands) {
+        lines.push(`${theme.fg("accent", `/${c.invocationName}`)}  ${theme.fg("dim", c.description ?? "")}`);
+      }
+    }
+    lines.push("");
+    lines.push(theme.fg("dim", "Type /hotkeys for key bindings, !<cmd> to run bash inline, !! to exclude from context, @file to attach files."));
+    this.chatContainer.addChild(new Spacer(1));
+    this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
+    this.ui.requestRender();
+  }
+  private handleRenameCommand(name: string): void {
+    const sessionId = this.projectionSessionManager?.getActiveSessionId();
+    if (!sessionId) {
+      this.showError("No active session to rename");
+      return;
+    }
+    if (!name) {
+      const current = this.projectionSessionManager?.getSession(sessionId)?.name;
+      this.showStatus(current ? `Session name: ${current} (usage: /rename <new name>)` : "Usage: /rename <new name>");
+      return;
+    }
+    this.projectionSessionManager!.renameSession(sessionId, name);
+    this.showStatus(`Session renamed to: ${name}`);
+  }
   private handleStatsCommand(): void {
     const messages = this.facade.getProjection().buildContext().messages;
     const stats = computeMessageStats(messages);
@@ -5806,7 +5935,7 @@ export class InteractiveMode {
   ): Promise<void> {
     const entries = this.facade.getProjection().getTimeline();
     const messageCount = entries.filter(
-      (e: any) => e.kind === "message",
+      (e: any) => e.kind === "user_message" || e.kind === "agent_message",
     ).length;
 
     if (messageCount < 2) {

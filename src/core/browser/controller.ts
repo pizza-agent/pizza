@@ -167,9 +167,9 @@ export class BrowserController {
 			const context = await browser.newContext({
 				viewport: DEFAULT_VIEWPORT,
 				deviceScaleFactor: 1,
-				// Chrome-shaped UA (mirror engine parity with the native pane and
-				// ZCode's Chromium IAB): a bare "HeadlessChrome/x" UA is an instant
-				// bot signal to risk engines like Baidu's.
+				// Chrome-shaped UA (matches the native pane): a bare
+				// "HeadlessChrome/x" UA is an instant bot signal to risk engines
+				// like Baidu's.
 				userAgent:
 					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 			});

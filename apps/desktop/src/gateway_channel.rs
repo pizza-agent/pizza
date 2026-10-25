@@ -651,8 +651,11 @@ pub fn ensure_gateway(
 	let child = cmd
 		.spawn()
 		.map_err(|e| format!("Failed to spawn gateway: {e}"))?;
-	// Detach so it outlives the desktop process.
-	let _ = child.id();
+	// Run outside the gateway's JS event loop: an in-process timer cannot
+	// recover a native spin or blocked event loop. Child::kill targets only
+	// this child (no PID lookup/reuse); its RPC children shut down on stdin EOF.
+	let monitored_path = socket_path.clone();
+	thread::spawn(move || supervise_gateway_child(child, monitored_path, Duration::from_secs(5)));
 	// Wait for the socket/pipe to respond.
 	let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
 	while std::time::Instant::now() < deadline {
@@ -665,6 +668,36 @@ pub fn ensure_gateway(
 		"Gateway failed to start within 15s (socket: {})",
 		socket_path.display()
 	))
+}
+
+/// Supervise only the child we spawned. A replacement owning the socket
+/// must not leave the displaced child and its agents running indefinitely.
+fn supervise_gateway_child(mut child: std::process::Child, path: PathBuf, interval: Duration) {
+	let mut misses = 0;
+	loop {
+		thread::sleep(interval);
+		match child.try_wait() {
+			Ok(Some(_)) | Err(_) => return,
+			Ok(None) => {}
+		}
+		match query_gateway_status(&path) {
+			Some(status) if status.pid.is_none() || status.pid == Some(child.id()) => {
+				misses = 0;
+				continue;
+			}
+			Some(_) => misses = 3, // Another gateway took the socket.
+			None => misses += 1,
+		}
+		if misses >= 3 {
+			log::error!(
+				"Gateway PID {} is unresponsive or displaced; terminating it for reconnect",
+				child.id()
+			);
+			let _ = child.kill();
+			let _ = child.wait();
+			return;
+		}
+	}
 }
 
 /// Debug builds: the dev gateway has its own socket but shares the main
@@ -698,6 +731,7 @@ fn take_over_from_production_gateway(dev_socket: &PathBuf) {
 /// Parsed `status_result` from the gateway — just the fields we need for the
 /// version check and busy-agent drain.
 struct GatewayStatus {
+	pid: Option<u32>,
 	version: String,
 	agents: Vec<bool>, // busy flags
 }
@@ -740,7 +774,15 @@ fn query_gateway_status(socket_path: &PathBuf) -> Option<GatewayStatus> {
 						.collect()
 				})
 				.unwrap_or_default();
-			Ok(GatewayStatus { version, agents })
+			let pid = parsed
+				.get("pid")
+				.and_then(|p| p.as_u64())
+				.and_then(|p| u32::try_from(p).ok());
+			Ok(GatewayStatus {
+				pid,
+				version,
+				agents,
+			})
 		})();
 		let _ = tx.send(result);
 	});
@@ -1114,6 +1156,26 @@ mod _unsupported_stub {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[cfg(unix)]
+	#[test]
+	fn supervisor_reaps_a_child_that_never_answers_health_checks() {
+		let child = std::process::Command::new("/bin/sleep")
+			.arg("60")
+			.spawn()
+			.unwrap();
+		let pid = child.id();
+		let path = std::env::temp_dir().join(format!("pizza-no-gateway-{pid}.sock"));
+		let start = std::time::Instant::now();
+		supervise_gateway_child(child, path, Duration::from_millis(10));
+		assert!(start.elapsed() < Duration::from_secs(3));
+		assert!(!std::process::Command::new("/bin/kill")
+			.args(["-0", &pid.to_string()])
+			.stderr(std::process::Stdio::null())
+			.status()
+			.unwrap()
+			.success());
+	}
 
 	#[test]
 	fn compaction_deadline_exceeds_agent_deadline_without_slowing_regular_rpc() {

@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { connect, type Socket } from "node:net";
 import { createGatewayServer, gatewaySocketPath, type GatewayServer, type AgentConnection } from "../packages/gateway/gateway-server.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
-import type { RpcCommand, RpcResponse } from "@tomsun28/pizza-protocol";
+import type { RpcCommand, RpcResponse } from "../packages/protocol/index.js";
 
 /** Minimal fake agent: records stop() and lets the test emit events. */
 class FakeAgent implements AgentConnection {

@@ -572,6 +572,9 @@ export async function main(args: string[], options?: MainOptions) {
 			console.error(chalk.yellow(`Gateway: socket ${sock} was taken over by another gateway; exiting.`));
 			setTimeout(() => process.exit(0), 5000).unref();
 		});
+		server.on("takeover", (sock: string) => {
+			console.error(chalk.yellow(`Gateway: previous owner of ${sock} stopped answering; taking over the socket.`));
+		});
 		server.on("error", (error: Error) => {
 			console.error(chalk.red(`Gateway error: ${error.message}`));
 		});
@@ -944,7 +947,7 @@ export async function main(args: string[], options?: MainOptions) {
 			process.exitCode = exitCode;
 		}
 	} finally {
-		created.facade.dispose();
+		await created.facade.disposeAsync();
 		stopThemeWatcher();
 		restoreStdout();
 	}

@@ -51,12 +51,21 @@ function splitUserContent(
 export function estimateContextUsage(model: Model<any> | undefined, messages: AgentMessage[]): ContextUsage | undefined {
 	if (!model) return undefined;
 	const estimate = estimateContextTokens(messages);
-	// The catalog window can be understated (e.g. a provider field that isn't
-	// actually the context limit). When the observed/estimated usage already
-	// exceeds it, the catalog value is provably wrong — report the observed
-	// size as the effective window instead of a misleading >100% (or, after
-	// clamping, a stuck 100%).
-	const contextWindow = Math.max(model.contextWindow ?? 0, estimate.tokens);
+	// The catalog window can be understated (e.g. a provider field that is
+	// not the real context limit — the Devin catalog underreports swe-2 by
+	// ~40%). The strongest evidence is the largest prompt the provider has
+	// actually served; report that as the effective window floor so the
+	// percentage stays honest (>100% becomes a real overflow signal instead
+	// of a clamped stuck 100%).
+	let observedPromptMax = 0;
+	for (const message of messages) {
+		if (message.role !== "assistant") continue;
+		const usage = (message as { usage?: { input?: number; cacheRead?: number; cacheWrite?: number } }).usage;
+		if (!usage) continue;
+		const prompt = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+		if (prompt > observedPromptMax) observedPromptMax = prompt;
+	}
+	const contextWindow = Math.max(model.contextWindow ?? 0, observedPromptMax);
 	if (contextWindow <= 0) return undefined;
 
 	return {

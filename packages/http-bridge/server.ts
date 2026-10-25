@@ -86,7 +86,7 @@ export async function runGuiModeWithFacade(facade: SessionFacade, options: GuiMo
 		}
 		clients.clear();
 		await closeServer(server);
-		facade.dispose();
+		await facade.disposeAsync();
 		process.exit(exitCode);
 	};
 
