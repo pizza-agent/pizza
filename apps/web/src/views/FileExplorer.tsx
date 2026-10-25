@@ -29,7 +29,8 @@ import { CodeViewer } from "@/components/CodeViewer";
 import { ResizeHandle } from "@/components/ResizeHandle";
 import { languageForPath } from "@/lib/code-lang";
 import { usePersistedState } from "@/lib/usePersistedState";
-import { cn } from "@/lib/utils";
+import { cn, isRemoteWorkspaceKey } from "@/lib/utils";
+import { resolveWorkspaceExecutionPath } from "@/lib/workspace-paths";
 
 function formatSize(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
@@ -68,6 +69,7 @@ export default function FileExplorer({ workspace }: { workspace?: string | null 
 	const [wrap, setWrap] = usePersistedState<boolean>("files-preview-wrap", false);
 
 	const cwd = workspace ?? "";
+	const remoteWorkspace = isRemoteWorkspaceKey(cwd);
 
 	const clampPreview = useCallback((next: number) => {
 		const max = Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, window.innerHeight - 200));
@@ -88,7 +90,10 @@ export default function FileExplorer({ workspace }: { workspace?: string | null 
 	}, [menu]);
 
 	const absolutePath = useCallback(
-		(relPath: string) => (cwd ? `${cwd.replace(/\/$/, "")}/${relPath}` : relPath),
+		(relPath: string) => {
+			const executionPath = resolveWorkspaceExecutionPath(cwd);
+			return executionPath ? `${executionPath.replace(/\/$/, "")}/${relPath}` : relPath;
+		},
 		[cwd],
 	);
 
@@ -291,7 +296,7 @@ export default function FileExplorer({ workspace }: { workspace?: string | null 
 								console.error("revealPath failed:", e),
 							),
 						onToggleExpand: (node) => void toggleExpand(node.path),
-					})}
+						}, !remoteWorkspace)}
 				/>
 			)}
 
@@ -329,12 +334,14 @@ export default function FileExplorer({ workspace }: { workspace?: string | null 
 							<IconButton onClick={() => copyText(fileContent)} title={t("common.copy")}>
 								<Copy className="h-3.5 w-3.5" />
 							</IconButton>
-							<IconButton
-								onClick={() => openInEditor(cwd, selectedFile).catch((e) => console.error("openInEditor failed:", e))}
-								title={t("files.openInEditor")}
-							>
-								<ExternalLink className="h-3.5 w-3.5" />
-							</IconButton>
+							{!remoteWorkspace && (
+								<IconButton
+									onClick={() => openInEditor(cwd, selectedFile).catch((e) => console.error("openInEditor failed:", e))}
+									title={t("files.openInEditor")}
+								>
+									<ExternalLink className="h-3.5 w-3.5" />
+								</IconButton>
+							)}
 							<IconButton
 								onClick={() => { setSelectedFile(null); setFileContent(""); setFileError(""); }}
 								title={t("files.closeFile")}
@@ -504,6 +511,7 @@ function buildFileMenuItems(
 	node: TreeNode,
 	t: (k: string) => string,
 	h: FileMenuHandlers,
+	showLocalActions: boolean,
 ): ContextMenuItem[] {
 	const abs = h.absolutePath(node.path);
 	const items: ContextMenuItem[] = [];
@@ -522,19 +530,19 @@ function buildFileMenuItems(
 		});
 	}
 
-	items.push({
-		icon: ExternalLink,
-		label: t("files.openInEditor"),
-		onClick: () => h.onOpenInEditor(node),
-	});
-
-	items.push({ divider: true });
-
-	items.push({
-		icon: FolderSearch,
-		label: node.is_dir ? t("files.revealInFiles") : t("files.revealInFilesDir"),
-		onClick: () => h.onReveal(node),
-	});
+	if (showLocalActions) {
+		items.push({
+			icon: ExternalLink,
+			label: t("files.openInEditor"),
+			onClick: () => h.onOpenInEditor(node),
+		});
+		items.push({ divider: true });
+		items.push({
+			icon: FolderSearch,
+			label: node.is_dir ? t("files.revealInFiles") : t("files.revealInFilesDir"),
+			onClick: () => h.onReveal(node),
+		});
+	}
 
 	items.push({ divider: true });
 

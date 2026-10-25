@@ -4,6 +4,8 @@
 mod bridge;
 mod browser_view;
 mod gateway_channel;
+mod remote;
+mod remote_deploy;
 mod updater;
 
 use tauri::{DragDropEvent, Emitter, Manager, WindowEvent};
@@ -29,6 +31,8 @@ fn main() {
 			bridge::open_pet_settings,
 			bridge::get_pet_state,
 			bridge::list_workspaces,
+			bridge::add_remote_workspace,
+			bridge::browse_remote_directories,
 			bridge::delete_workspace,
 			bridge::reveal_workspace,
 			bridge::reveal_file,
@@ -81,6 +85,7 @@ fn main() {
 		])
 		.setup(|app| {
 			bridge::start_scheduler_sidecar_guard(app.handle().clone());
+			bridge::warm_remote_transports(app.handle().clone());
 			// Pre-fetch `pizza auth list --json` so Settings doesn't wait ~1s
 			// for a CLI spawn on first open.
 			let warmup_app = app.handle().clone();

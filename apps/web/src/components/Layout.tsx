@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Settings as SettingsIcon, Plus, Folder, MessageSquare, MoreHorizontal, Pin, FolderOpen, Trash2, PanelLeft, Puzzle } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Folder, MessageSquare, MoreHorizontal, Pin, FolderOpen, Trash2, PanelLeft, Puzzle, Server } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -50,6 +50,26 @@ function timeAgo(ts: number, t: TFunction): string {
 	return t("layout.timeDaysAgo", { count: days });
 }
 
+function workspaceDisplayName(ws: WorkspaceMeta): string {
+	const label = ws.display_name?.trim();
+	if (ws.kind === "remote" && ws.remote) {
+		const host = ws.remote.ssh_target;
+		const hostOnly = host.includes("@") ? host.split("@").pop() : host;
+		if (!label || label === host || label === hostOnly) {
+			return basename(ws.remote.remote_path) || label || host;
+		}
+		return label;
+	}
+	return label ?? basename(ws.cwd);
+}
+
+function workspaceSubtitle(ws: WorkspaceMeta, t: TFunction): string {
+	if (ws.kind === "remote" && ws.remote) {
+		return `${ws.remote.ssh_target}:${ws.remote.remote_path}`;
+	}
+	return timeAgo(ws.last_accessed_at, t);
+}
+
 /** True when a `_cwd`-keyed streaming set contains `path` (separator-insensitive). */
 function setHasPath(set: Set<string> | undefined, path: string): boolean {
 	if (!set) return false;
@@ -62,9 +82,11 @@ export default function Layout({
 	sidecarReady,
 	sidecarExitCode,
 	workspace,
+	pendingWorkspace,
 	workspaces,
 	onSelectWorkspace,
 	onNewWorkspace,
+	onNewRemoteWorkspace,
 	onDeleteWorkspace,
 	streamingCwds,
 }: {
@@ -72,9 +94,11 @@ export default function Layout({
 	sidecarReady: boolean;
 	sidecarExitCode: number | null;
 	workspace?: string | null;
+	pendingWorkspace?: string | null;
 	workspaces?: WorkspaceMeta[];
 	onSelectWorkspace?: (cwd: string) => void;
 	onNewWorkspace?: () => void;
+	onNewRemoteWorkspace?: () => void;
 	onDeleteWorkspace?: (workspaceId: string) => void;
 	streamingCwds?: Set<string>;
 }) {
@@ -98,6 +122,7 @@ export default function Layout({
 	}, []);
 	const online = sidecarReady && sidecarExitCode === null;
 	const isMainChat = isMainChatCwd(workspace);
+	const highlightedWorkspace = pendingWorkspace ?? workspace;
 	// Themes can rebrand the app: web.title/web.icon replace the sidebar brand mark.
 	const themeId = useThemeId();
 	const brandTheme = useCustomThemes().find((ct) => ct.name === themeId);
@@ -139,7 +164,7 @@ export default function Layout({
 	}, []);
 
 	const handleDelete = useCallback(async (ws: WorkspaceMeta) => {
-		const name = basename(ws.cwd);
+		const name = workspaceDisplayName(ws);
 		const stale = ws.dir_exists === false;
 		const ok = await confirmDialog({
 			title: t("common.delete"),
@@ -160,6 +185,13 @@ export default function Layout({
 		}
 	}, [onDeleteWorkspace, t]);
 
+	const workspaceTitle = useCallback((ws: WorkspaceMeta): string => {
+		if (ws.kind === "remote" && ws.remote) {
+			return `${ws.remote.ssh_target}:${ws.remote.remote_path}`;
+		}
+		return ws.cwd;
+	}, []);
+
 	/** Menu entries for a workspace row — rendered by the shared MoreMenu
 	 *  (viewport clamping, Escape and outside-click dismissal built in). */
 	const workspaceMenuItems = useCallback((ws: WorkspaceMeta, isPinned: boolean): ContextMenuItem[] => [
@@ -171,6 +203,8 @@ export default function Layout({
 		{
 			icon: FolderOpen,
 			label: t("layout.revealInFiles"),
+				disabled: ws.kind === "remote",
+				hint: ws.kind === "remote" ? t("layout.remoteRevealUnavailable") : undefined,
 			onClick: () => void revealWorkspace(ws.cwd),
 		},
 		{ divider: true },
@@ -318,20 +352,29 @@ export default function Layout({
 						<span className="text-[11px] font-medium text-muted">
 							{t("layout.workspaces")}
 						</span>
-						{isTauri() && (
-							<button
-								onClick={() => onNewWorkspace?.()}
-								className="text-muted transition-colors hover:text-fg"
-								title={t("layout.newWorkspaceTitle")}
-							>
-								<Plus className="h-3.5 w-3.5" />
-							</button>
-						)}
+							{isTauri() && (
+								<div className="flex items-center gap-1">
+									<button
+										onClick={() => onNewRemoteWorkspace?.()}
+										className="text-muted transition-colors hover:text-fg"
+										title={t("layout.newRemoteWorkspace")}
+									>
+										<Server className="h-3.5 w-3.5" />
+									</button>
+									<button
+										onClick={() => onNewWorkspace?.()}
+										className="text-muted transition-colors hover:text-fg"
+										title={t("layout.newWorkspaceTitle")}
+									>
+										<Plus className="h-3.5 w-3.5" />
+									</button>
+								</div>
+							)}
 					</div>
 					{sortedWorkspaces.length > 0 ? (
 						<div className="space-y-0.5">
 							{sortedWorkspaces.map((ws) => {
-								const isActive = samePath(workspace, ws.cwd);
+								const isActive = samePath(highlightedWorkspace, ws.cwd);
 								const isPinned = pinned.has(ws.workspace_id);
 								const isMenuOpen = menuOpenId === ws.workspace_id;
 								return (
@@ -355,10 +398,12 @@ export default function Layout({
 													: "hover:bg-surface-2/60",
 												ws.dir_exists === false && "opacity-60",
 											)}
-											title={ws.dir_exists === false ? t("layout.staleWorkspaceTitle", { cwd: ws.cwd }) : ws.cwd}
+												title={ws.dir_exists === false ? t("layout.staleWorkspaceTitle", { cwd: ws.cwd }) : workspaceTitle(ws)}
 										>
-											{isPinned ? (
+												{isPinned ? (
 												<Pin className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent" : "text-muted")} />
+												) : ws.kind === "remote" ? (
+													<Server className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent" : "text-muted")} />
 											) : (
 												<Folder className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-accent" : "text-muted")} />
 											)}
@@ -369,13 +414,13 @@ export default function Layout({
 														isActive ? "font-medium text-fg" : "text-fg/90",
 													)}
 												>
-													{basename(ws.cwd)}
+														{workspaceDisplayName(ws)}
 													{ws.dir_exists === false && (
 														<span className="ml-1 text-[10px] font-medium text-warning">{t("layout.staleWorkspaceBadge")}</span>
 													)}
 												</div>
 												<div className="truncate text-[11px] text-muted">
-													{timeAgo(ws.last_accessed_at, t)}
+													{workspaceSubtitle(ws, t)}
 												</div>
 											</div>
 											{online && (isActive || setHasPath(streamingCwds, ws.cwd)) && (

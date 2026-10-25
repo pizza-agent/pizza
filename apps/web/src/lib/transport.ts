@@ -314,6 +314,56 @@ export async function listWorkspaces(): Promise<WorkspaceMeta[]> {
 	return result;
 }
 
+export interface RemoteWorkspaceInput {
+	label: string;
+	sshTarget: string;
+	port?: number | null;
+	identityFile?: string | null;
+	password?: string | null;
+	remotePath: string;
+	pizzaCommand?: string | null;
+}
+
+/** Validate an SSH target and persist it as a desktop workspace. */
+export async function addRemoteWorkspace(input: RemoteWorkspaceInput): Promise<WorkspaceMeta> {
+	if (!isTauri()) {
+		throw new Error("Remote workspaces are only available in the desktop app");
+	}
+	const core = await import("@tauri-apps/api/core");
+	return await core.invoke<WorkspaceMeta>("add_remote_workspace", { input });
+}
+
+export interface RemoteSshInput {
+	sshTarget: string;
+	port?: number | null;
+	identityFile?: string | null;
+	password?: string | null;
+}
+
+export interface RemoteDirectoryEntry {
+	name: string;
+	path: string;
+}
+
+export interface RemoteDirectoryListing {
+	currentPath: string;
+	homePath: string;
+	parentPath?: string | null;
+	entries: RemoteDirectoryEntry[];
+}
+
+/** Authenticate to the target and list one level of directories. */
+export async function browseRemoteDirectories(
+	input: RemoteSshInput,
+	path?: string | null,
+): Promise<RemoteDirectoryListing> {
+	const core = await import("@tauri-apps/api/core");
+	return await core.invoke<RemoteDirectoryListing>("browse_remote_directories", {
+		input,
+		path: path ?? null,
+	});
+}
+
 // --- History tree / event forensics (right dock) ---
 
 export async function historyTreeList(query?: string): Promise<RpcHistoryTreeNode[]> {

@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Card, Badge, Button } from "@/components/ui";
 import { confirmDialog } from "@/lib/confirm";
 import { Z } from "@/lib/z-index";
-import { cn, hasMacTrafficLights } from "@/lib/utils";
+import { cn, hasMacTrafficLights, isRemoteWorkspaceKey } from "@/lib/utils";
 import { PixelSelect, PixelCombobox } from "@pxlkit/ui-kit";
 import {
 	openExternal,
@@ -1439,6 +1439,7 @@ export default function SettingsView({
 	// First-run / unconfigured-key setup mode is signaled by ?setup=true in the
 	// URL. App.tsx redirects there when the sidecar reports state.model === undefined.
 	const isSetupMode = new URLSearchParams(location.search).get("setup") === "true";
+	const isRemoteWorkspace = isRemoteWorkspaceKey(workspace);
 	// The selected page lives in the URL (?page=) so refreshes, deep links and
 	// the top bar's back/forward buttons all agree on what is shown.
 	const pageParam = new URLSearchParams(location.search).get("page");
@@ -1657,7 +1658,18 @@ export default function SettingsView({
 						{page === "general" && <GeneralPage />}
 						{page === "scheduler" && <SchedulerPage />}
 						{page === "about" && <AboutPage />}
-						{page === "provider" && <ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />}
+						{page === "provider" && isRemoteWorkspace ? (
+							<Card>
+								<div className="text-sm font-medium text-fg">
+									{t("settings.provider.remoteManagedTitle")}
+								</div>
+								<p className="mt-2 text-xs leading-relaxed text-muted">
+									{t("settings.provider.remoteManagedDescription")}
+								</p>
+							</Card>
+						) : page === "provider" ? (
+							<ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />
+						) : null}
 						{page === "plugins" && <PluginsContent />}
 						{activeExtMenu?.id === "pet" && <PetSettingsPage menu={activeExtMenu} onAction={refreshExtMenus} workspace={workspace} />}
 						{activeExtMenu && activeExtMenu.id !== "pet" && <ExtensionMenuPage menu={activeExtMenu} onAction={refreshExtMenus} />}

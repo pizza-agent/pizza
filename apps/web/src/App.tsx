@@ -9,10 +9,12 @@ import { subscribeSidecarExit, subscribeEvents, initSidecar, sendCommandAwait, l
 import { refreshCustomThemes } from "@/lib/theme";
 import { BrandIcon } from "@/components/BrandIcon";
 import { BootSplash } from "@/components/BootSplash";
+import { RemoteWorkspaceDialog } from "@/components/RemoteWorkspaceDialog";
 import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
-import { isTauri, isMainChatCwd, samePath } from "@/lib/utils";
+import { isTauri, isMainChatCwd, isRemoteWorkspaceKey, samePath } from "@/lib/utils";
+import { setWorkspacePaths } from "@/lib/workspace-paths";
 
 function isMainAgentConflictError(message: string): boolean {
 	return message.includes("Another main agent instance is already running");
@@ -26,12 +28,21 @@ function AppInner() {
 	const [sidecarReady, setSidecarReady] = useState(false);
 	const [sidecarExitCode, setSidecarExitCode] = useState<number | null>(null);
 	const [workspace, setWorkspace] = useState<string | null>(null);
+	const [bootingWorkspace, setBootingWorkspace] = useState<string | null>(null);
 	// Starts true: the mount effect kicks off the first workspace init right
 	// away, and starting false would flash the empty app shell before it.
 	const [waitingForWorkspace, setWaitingForWorkspace] = useState(true);
 	const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
 	const [streamingCwds, setStreamingCwds] = useState<Set<string>>(new Set());
 	const [recoveringMainAgent, setRecoveringMainAgent] = useState(false);
+	const [remoteWorkspaceDialogOpen, setRemoteWorkspaceDialogOpen] = useState(false);
+	// Keep remote creation progress inside the dialog instead of replacing the
+	// entire application with the boot splash.
+	const [inlineWorkspaceInit, setInlineWorkspaceInit] = useState(false);
+	// Sidecar exit events can arrive while a workspace switch is deliberately
+	// replacing a remote tunnel. Reconnect logic must not run against the old
+	// workspace during that window or it can steal the bridge's active pointer.
+	const workspaceSwitchRef = useRef(false);
 	const sidecarStartedRef = useRef(false);
 	// Last workspace set as the expected rpc response source; used to restore
 	// the snapshot when a workspace switch fails mid-flight.
@@ -101,6 +112,7 @@ function AppInner() {
 		if (!isTauri()) return;
 		try {
 			const list = await listWorkspaces();
+				setWorkspacePaths(list);
 			// Filter out the Chat workspace (~/.pizza/main) — it's shown separately as Chat.
 			setWorkspaces(list.filter((ws) => !isMainChatCwd(ws.cwd)));
 		} catch (e) {
@@ -129,13 +141,15 @@ function AppInner() {
 	}, [navigate]);
 
 	const [initError, setInitError] = useState<string | null>(null);
-	const startWithWorkspace = useCallback(async (cwd?: string) => {
+	const startWithWorkspace = useCallback(async (cwd?: string): Promise<string | null> => {
 		const generation = ++initGenerationRef.current;
 		// True while this run is still the newest switch. A newer switch
 		// (user click, newer restart) must be able to supersede this one —
 		// a stale run must not touch UI state after being superseded.
 		const isCurrent = () => initGenerationRef.current === generation;
+		workspaceSwitchRef.current = true;
 		setWaitingForWorkspace(true);
+		setBootingWorkspace(cwd ?? null);
 		setInitError(null);
 		// Snapshot the expected response source BEFORE initSidecar: the Rust
 		// bridge flips its active-workspace pointer mid-init, so commands issued
@@ -161,7 +175,7 @@ function AppInner() {
 		setState(null);
 		try {
 			const initialState = await initSidecar(cwd);
-			if (!isCurrent()) return; // superseded by a newer switch
+			if (!isCurrent()) return null; // superseded by a newer switch
 			// Expand ~ to home directory so workspace state matches Rust side.
 			let expandedCwd = cwd;
 			if (cwd && cwd.startsWith("~") && isTauri()) {
@@ -187,8 +201,9 @@ function AppInner() {
 			refreshWorkspaces();
 			// Completed a user-visible switch → let AgentView (re)load history.
 			setSwitchEpoch((e) => e + 1);
+			return null;
 		} catch (e) {
-			if (!isCurrent()) return; // superseded — leave state to the newer run
+			if (!isCurrent()) return null; // superseded — leave state to the newer run
 			// initSidecar failed — the bridge is still routing to the previous
 			// workspace, so restore its snapshot as the expected response source.
 			lastRpcWorkspaceRef.current = previousRpcWorkspace;
@@ -205,8 +220,12 @@ function AppInner() {
 			} else {
 				setInitError(msg);
 			}
+			return msg;
 		} finally {
-			if (isCurrent()) setWaitingForWorkspace(false);
+			if (isCurrent()) {
+				workspaceSwitchRef.current = false;
+				setWaitingForWorkspace(false);
+			}
 		}
 	}, [refreshWorkspaces, fetchState, applyFreshState]);
 
@@ -286,6 +305,23 @@ function AppInner() {
 		await startWithWorkspace(cwd);
 	}, [workspace, sidecarReady, startWithWorkspace, navigate]);
 
+	const handleRemoteWorkspaceCreated = useCallback(async (created: WorkspaceMeta) => {
+		setInlineWorkspaceInit(true);
+		try {
+			navigate("/");
+			await refreshWorkspaces();
+			const failure = await startWithWorkspace(created.cwd);
+			if (failure) {
+				// The dialog owns the error surface for this flow, so do not
+				// replace the app behind it with the full-screen failure page.
+				setInitError(null);
+				throw new Error(failure);
+			}
+		} finally {
+			setInlineWorkspaceInit(false);
+		}
+	}, [navigate, refreshWorkspaces, startWithWorkspace]);
+
 	const handleDeleteWorkspace = useCallback((workspaceId: string) => {
 		setWorkspaces((prev) => prev.filter((ws) => ws.workspace_id !== workspaceId));
 	}, []);
@@ -317,6 +353,7 @@ function AppInner() {
 		const unlisteners: Array<() => void> = [];
 		(async () => {
 			const un1 = await subscribeSidecarExit((code, cwd) => {
+				if (workspaceSwitchRef.current) return;
 				// Only act if the exited sidecar was the active one.
 				if (!cwd || samePath(cwd, workspace)) {
 					if (code === null) {
@@ -446,6 +483,10 @@ function AppInner() {
 		if (!sidecarReady) return;
 		if (!state) return;
 		if (state.model !== undefined) return;
+		// Remote model/provider settings belong to the remote environment. The
+		// local setup page would edit this machine's credentials, so show the
+		// remote guidance banner instead of redirecting there.
+		if (isRemoteWorkspaceKey(workspace)) return;
 		// Only redirect once per workspace, and only if the user isn't
 		// already on the setup settings page (avoid stealing the back button).
 		// Read the path off `window` rather than `useLocation` on purpose: we
@@ -455,7 +496,7 @@ function AppInner() {
 		if (!window.location.pathname.startsWith("/settings")) {
 			navigate("/settings?setup=true", { replace: true });
 		}
-	}, [sidecarReady, state, navigate]);
+	}, [sidecarReady, state, workspace, navigate]);
 
 	// After the user configures a key, the sidecar is restarted and a new
 	// state arrives with `state.model !== undefined`. Pull them back out of
@@ -585,12 +626,15 @@ function AppInner() {
 	// state of an in-flight turn, so the waiting screen only shows when there
 	// is no live sidecar to show (first start / crashed sidecar). The splash
 	// stays mounted across the switch so it can play its exit over the app.
-	const booting = waitingForWorkspace && !sidecarReady;
+	const booting = waitingForWorkspace && !sidecarReady && !inlineWorkspaceInit;
+	const bootingMessage = isRemoteWorkspaceKey(bootingWorkspace)
+		? t("remoteWorkspace.starting")
+		: undefined;
 
 	return (
 		<PxlKitSurfaceProvider surface="linear">
 			<ConfirmHost />
-			<BootSplash active={booting} />
+			<BootSplash active={booting} message={bootingMessage} />
 			{!booting && <Routes>
 					<Route
 						element={
@@ -599,10 +643,12 @@ function AppInner() {
 								sidecarReady={sidecarReady}
 								sidecarExitCode={sidecarExitCode}
 								workspace={workspace}
+								pendingWorkspace={waitingForWorkspace ? bootingWorkspace : null}
 								workspaces={workspaces}
 								streamingCwds={streamingCwds}
 								onSelectWorkspace={handleSelectWorkspace}
 								onNewWorkspace={handleNewWorkspace}
+								onNewRemoteWorkspace={() => setRemoteWorkspaceDialogOpen(true)}
 							onDeleteWorkspace={handleDeleteWorkspace}
 							/>
 						}
@@ -653,6 +699,11 @@ function AppInner() {
 					<Route path="*" element={<Navigate to="/" replace />} />
 					</Route>
 			</Routes>}
+			<RemoteWorkspaceDialog
+				open={remoteWorkspaceDialogOpen}
+				onClose={() => setRemoteWorkspaceDialogOpen(false)}
+				onCreated={(created) => void handleRemoteWorkspaceCreated(created)}
+			/>
 		</PxlKitSurfaceProvider>
 	);
 }

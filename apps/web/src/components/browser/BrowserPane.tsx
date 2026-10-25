@@ -26,6 +26,7 @@ import type { RpcBrowserFrameMessage, RpcBrowserState, RpcBrowserTab } from "@to
 import { sendCommandAwait, subscribeEvents } from "@/lib/transport";
 import { BrowserFrameClient, type FrameClientStatus, type PushedFrame } from "@/lib/browser-frame-client";
 import { cn } from "@/lib/utils";
+import { isRemoteWorkspaceKey } from "@/lib/platform";
 import BrowserViewport from "./BrowserViewport";
 import NativeBrowserView, {
 	activateNativeTab,
@@ -949,7 +950,9 @@ function NativeBrowserPane({ workspace }: { workspace?: string | null }) {
 	);
 }
 export default function BrowserPane({ workspace }: { workspace?: string | null }) {
-	if (isNativeBrowserAvailable()) {
+	// Remote workspaces use the managed remote Chromium and its forwarded frame
+	// server. A local Tauri child webview would render on the wrong machine.
+	if (isNativeBrowserAvailable() && !isRemoteWorkspaceKey(workspace)) {
 		return <NativeBrowserPane workspace={workspace} />;
 	}
 	return <MirrorBrowserPane />;

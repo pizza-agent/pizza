@@ -7,7 +7,14 @@ import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../../src/config.js";
 import type { ExtensionFlag } from "../../src/core/extensions/types.js";
 
-export type Mode = "text" | "json" | "rpc" | "gui" | "gateway";
+export type Mode =
+	| "text"
+	| "json"
+	| "rpc"
+	| "gui"
+	| "gateway"
+	| "fs-rpc"
+	| "provider-provision-rpc";
 
 export interface Args {
 	provider?: string;
@@ -82,7 +89,15 @@ export function parseArgs(args: string[]): Args {
 			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "gui" || mode === "gateway") {
+			if (
+				mode === "text" ||
+				mode === "json" ||
+				mode === "rpc" ||
+				mode === "gui" ||
+				mode === "gateway" ||
+				mode === "fs-rpc" ||
+				mode === "provider-provision-rpc"
+			) {
 				result.mode = mode;
 			}
 		} else if (arg === "--rewind") {

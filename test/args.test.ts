@@ -99,6 +99,11 @@ describe("parseArgs", () => {
 			expect(result.mode).toBe("rpc");
 		});
 
+	test("parses --mode provider-provision-rpc", () => {
+		const result = parseArgs(["--mode", "provider-provision-rpc"]);
+		expect(result.mode).toBe("provider-provision-rpc");
+	});
+
 		test("parses --mode gui", () => {
 			const result = parseArgs(["--mode", "gui"]);
 			expect(result.mode).toBe("gui");

@@ -55,7 +55,19 @@ export interface WorkspaceMeta {
 	cwd: string;
 	created_at: number;
 	last_accessed_at: number;
+	/** Local directories and SSH-backed workspaces share this metadata shape. */
+	kind?: "local" | "remote";
+	/** Friendly sidebar label for remote workspaces; local entries use basename(cwd). */
+	display_name?: string;
 	/** False when the project directory was removed externally — the entry is
 	 * stale: switching must be blocked, deletion offered instead. */
 	dir_exists?: boolean;
+	remote?: {
+		ssh_target: string;
+		port?: number | null;
+		identity_file?: string | null;
+		has_password?: boolean;
+		remote_path: string;
+		pizza_command?: string;
+	};
 }
