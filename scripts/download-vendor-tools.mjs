@@ -184,7 +184,12 @@ async function extractArchive(archivePath, extractDir) {
 		return;
 	}
 	if (archivePath.endsWith(".tar.gz")) {
-		const result = spawnSync("tar", ["-xzf", archivePath, "-C", extractDir], { stdio: "inherit" });
+		// Run from the archive's dir with a relative -f: GNU tar parses
+		// drive-letter paths (`D:\...`) as remote `host:path` specs.
+		const result = spawnSync("tar", ["-xzf", path.basename(archivePath), "-C", extractDir], {
+			cwd: path.dirname(archivePath),
+			stdio: "inherit",
+		});
 		if (result.error) {
 			throw result.error;
 		}
