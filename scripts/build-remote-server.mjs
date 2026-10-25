@@ -255,7 +255,10 @@ async function main() {
 		const outputPath = join(outputDir, outputName);
 		// System tar (not npm pack) keeps node_modules and file modes.
 		// COPYFILE_DISABLE stops macOS bsdtar from adding AppleDouble files.
-		execFileSync("tar", ["--no-xattrs", "-czf", outputPath, "-C", stagingRoot, "package"], {
+		// Relative archive name via cwd: GNU tar parses drive-letter paths
+		// (`D:\...`) in -f as remote `host:path` specs.
+		execFileSync("tar", ["--no-xattrs", "-czf", outputName, "-C", stagingRoot, "package"], {
+			cwd: outputDir,
 			stdio: "inherit",
 			env: { ...process.env, COPYFILE_DISABLE: "1" },
 		});
