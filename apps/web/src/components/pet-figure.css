@@ -1,0 +1,5 @@
+.pet-figure { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; isolation: isolate; overflow: visible; }
+.pet-figure__aura { position:absolute; inset:-10px; z-index:-1; border-radius:50%; pointer-events:none; background:radial-gradient(ellipse at 50% 62%, color-mix(in srgb,var(--pet-accent) 16%,transparent) 0%, color-mix(in srgb,var(--pet-accent) 6%,transparent) 42%, transparent 70%); }
+.pet-figure__art { display:flex; align-items:center; justify-content:center; filter:drop-shadow(0 2px 2px rgba(31,24,35,.14)); }
+.pet-figure__ascii { margin:0; line-height:1.15; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:#7d8a9b; }
+@media (prefers-reduced-motion:reduce) { .pet-figure *, .pet-figure svg * { animation:none !important; transition:none !important; } }

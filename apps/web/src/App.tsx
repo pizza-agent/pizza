@@ -12,6 +12,7 @@ import { BootSplash } from "@/components/BootSplash";
 import { RemoteWorkspaceDialog } from "@/components/RemoteWorkspaceDialog";
 import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
+import { PET_SETTINGS_PATH } from "@/lib/pet";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
 import { isTauri, isMainChatCwd, isRemoteWorkspaceKey, samePath } from "@/lib/utils";
 import { setWorkspacePaths } from "@/lib/workspace-paths";
@@ -129,7 +130,7 @@ function AppInner() {
 		let disposed = false;
 		let unlisten: (() => void) | undefined;
 		void import("@tauri-apps/api/event")
-			.then(({ listen }) => listen("open_pet_settings", () => navigate("/settings?page=ext:pet")))
+			.then(({ listen }) => listen("open_pet_settings", () => navigate(PET_SETTINGS_PATH)))
 			.then((fn) => {
 				if (disposed) fn();
 				else unlisten = fn;
@@ -304,6 +305,20 @@ function AppInner() {
 		// so get_messages goes to the correct sidecar.
 		await startWithWorkspace(cwd);
 	}, [workspace, sidecarReady, startWithWorkspace, navigate]);
+
+	useEffect(() => {
+		if (!isTauri()) return;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void import("@tauri-apps/api/event").then(({ listen }) => listen("open_main_agent", () => {
+			localStorage.setItem("pizza:main-right-dock-open", "true");
+			localStorage.setItem("pizza:main-right-dock-tab", JSON.stringify("agent"));
+			window.dispatchEvent(new Event("pizza:open-agent-profile"));
+			handleSelectWorkspace("~/.pizza/main");
+			navigate("/");
+		})).then(fn => { if (disposed) fn(); else unlisten = fn; }).catch(() => {});
+		return () => { disposed = true; unlisten?.(); };
+	}, [handleSelectWorkspace, navigate]);
 
 	const handleRemoteWorkspaceCreated = useCallback(async (created: WorkspaceMeta) => {
 		setInlineWorkspaceInit(true);

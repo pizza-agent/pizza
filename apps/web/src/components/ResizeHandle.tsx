@@ -17,6 +17,7 @@ export function ResizeHandle({
 	onResize,
 	invert = false,
 	className,
+	subtle = false,
 }: {
 	orientation: "vertical" | "horizontal";
 	/** Current size at the moment the drag begins. */
@@ -25,6 +26,8 @@ export function ResizeHandle({
 	onResize: (next: number) => void;
 	invert?: boolean;
 	className?: string;
+	/** A single hairline with a wider transparent drag target for outer docks. */
+	subtle?: boolean;
 }) {
 	const startRef = useRef({ pos: 0, size: 0 });
 
@@ -61,8 +64,11 @@ export function ResizeHandle({
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			className={cn(
-				"group shrink-0 bg-transparent transition-colors hover:bg-accent/30",
-				orientation === "vertical" ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
+				"group relative shrink-0 touch-none transition-colors",
+				subtle ? "z-10 bg-border/60 hover:bg-accent/60" : "bg-transparent hover:bg-accent/30",
+				orientation === "vertical"
+					? subtle ? "w-px cursor-col-resize after:absolute after:inset-y-0 after:-left-1 after:w-[9px]" : "w-1 cursor-col-resize"
+					: subtle ? "h-px cursor-row-resize after:absolute after:inset-x-0 after:-top-1 after:h-[9px]" : "h-1 cursor-row-resize",
 				className,
 			)}
 		/>

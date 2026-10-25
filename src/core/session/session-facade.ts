@@ -22,7 +22,10 @@ import type { ModelConfig, ToolDefinition } from "../runtime/llm-types.js";
 import type { RuntimeCompactOptions } from "../runtime/runtime.js";
 import { EventSourcedRuntime } from "../runtime/runtime.js";
 
+export interface MainAgentRoots { mainDir: string; memoryDir: string }
+
 export interface SessionFacadeConfig {
+	mainAgent?: MainAgentRoots;
 	runtime: EventSourcedRuntime;
 	settingsManager: SettingsManager;
 	extensionRunner?: ExtensionRunner;
@@ -49,6 +52,7 @@ function queuedContentToText(content: string | unknown[]): string {
 
 
 export class SessionFacade {
+	readonly mainAgent: MainAgentRoots | undefined;
 	readonly runtime: EventSourcedRuntime;
 	readonly settingsManager: SettingsManager;
 	readonly extensionRunner: ExtensionRunner | undefined;
@@ -59,6 +63,7 @@ export class SessionFacade {
 	private disposeAsyncPromise: Promise<void> | undefined;
 
 	constructor(config: SessionFacadeConfig) {
+		this.mainAgent = config.mainAgent;
 		this.runtime = config.runtime;
 		this.settingsManager = config.settingsManager;
 		this.extensionRunner = config.extensionRunner;

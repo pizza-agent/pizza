@@ -11,6 +11,8 @@
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 
+import { loadMainProfile, readMainDocument, writeMainDocument, listMainJournals } from "../../src/core/agent/main-profile.js";
+import { petService } from "../../src/core/pet/service.js";
 import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -593,7 +595,8 @@ function getFacadeSessionState(facade: SessionFacade, ptyPort?: number): RpcSess
 	const tokenUsage = { totalInput, totalOutput, totalCacheRead, totalCacheWrite, totalCost };
 
 	return {
-		capabilities: { mcpManagement: true },
+		capabilities: { mcpManagement: true, mainProfile: Boolean(facade.mainAgent) },
+		isMainAgent: Boolean(facade.mainAgent),
 		model: resolvedModel,
 		thinkingLevel: (facade.thinkingLevel ?? "off") as RpcSessionState["thinkingLevel"],
 		isStreaming: facade.isRunning,
@@ -1129,6 +1132,20 @@ export async function runRpcModeWithFacade(
 
 			case "get_state":
 				return success(id, "get_state", getFacadeSessionState(facade, ptyServer?.port));
+
+			case "main_profile":
+				return success(id, "main_profile", await loadMainProfile(facade.mainAgent));
+			case "main_document_read":
+				return success(id, "main_document_read", await readMainDocument(facade.mainAgent, command.sourceId));
+			case "main_document_write":
+				return success(id, "main_document_write", await writeMainDocument(facade.mainAgent, command.sourceId, command.content, command.expectedRevision));
+			case "main_journal_list":
+				return success(id, "main_journal_list", await listMainJournals(facade.mainAgent, command.before, command.limit));
+
+			case "pet_get":
+				return success(id, "pet_get", petService.catalog());
+			case "pet_action":
+				return success(id, "pet_action", petService.perform(command.op));
 
 			case "set_model": {
 				const models = facade.modelRegistry?.getAvailable() ?? [];
@@ -2038,7 +2055,9 @@ export async function runRpcModeWithFacade(
 		}
 	};
 
-	unsubscribe = facade.subscribe((event) => output(event));
+	const unsubscribeEvents = facade.subscribe((event) => output(event));
+	const unsubscribePet = petService.subscribe((snapshot) => output({ type: "pet_state", ...snapshot }));
+	unsubscribe = () => { unsubscribeEvents(); unsubscribePet(); };
 	registerSignalHandlers();
 
 	const onInputEnd = () => {

@@ -29,6 +29,19 @@ export interface PetSpeciesDef {
 	frames: Partial<Record<PetMood, string[]>>;
 }
 
+/** Shape check for species authored outside the app (user packs, plugins). */
+export function isValidSpecies(data: unknown): data is PetSpeciesDef {
+	if (typeof data !== "object" || data === null) return false;
+	const d = data as Record<string, unknown>;
+	if (typeof d.id !== "string" || !d.id || typeof d.name !== "string") return false;
+	if (typeof d.frames !== "object" || d.frames === null) return false;
+	for (const [mood, frames] of Object.entries(d.frames as Record<string, unknown>)) {
+		if (!PET_MOODS.includes(mood as PetMood)) return false;
+		if (!Array.isArray(frames) || frames.length === 0 || !frames.every((f) => typeof f === "string")) return false;
+	}
+	return true;
+}
+
 /** Frames for a mood, falling back to idle, then to a placeholder. */
 export function framesForMood(species: PetSpeciesDef, mood: PetMood): string[] {
 	const frames = species.frames[mood] ?? species.frames.idle;
@@ -87,15 +100,15 @@ const SLIME: PetSpeciesDef = {
 const MOCHI: PetSpeciesDef = {
 	id: "pixel-mochi",
 	name: "Mochi",
-	description: "A tiny hooded pixel sprite with a soft blush.",
+	description: "A squishy sakura rice cake in pixels, with a leaf on top.",
 	frames: {
-		idle: ["   .---.   \n  / o o \\\n |   ^   |\n  \\_____/ ", "   .---.   \n  / - - \\\n |   ^   |\n  \\_____/ "],
-		working: ["   .---.   \n  / o o \\\n |   ^   |~\n  \\_____/ "],
-		celebrating: [" \\ .---. / \n  / ^ ^ \\\n |   ^   |\n  \\_____/ "],
-		happy: ["   .---.   \n  / ^ ^ \\\n |   ^   |\n  \\_____/ "],
-		sad: ["   .---.   \n  / ; ; \\\n |   v   |\n  \\_____/ "],
-		sleepy: ["   .---.   \n  / - - \\\n |   _   | z\n  \\_____/ "],
-		eating: ["   .---.   \n  / o o \\\n |  owo  |\n  \\_____/ "],
+		idle: ["   ,\n .-'-.\n( o o )\n `-w-'", "   ,\n .-'-.\n( - - )\n `-w-'"],
+		working: ["   ,\n .-'-.\n( o o )~\n `---'", "   ,\n .-'-.\n( o o ) ~\n `---'"],
+		celebrating: [" \\ , /\n .-'-.\n( ^ ^ )\n `-o-'"],
+		happy: ["   ,\n .-'-.\n( ^ ^ )\n `-w-'"],
+		sad: ["   ,\n .-'-.\n( ; ; )\n `-n-'"],
+		sleepy: ["   ,\n .-'-.\n( - - ) z\n `---'"],
+		eating: ["   ,\n .-'-.\n( o o )\n `-o-'"],
 	},
 };
 

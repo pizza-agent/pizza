@@ -47,6 +47,8 @@ import type { ReadonlyFooterDataProvider } from "../context/footer-data-provider
 import type { KeybindingsManager } from "../commands/keybindings.js";
 import type { CustomMessage } from "../context/messages.js";
 import type { ModelRegistry } from "../models/model-registry.js";
+import type { PetActionDef, PetStatus } from "../pet/service.js";
+import type { PetMood, PetSpeciesDef } from "../pet/sprites.js";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -1258,6 +1260,12 @@ export interface ExtensionAPI {
 	 */
 	registerMenu(menu: ExtensionMenu): void;
 
+	/**
+	 * The app pet. The pet is a core feature; these are its extension points
+	 * (contributions are scoped to the session that loaded this extension).
+	 */
+	pet: ExtensionPetAPI;
+
 	// =========================================================================
 	// Actions
 	// =========================================================================
@@ -1665,6 +1673,26 @@ export interface Extension {
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	settingsItems: Map<string, RegisteredExtensionSettingsItem>;
 	menus: Map<string, RegisteredExtensionMenu>;
+	/** Pet species contributed through `pizza.pet.registerSpecies`. */
+	petSpecies?: Map<string, PetSpeciesDef>;
+	/** Pet menu actions contributed through `pizza.pet.registerAction`. */
+	petActions?: Map<string, PetActionDef>;
+}
+
+/** Extension points of the app pet (see `ExtensionAPI.pet`). */
+export interface ExtensionPetAPI {
+	/**
+	 * Add a species to the adoption catalog. Frames are ASCII art per mood
+	 * (same shape as ~/.pizza/agent/pets/<id>.json); user packs with the same
+	 * id take precedence. Re-registering an id replaces it.
+	 */
+	registerSpecies(species: PetSpeciesDef): void;
+	/** Add an entry to the pet's right-click menu and settings page. */
+	registerAction(action: PetActionDef): void;
+	/** Make the pet show a mood for a while, optionally granting XP. No-op without a pet. */
+	react(mood: PetMood, options?: { xp?: number }): void;
+	/** Current pet, or null when none is adopted. */
+	getState(): PetStatus | null;
 }
 
 /**

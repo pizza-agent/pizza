@@ -31,6 +31,7 @@ import {
 } from "../extensions/index.js";
 import { createToolRegistry } from "../intent/tool-adapter.js";
 import { ModelRegistry } from "../models/model-registry.js";
+import { attachPetToSession } from "../pet/session.js";
 import {
 	DefaultResourceLoader,
 	type DefaultResourceLoaderOptions,
@@ -487,15 +488,17 @@ export async function createSessionFacade(
 	toolAssembly.attachRuntime(runtime);
 
 	const extensionEventUnsubscribe = extensionRunner.bindEventStore(store);
+	const detachPet = attachPetToSession(store, extensionRunner.getPetContributions());
 	await extensionRunner.emit(options.sessionStartEvent ?? { type: "session_start", reason: "startup" });
 
 	facade = new SessionFacade({
+		mainAgent: isMainAgent ? { mainDir, memoryDir: memoryDir ?? getMainMemoryDir(mainDir) } : undefined,
 		runtime,
 		settingsManager,
 		modelRegistry,
 		extensionRunner,
 		resourceLoader,
-		disposers: workspaceLock ? [extensionEventUnsubscribe, workspaceLock.release] : [extensionEventUnsubscribe],
+		disposers: workspaceLock ? [extensionEventUnsubscribe, detachPet, workspaceLock.release] : [extensionEventUnsubscribe, detachPet],
 	});
 
 	if (store.flush) await store.flush();

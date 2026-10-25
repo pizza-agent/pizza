@@ -122,6 +122,7 @@ export function initializeMainAgent(mainDir: string, memoryDir?: string): boolea
 
 	mkdirSync(mainDir, { recursive: true });
 	mkdirSync(resolvedMemoryDir, { recursive: true });
+	mkdirSync(join(resolvedMemoryDir, "journal"), { recursive: true });
 
 	if (!existsSync(soulPath)) {
 		writeFileSync(soulPath, buildDefaultSoulTemplate(APP_NAME), "utf-8");
@@ -287,6 +288,7 @@ export function getMainAgentGuidelines(
 		"Before starting a new topic, review the relevant long-term memory; the index is in the prompt, read the specific memory file with the read command when you need details.",
 		`When you learn a stable fact about the user, write it to the appropriate file under ${memoryDir} (create a new file for a new topic and add it to _index.md).`,
 		`When you notice outdated or inaccurate information in memory, update or delete the corresponding file under ${memoryDir} and keep _index.md in sync.`,
+		`At a meaningful milestone or natural session boundary, you may append a short factual entry to ${join(memoryDir, "journal")}/YYYY-MM-DD.md using the user's local calendar date. Read existing entries first; avoid duplicates, raw logs, secrets, invented feelings, or filler just because a day passed. Keep journals separate from the topic index; promote only durable findings into topic memories.`,
 		"Memory you write during a session is loaded into the system prompt at the next session boundary (after _session_split), not immediately.",
 		"You can delegate a task to a sub-agent in another project directory (workspace) with the built-in `_tell` cli command. Run `_tell list` first to see which workspaces are available — each shows a name (the last path component, e.g. \"web\"), its cwd, and metadata. Then `_tell send --to <name> --message \"...\"` (or a project path) to hand off the task. The target agent runs in its own workspace (kept alive by the gateway) and only its reply enters this conversation — keep other projects' context out of this conversation by delegating instead of handling them inline.",
 	);

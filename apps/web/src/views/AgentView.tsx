@@ -6,7 +6,7 @@ import type { RpcSessionState, TypedEvent } from "@/lib/types";
 import { Conversation, type TimelineItem } from "@/components/Conversation";
 import { Tooltip } from "@/components/Tooltip";
 import { ChatSearch } from "@/components/ChatSearch";
-import { ArrowUp, Search, X } from "lucide-react";
+import { ArrowUp, X } from "lucide-react";
 import { textMatches } from "@/lib/highlight";
 import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/components/Composer";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
@@ -326,7 +326,7 @@ export default function AgentView({
 	switchEpoch?: number;
 	onRefreshState?: () => void;
 }) {
-	const { sidebarCollapsed } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
+	const { sidebarCollapsed, isMainAgent = false } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
 	const { t } = useTranslation();
 	const [items, setItems] = useState<TimelineItem[]>([]);
 	const [error, setError] = useState("");
@@ -1272,7 +1272,7 @@ export default function AgentView({
 	const [searchQuery, setSearchQuery] = useState("");
 	const [matchIndex, setMatchIndex] = useState(0);
 	// Incremented to imperatively (re)focus the search input — bumped on every
-	// ⌘/Ctrl+F and on open via the header button so the bar re-selects its text
+	// ⌘/Ctrl+F so the bar re-selects its text
 	// even when it was already open.
 	const [focusSignal, setFocusSignal] = useState(0);
 	const trimmedQuery = searchQuery.trim();
@@ -1303,7 +1303,7 @@ export default function AgentView({
 	// Global shortcut: ⌘/Ctrl+F opens (or re-focuses) the search bar and
 	// prevents the browser/webview native find bar. The bar is never toggled
 	// closed by the shortcut (matches editors/browsers); use Escape or the
-	// header button to dismiss. Escape is only handled here while open so we
+	// popup close control to dismiss. Escape is only handled here while open so we
 	// never swallow it from other controls.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -1367,11 +1367,12 @@ export default function AgentView({
 		isRemoteWorkspaceKey(workspace) && state !== null && state.model === undefined;
 
 	return (
-		<div className="flex h-full flex-col">
+		<div className="relative flex h-full flex-col">
 			<div
 				data-tauri-drag-region="deep"
 				className={cn(
-					"relative flex h-11 shrink-0 items-center border-b border-border bg-surface/80 pr-[96px] backdrop-blur transition-[padding] duration-150",
+					"relative flex shrink-0 items-center pr-20 transition-[padding] duration-150",
+					isMainAgent ? "pointer-events-none absolute inset-x-0 top-0 z-40 h-0" : "h-11 bg-surface/80 backdrop-blur after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border/50",
 					sidebarCollapsed ? "pl-[120px]" : "pl-6",
 				)}
 			>
@@ -1380,7 +1381,7 @@ export default function AgentView({
 				    click copies it. Kept as a plain span — a button would mark the
 				    area non-draggable in Tauri's drag-region handling, so a span lets
 				    the title stay both clickable and draggable. */}
-				{sessionTitle ? (
+				{!isMainAgent && sessionTitle ? (
 					<Tooltip label={titleCopied ? t("common.copied") : sessionTitle} align="start" className="min-w-0 max-w-[40%]">
 						<span
 							onClick={copyTitle}
@@ -1392,19 +1393,8 @@ export default function AgentView({
 				) : (
 					<span className="min-w-0 flex-1" />
 				)}
-				<button
-					type="button"
-					onClick={() => setSearchOpen((o) => { if (!o) setFocusSignal((s) => s + 1); return !o; })}
-					title={t("search.toggleHint")}
-					className={cn(
-					"absolute right-[84px] top-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-surface-2",
-					searchOpen ? "text-accent" : "text-muted/60 hover:text-muted",
-				)}
-				>
-					{searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
-				</button>
 				{searchOpen && (
-					<ChatSearch
+					<div className="pointer-events-auto"><ChatSearch
 						query={searchQuery}
 						onQueryChange={(q) => { setSearchQuery(q); setMatchIndex(0); }}
 						matchIndex={matchIds.length > 0 ? Math.min(matchIndex, matchIds.length - 1) : 0}
@@ -1413,7 +1403,7 @@ export default function AgentView({
 						onNext={goNextMatch}
 						onClose={() => setSearchOpen(false)}
 					focusSignal={focusSignal}
-					/>
+					/></div>
 				)}
 			</div>
 			{remoteProviderMissing && (
@@ -1421,7 +1411,7 @@ export default function AgentView({
 					{t("agent.remoteProviderMissing")}
 				</div>
 			)}
-			<div ref={scrollRef} className="flex-1 overflow-y-auto">
+			<div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
 						{loadingHistory || waitingForWorkspace ? (

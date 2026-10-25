@@ -211,9 +211,9 @@ export default function BottomDock({
 	const tabTitle = (tb: Tab, i: number): string => `${t("terminal.title")} ${i + 1}`;
 
 	return (
-		<div className="flex h-full flex-col border-t border-border bg-bg">
+		<div className="flex h-full flex-col bg-bg">
 			{/* Header: tab strip + actions. */}
-			<div className="flex h-9 shrink-0 items-center gap-1 border-b border-border pl-1.5 pr-2">
+			<div className="relative flex h-9 shrink-0 items-center gap-1 pl-1.5 pr-2 after:pointer-events-none after:absolute after:inset-x-3 after:bottom-0 after:h-px after:bg-border/50">
 				<TerminalSquare className="mr-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
 				<div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
 					{tabs.map((tb, i) => {

@@ -7,10 +7,12 @@
  * agentDir is normally ~/.pizza/agent (PIZZA_CODING_AGENT_DIR overridable).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import lockfile from "proper-lockfile";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "../../config.js";
-import { BUILTIN_SPECIES, PET_MOODS, type PetMood, type PetSpeciesDef } from "./sprites.js";
+import { BUILTIN_SPECIES, isValidSpecies, type PetSpeciesDef } from "./sprites.js";
 
 export interface PetSave {
 	name: string;
@@ -54,45 +56,47 @@ export function loadPetSave(): PetSave | undefined {
 	}
 }
 
-export function savePet(save: PetSave): void {
+/** Serialize read/modify/write across workspace processes; readers see whole saves. */
+function updatePetSave(update: (current: PetSave | undefined) => PetSave | undefined): PetSave | undefined {
 	mkdirSync(getAgentDir(), { recursive: true });
-	// Merge over the on-disk file so fields written by other surfaces
-	// (e.g. the desktop appʼs `floating` flag) are not clobbered.
-	let onDisk: Record<string, unknown> = {};
-	try {
-		onDisk = JSON.parse(readFileSync(petSavePath(), "utf-8")) ?? {};
-	} catch {
-		/* first save */
+	const path = petSavePath();
+	let release: (() => void) | undefined;
+	for (let attempt = 0; !release; attempt++) {
+		try { release = lockfile.lockSync(path, { realpath: false }); }
+		catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ELOCKED" || attempt >= 9) throw error;
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+		}
 	}
-	// `floating` is owned by the desktop app (written on window open/close); the
-	// extension's in-memory copy can be stale — strip it so we never clobber it.
-	const { floating: _floating, ...rest } = save;
-	writeFileSync(petSavePath(), JSON.stringify({ ...onDisk, ...rest }, null, 2), "utf-8");
+	const temp = `${path}.${randomUUID()}.tmp`;
+	try {
+		const next = update(loadPetSave());
+		writeFileSync(temp, JSON.stringify(next ?? null, null, 2), { encoding: "utf-8", mode: 0o600 });
+		renameSync(temp, path);
+		return next;
+	} finally { rmSync(temp, { force: true }); release(); }
+}
+
+/** Explicit user changes may update appearance. The desktop owns floating. */
+export function savePet(save: PetSave): void {
+	updatePetSave((current) => {
+		const { floating: _floating, ...rest } = save;
+		return { ...current, ...rest };
+	});
+}
+
+/** Background XP updates must never restore an old appearance or released pet. */
+export function savePetProgress(xp: number): PetSave | undefined {
+	return updatePetSave((current) => current ? { ...current, xp: Math.max(current.xp, xp) } : undefined);
 }
 
 export function deletePetSave(): void {
-	try {
-		if (existsSync(petSavePath())) writeFileSync(petSavePath(), "null", "utf-8");
-	} catch {
-		/* best effort */
-	}
+	updatePetSave(() => undefined);
 }
 
 // ---------------------------------------------------------------------------
 // Species lookup (built-ins + user packs)
 // ---------------------------------------------------------------------------
-
-function isValidSpecies(data: unknown): data is PetSpeciesDef {
-	if (typeof data !== "object" || data === null) return false;
-	const d = data as Record<string, unknown>;
-	if (typeof d.id !== "string" || typeof d.name !== "string") return false;
-	if (typeof d.frames !== "object" || d.frames === null) return false;
-	for (const [mood, frames] of Object.entries(d.frames as Record<string, unknown>)) {
-		if (!PET_MOODS.includes(mood as PetMood)) return false;
-		if (!Array.isArray(frames) || frames.length === 0 || !frames.every((f) => typeof f === "string")) return false;
-	}
-	return true;
-}
 
 /** Load user-defined species from <agentDir>/pets/*.json. Invalid files are skipped. */
 export function listUserSpecies(): PetSpeciesDef[] {

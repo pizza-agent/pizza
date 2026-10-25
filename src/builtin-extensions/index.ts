@@ -31,7 +31,6 @@ import {
 	runComputerUseInstall,
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
-import { createPetExtension, PET_EXTENSION_ID } from "./pet/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
@@ -121,12 +120,6 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
-	},
-	{
-		id: PET_EXTENSION_ID,
-		name: "pet",
-		description: "Tamagotchi-style terminal companion widget (adopt, feed, and grow a pet across sessions).",
-		factory: createPetExtension,
 	},
 	{
 		id: MCP_EXTENSION_ID,

@@ -1,0 +1,213 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getAgentDir } from "../src/config.js";
+import {
+	applyEvent,
+	effectiveMood,
+	initialPetState,
+	levelForXp,
+	REACTION_TTL_MS,
+	SLEEPY_AFTER_MS,
+} from "../src/core/pet/state.js";
+import {
+	deletePetSave,
+	findSpecies,
+	listAllSpecies,
+	loadPetSave,
+	savePet,
+	savePetProgress,
+} from "../src/core/pet/store.js";
+import { framesForMood, BUILTIN_SPECIES } from "../src/core/pet/sprites.js";
+import { PetService, petService, type PetSnapshot } from "../src/core/pet/service.js";
+import { attachPetToSession } from "../src/core/pet/session.js";
+import { BUILTIN_EXTENSIONS } from "../src/builtin-extensions/index.js";
+import type { EventBase } from "../src/core/event-store/types.js";
+
+describe("pet state machine", () => {
+	it("starts idle at level 1", () => {
+		const s = initialPetState(0);
+		expect(s.mood).toBe("idle");
+		expect(s.level).toBe(1);
+		expect(effectiveMood(s, { agentBusy: false, now: 1000 })).toBe("idle");
+	});
+
+	it("working overrides everything while agent is busy", () => {
+		let s = initialPetState(0);
+		s = applyEvent(s, "turn_start", 100);
+		expect(effectiveMood(s, { agentBusy: true, now: 200 })).toBe("working");
+	});
+
+	it("celebrates on turn_end, expires back to idle", () => {
+		let s = initialPetState(0);
+		s = applyEvent(s, "turn_end", 1000);
+		expect(effectiveMood(s, { agentBusy: false, now: 1000 })).toBe("celebrating");
+		expect(effectiveMood(s, { agentBusy: false, now: 1000 + REACTION_TTL_MS + 1 })).toBe("idle");
+	});
+
+	it("gets sad on tool errors and sleepy on compaction", () => {
+		let s = initialPetState(0);
+		s = applyEvent(s, "tool_error", 5000);
+		expect(effectiveMood(s, { agentBusy: false, now: 5000 })).toBe("sad");
+		s = applyEvent(s, "compaction", 60_000);
+		expect(effectiveMood(s, { agentBusy: false, now: 60_000 })).toBe("sleepy");
+	});
+
+	it("gets sleepy after long inactivity even from idle", () => {
+		const s = initialPetState(0);
+		expect(effectiveMood(s, { agentBusy: false, now: SLEEPY_AFTER_MS + 1 })).toBe("sleepy");
+	});
+
+	it("xp grows and levels up", () => {
+		let s = initialPetState(0);
+		s = applyEvent(s, "turn_end", 100);
+		expect(s.xp).toBe(4);
+		for (let i = 0; i < 24; i++) s = applyEvent(s, "turn_end", 1000 + i);
+		expect(s.xp).toBe(4 + 24 * 4);
+		expect(s.level).toBe(levelForXp(s.xp));
+		expect(s.level).toBeGreaterThan(2);
+	});
+});
+
+describe("pet store", () => {
+	it("roundtrips pet.json in the agent dir", () => {
+		savePet({ name: "Momo", speciesId: "cat", xp: 42, adoptedAt: 123, scale: 1.25, subtitle: "Diff inspector" });
+		const loaded = loadPetSave();
+		expect(loaded?.name).toBe("Momo");
+		expect(loaded?.speciesId).toBe("cat");
+		expect(loaded?.xp).toBe(42);
+		expect(loaded?.scale).toBe(1.25);
+		expect(loaded?.subtitle).toBe("Diff inspector");
+		deletePetSave();
+		expect(loadPetSave()).toBeUndefined();
+	});
+
+	it("lists builtin species and merges user packs", () => {
+		const all = listAllSpecies();
+		expect(all.map((s) => s.id)).toContain("cat");
+		expect(all.map((s) => s.id)).toContain("slime");
+		expect(all.map((s) => s.id)).toContain("pixel-mochi");
+		expect(findSpecies("pixel-mochi")?.frames.idle?.length).toBeGreaterThan(0);
+
+		const dir = join(getAgentDir(), "pets");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			join(dir, "dragon.json"),
+			JSON.stringify({ id: "dragon", name: "Dragon", frames: { idle: ["(dragon)"] } }),
+		);
+		writeFileSync(join(dir, "broken.json"), "{not json");
+
+		const merged = listAllSpecies();
+		const dragon = findSpecies("dragon");
+		expect(dragon?.name).toBe("Dragon");
+		expect(framesForMood(dragon!, "happy")).toEqual(["(dragon)"]); // falls back to idle
+		expect(merged.filter((s) => s.id === "broken")).toHaveLength(0);
+	});
+
+	it("framesForMood falls back to idle frames", () => {
+		const cat = BUILTIN_SPECIES.find((s) => s.id === "cat")!;
+		expect(framesForMood(cat, "happy").length).toBeGreaterThan(0);
+	});
+});
+
+describe("pet is a core feature", () => {
+	afterEach(() => deletePetSave());
+
+	it("is not a (disableable) built-in extension", () => {
+		expect(BUILTIN_EXTENSIONS.map((ext) => ext.id)).not.toContain("pet");
+	});
+
+	it("adopts, renames, customizes and releases through one service", () => {
+		const service = new PetService();
+		expect(() => service.perform({ action: "rename", name: "x" })).toThrow(/No pet/);
+		expect(() => service.perform({ action: "adopt", speciesId: "nope" })).toThrow(/Unknown/);
+		let catalog = service.perform({ action: "adopt", speciesId: "cat", name: "  Momo  " });
+		expect(catalog.pet).toMatchObject({ name: "Momo", speciesId: "cat", mood: "happy" });
+		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["cat", "dog", "slime", "pixel-mochi"]));
+		catalog = service.perform({ action: "adopt", speciesId: "dog" });
+		expect(catalog.pet?.name).toBe("Momo");
+		catalog = service.perform({ action: "customize", scale: 9, subtitle: "  pair  programmer " });
+		expect(catalog.pet).toMatchObject({ scale: 1.5, subtitle: "pair programmer" });
+		service.perform({ action: "feed" });
+		expect(loadPetSave()?.xp).toBe(2);
+		expect(service.perform({ action: "release" }).pet).toBeNull();
+		expect(loadPetSave()).toBeUndefined();
+	});
+
+	it("follows session activity and notifies only on change", () => {
+		const service = petService;
+		service.perform({ action: "adopt", speciesId: "slime", name: "Goo" });
+		const seen: PetSnapshot[] = [];
+		const stop = service.subscribe((snapshot) => seen.push(snapshot));
+		const handlers = new Set<(event: EventBase) => void>();
+		const emit = (type: string, payload: unknown = {}) => handlers.forEach((h) => h({ type, payload } as unknown as EventBase));
+		const detach = attachPetToSession({ subscribe: (h) => { handlers.add(h); return () => handlers.delete(h); } });
+		try {
+			emit("AGENT_TURN_START");
+			expect(seen.at(-1)?.pet).toMatchObject({ busy: true, mood: "working" });
+			const count = seen.length;
+			service.notify();
+			expect(seen).toHaveLength(count);
+			emit("AGENT_TURN_END");
+			emit("AGENT_TURN_COMPLETED", { reason: "stop" });
+			expect(seen.at(-1)?.pet).toMatchObject({ busy: false, mood: "celebrating" });
+			expect(loadPetSave()?.xp).toBe(4);
+			emit("TOOL_EXECUTION_END", { is_error: true });
+			expect(seen.at(-1)?.pet?.mood).toBe("sad");
+		} finally {
+			detach();
+			stop();
+		}
+		expect(handlers.size).toBe(0);
+	});
+
+	it("merges plugin species and actions while their session lives", () => {
+		const service = new PetService();
+		const remove = service.addContributionSource({
+			species: () => [{ id: "fox", name: "Fox", frames: { idle: ["(fox)"] } }, { id: "bad", name: "Bad", frames: { nope: ["x"] } } as never],
+			actions: () => [{ id: "pomodoro", label: "Pomodoro", command: "/pomodoro" }, { id: "pomodoro", label: "Dupe", command: "/x" }],
+		});
+		expect(service.findSpecies("fox")?.source).toBe("plugin");
+		expect(service.findSpecies("bad")).toBeUndefined();
+		expect(service.listActions()).toEqual([{ id: "pomodoro", label: "Pomodoro", command: "/pomodoro", description: undefined }]);
+		const snapshot = service.perform({ action: "adopt", speciesId: "fox" });
+		expect(snapshot.species?.frames.idle).toEqual(["(fox)"]);
+		service.react("celebrating", { xp: 5 });
+		expect(service.status()).toMatchObject({ mood: "celebrating", xp: 5 });
+		remove();
+		expect(service.findSpecies("fox")).toBeUndefined();
+	});
+});
+
+describe("shared pet appearance", () => {
+ it("background progress preserves a newer selection, name, size and floating flag", () => {
+  savePet({name:"Old",speciesId:"cat",xp:10,adoptedAt:1});
+  savePet({name:"New",speciesId:"dog",xp:30,adoptedAt:1,scale:1.2,subtitle:"hello"});
+  const result=savePetProgress(20);
+  expect(result).toMatchObject({name:"New",speciesId:"dog",xp:30,scale:1.2,subtitle:"hello"});
+  deletePetSave();
+  expect(savePetProgress(50)).toBeUndefined();
+  expect(loadPetSave()).toBeUndefined();
+ });
+ it("another process's changes reach listeners and a released pet is never resurrected", async () => {
+  vi.useFakeTimers();
+  const service = new PetService();
+  const seen: PetSnapshot[] = [];
+  const stop = service.subscribe((snapshot) => seen.push(snapshot));
+  try {
+   savePet({name:"Cat",speciesId:"cat",xp:0,adoptedAt:1});
+   service.notify();
+   expect(seen.at(-1)?.pet?.speciesId).toBe("cat");
+   savePet({name:"Dog",speciesId:"dog",xp:15,adoptedAt:1});
+   await vi.advanceTimersByTimeAsync(2100);
+   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"dog",name:"Dog",xp:15});
+   service.dispatch("turn_end");
+   expect(loadPetSave()).toMatchObject({speciesId:"dog",xp:19});
+   deletePetSave();
+   await vi.advanceTimersByTimeAsync(2100);
+   expect(seen.at(-1)?.pet).toBeNull();
+   service.dispatch("turn_end");
+   expect(loadPetSave()).toBeUndefined();
+  } finally { stop(); vi.useRealTimers(); }
+ });
+});

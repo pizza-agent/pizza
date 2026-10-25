@@ -21,6 +21,60 @@
     "confirm": "确认",
     "notice": "提示"
   },
+  "mainAgent": {
+    "profileTitle": "助理档案",
+    "openProfile": "查看助理信息",
+    "petDesktopHint": "拖动移动 · 拖出应用即可悬浮 · 双击打开助理信息",
+    "petHint": "拖动移动 · 双击查看助理信息",
+    "openDock": "展开右侧面板",
+    "closeDock": "收起右侧面板",
+    "identity": "身份与相处方式",
+    "aboutYou": "关于你",
+    "preferencesHint": "你的信息与偏好，由你掌握",
+    "memories": "长期记忆",
+    "recentJournal": "最近的日记",
+    "journal": "日记",
+    "viewAll": "全部",
+    "edit": "编辑",
+    "back": "返回",
+    "refresh": "刷新助理信息",
+    "retry": "重试",
+    "loading": "加载中…",
+    "loadError": "暂时无法读取助理信息。",
+    "idle": "待命",
+    "working": "正在处理",
+    "disconnected": "未连接",
+    "noSoul": "一起定义助理的名字、价值观与交流方式。",
+    "soulPrompt": "我们一起定义你的身份、价值观和交流方式吧。",
+    "noPreferences": "你希望我了解哪些偏好？",
+    "preferencesPrompt": "我想告诉你一些我的偏好，请帮我记录到用户资料中。",
+    "noMemories": "还没有保存的长期记忆。",
+    "memoryHint": "每条记忆都可以查看来源，并随时修改。",
+    "searchMemories": "搜索标题与摘要",
+    "noMatches": "没有找到匹配的记忆。",
+    "memoryLimit": "当前展示前 200 条记忆，可在文件页查看完整内容。",
+    "noJournal": "等有值得记下的事，这里就会有第一篇日记。",
+    "journalPrompt": "一起回顾今天实际完成的事和新的发现，写一篇简短日记吧。",
+    "startInChat": "在对话中继续",
+    "loadMore": "加载更早的日记",
+    "appearance": "形象设置",
+    "memoryStatus": {
+      "indexed": "已索引",
+      "unindexed": "尚未加入索引",
+      "stale": "来源文件暂不可用",
+      "unavailable": "无法读取来源文件"
+    },
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "editorHint": "直接编辑原文，⌘/Ctrl+S 保存。",
+    "documentContent": "文档内容",
+    "conflict": "原文件已在其他地方更新。你的草稿仍保留，请复制草稿或重新读取原文后合并。",
+    "copyDraft": "复制草稿",
+    "reloadSource": "重新读取原文",
+    "reloadHint": "将当前草稿替换为最新原文。",
+    "editAppearance": "更换形象"
+  },
   "layout": {
     "brandTagline": "一起创造。",
     "agent": "助理",
@@ -501,7 +555,9 @@
     "unavailable": "当前环境不支持交互式终端。"
   },
   "dock": {
-    "toggleRight": "切换侧边面板"
+    "toggleRight": "切换侧边面板",
+    "openRight": "展开右侧面板",
+    "closeRight": "收起右侧面板"
   },
   "theme": {
     "light": "浅色",
@@ -758,10 +814,11 @@
       "search": "搜索设置...",
       "scheduler": "定时任务",
       "groupIntegrations": "集成",
-      "groupExtensions": "扩展"
+      "groupExtensions": "扩展",
+      "pet": "形象"
     },
     "pet": {
-      "subtitle": "你的桌面伙伴，会跟随 agent 的工作状态变化。",
+      "subtitle": "助理的形象，会跟随它的工作状态变化。插件也可以为它添加新形象和动作。",
       "showMini": "显示迷你宠物",
       "hideMini": "收起迷你宠物",
       "customize": "自定义",
@@ -778,7 +835,15 @@
       "adoptCta": "领养宠物",
       "none": "无",
       "noneDescription": "放走当前伙伴",
-      "current": "当前"
+      "current": "当前",
+      "name": "名字",
+      "release": "放走",
+      "releaseConfirm": "确定放走 {{name}} 吗？存档会被清除。",
+      "pluginActions": "插件动作",
+      "sourcePlugin": "插件",
+      "sourceUser": "自定义",
+      "actionError": "操作失败：{{error}}",
+      "level": "Lv.{{level}}"
     },
     "general": {
       "compaction": "上下文压缩",
@@ -966,5 +1031,31 @@
       "font": "字体",
       "remove": "移除此元素"
     }
+  },
+  "pet": {
+    "menu": {
+      "chat": "对话",
+      "closeChat": "关闭对话",
+      "float": "悬浮到桌面",
+      "dock": "收回应用",
+      "hideFloat": "收起悬浮",
+      "feed": "喂食",
+      "play": "陪它玩",
+      "settings": "形象设置",
+      "profile": "助理档案",
+      "adopt": "选择形象"
+    },
+    "moods": {
+      "idle": "待命",
+      "working": "工作中",
+      "celebrating": "庆祝",
+      "happy": "开心",
+      "sad": "难过",
+      "sleepy": "犯困",
+      "eating": "进食"
+    },
+    "hint": "拖动移动 · 双击打开助理档案 · 右键更多",
+    "desktopHint": "拖动移动 · 拖出应用即可悬浮 · 双击打开助理档案 · 右键更多",
+    "floatHint": "拖动移动 · 双击收回应用 · 右键更多"
   }
 }

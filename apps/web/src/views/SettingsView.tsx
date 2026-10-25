@@ -44,7 +44,7 @@ import type { RpcSessionState } from "@/lib/types";
 import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { PluginsContent } from "@/views/PluginsView";
 import { PetSettingsPage } from "@/components/PetSettingsPage";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search } from "lucide-react";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search, PawPrint } from "lucide-react";
 import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
@@ -1415,10 +1415,10 @@ function ExtensionMenuPage({ menu, onAction }: { menu: ExtensionMenuWire; onActi
 	);
 }
 
-type SettingsPageId = "general" | "scheduler" | "about" | "provider" | "plugins";
+type SettingsPageId = "general" | "pet" | "scheduler" | "about" | "provider" | "plugins";
 /** Static pages plus extension-contributed pages addressed as `ext:<menuId>`. */
 type SettingsPage = SettingsPageId | `ext:${string}`;
-const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "scheduler", "about", "provider", "plugins"];
+const SETTINGS_PAGE_IDS: readonly SettingsPageId[] = ["general", "pet", "scheduler", "about", "provider", "plugins"];
 const EXT_PAGE_PREFIX = "ext:";
 
 export default function SettingsView({
@@ -1445,7 +1445,8 @@ export default function SettingsView({
 	const pageParam = new URLSearchParams(location.search).get("page");
 	// "updates" is the pre-rename id for the About page; keep accepting it so
 	// old deep links still land somewhere sensible.
-	const normalizedPageParam = pageParam === "updates" ? "about" : pageParam;
+	// "ext:pet" predates the pet becoming a core page.
+	const normalizedPageParam = pageParam === "updates" ? "about" : pageParam === "ext:pet" ? "pet" : pageParam;
 	const page: SettingsPage = SETTINGS_PAGE_IDS.includes(normalizedPageParam as SettingsPageId)
 		? (normalizedPageParam as SettingsPageId)
 		: normalizedPageParam?.startsWith(EXT_PAGE_PREFIX)
@@ -1503,6 +1504,7 @@ export default function SettingsView({
 			label: t("settings.tabs.general"),
 			items: [
 				{ id: "general", icon: SlidersHorizontal, label: t("settings.nav.general") },
+				{ id: "pet", icon: PawPrint, label: t("settings.nav.pet") },
 				{ id: "scheduler", icon: Clock, label: t("settings.nav.scheduler") },
 				{ id: "about", icon: Info, label: t("settings.about.title") },
 			],
@@ -1537,6 +1539,7 @@ export default function SettingsView({
 
 	const pageTitle =
 		page === "general" ? t("settings.nav.general")
+		: page === "pet" ? t("settings.nav.pet")
 		: page === "scheduler" ? t("settings.nav.scheduler")
 		: page === "about" ? t("settings.about.title")
 		: page === "plugins" ? t("layout.plugins")
@@ -1671,8 +1674,8 @@ export default function SettingsView({
 							<ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />
 						) : null}
 						{page === "plugins" && <PluginsContent />}
-						{activeExtMenu?.id === "pet" && <PetSettingsPage menu={activeExtMenu} onAction={refreshExtMenus} workspace={workspace} />}
-						{activeExtMenu && activeExtMenu.id !== "pet" && <ExtensionMenuPage menu={activeExtMenu} onAction={refreshExtMenus} />}
+						{page === "pet" && <PetSettingsPage workspace={workspace} />}
+						{activeExtMenu && <ExtensionMenuPage menu={activeExtMenu} onAction={refreshExtMenus} />}
 					</div>
 				</div>
 			</div>

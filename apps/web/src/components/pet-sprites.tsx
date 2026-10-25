@@ -23,10 +23,10 @@ export interface PetSpriteProps {
 }
 
 export const SPECIES: Record<string, { accent: string; label: string }> = {
-	cat: { accent: "#ffb547", label: "Cat, a graphite companion bot" },
-	dog: { accent: "#4fd2ff", label: "Dog, a ceramic companion bot" },
+	cat: { accent: "#ffb547", label: "Cat, a soft graphite kitten" },
+	dog: { accent: "#4fd2ff", label: "Dog, a warm caramel puppy" },
 	slime: { accent: "#46f0b0", label: "Slime, a holographic gel blob" },
-	"pixel-mochi": { accent: "#ff8fa3", label: "Mochi, a hooded pixel pet" },
+	"pixel-mochi": { accent: "#ff8fa3", label: "Mochi, a sakura rice-cake pixel pet" },
 };
 
 export function PetSprite(props: PetSpriteProps) {
@@ -34,9 +34,9 @@ export function PetSprite(props: PetSpriteProps) {
 		case "pixel-mochi":
 			return <PixelMochi {...props} />;
 		case "cat":
-			return <Cat {...props} />;
+			return <Plush {...props} canine={false} />;
 		case "dog":
-			return <Dog {...props} />;
+			return <Plush {...props} canine />;
 		default:
 			return <Slime {...props} />;
 	}
@@ -69,7 +69,7 @@ const MOUTHS: Record<Mood, MouthKind> = {
 
 const MOTION: Record<Mood, { body: string; shadow: string }> = {
 	idle: { body: "pzFloat 3.4s ease-in-out infinite", shadow: "pzShadow 3.4s ease-in-out infinite" },
-	working: { body: "pzHum 0.9s ease-in-out infinite", shadow: "pzShadow 0.9s ease-in-out infinite" },
+	working: { body: "pzHum 2.2s ease-in-out infinite", shadow: "pzShadow 2.2s ease-in-out infinite" },
 	celebrating: { body: "pzHop 0.8s cubic-bezier(.3,.7,.4,1) infinite", shadow: "pzShadowHop 0.8s cubic-bezier(.3,.7,.4,1) infinite" },
 	happy: { body: "pzSway 2.2s ease-in-out infinite", shadow: "pzShadow 2.2s ease-in-out infinite" },
 	sad: { body: "pzDroop 3.8s ease-in-out infinite", shadow: "pzShadowLow 3.8s ease-in-out infinite" },
@@ -161,7 +161,7 @@ function Rig({
 					rx="27"
 					ry="3.6"
 					fill="#04070b"
-					opacity="0.5"
+					opacity="0.2"
 					filter={`url(#${id}-soft)`}
 				/>
 				<ellipse
@@ -171,7 +171,7 @@ function Rig({
 					rx="30"
 					ry="5.5"
 					fill={`url(#${id}-under)`}
-					style={{ opacity: dim ? 0.22 : 0.6 }}
+					style={{ opacity: dim ? 0.08 : 0.16 }}
 				/>
 
 				<g className="pz-float" style={{ animation: MOTION[mood].body }}>
@@ -297,36 +297,6 @@ function FaceFx({ id, mood, face, accent }: { id: string; mood: Mood; face: Face
 
 // --- face parts ------------------------------------------------------------
 
-function Visor({ id, x, y, w, h, accent, scanning }: { id: string; x: number; y: number; w: number; h: number; accent: string; scanning: boolean }) {
-	const r = h / 2;
-	return (
-		<g>
-			<defs>
-				<linearGradient id={`${id}-glass`} x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0" stopColor="#1b2532" />
-					<stop offset="0.55" stopColor="#0b1018" />
-					<stop offset="1" stopColor="#05080c" />
-				</linearGradient>
-				<clipPath id={`${id}-vclip`}>
-					<rect x={x} y={y} width={w} height={h} rx={r} />
-				</clipPath>
-			</defs>
-			<rect x={x - 1.6} y={y - 1.6} width={w + 3.2} height={h + 3.2} rx={r + 1.6} fill="#000" opacity="0.28" />
-			<rect x={x} y={y} width={w} height={h} rx={r} fill={`url(#${id}-glass)`} />
-			<g clipPath={`url(#${id}-vclip)`}>
-				<ellipse cx={x + w / 2} cy={y + 1} rx={w * 0.44} ry={h * 0.34} fill="#fff" opacity="0.06" />
-				<g className="pz-sheen" style={{ "--w": `${w}px` } as CSSProperties}>
-					<rect x={x} y={y - 10} width="9" height={h + 20} fill="#fff" opacity="0.1" transform="skewX(-22)" />
-					<rect x={x + 12} y={y - 10} width="3" height={h + 20} fill="#fff" opacity="0.07" transform="skewX(-22)" />
-				</g>
-				{scanning && (
-					<rect className="pz-scan" style={{ "--h": `${h}px` } as CSSProperties} x={x} y={y} width={w} height="1.4" fill={accent} opacity="0.85" />
-				)}
-			</g>
-			<rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={r - 0.5} fill="none" stroke="#fff" strokeOpacity="0.12" strokeWidth="0.8" />
-		</g>
-	);
-}
 
 function Eyes({
 	cx,
@@ -358,7 +328,14 @@ function Eyes({
 			case "closed":
 				return <path d={`M${x - 5} ${cy} Q${x} ${cy + 4} ${x + 5} ${cy}`} stroke={color} strokeWidth="2.6" strokeLinecap="round" fill="none" />;
 			case "focus":
-				return <rect x={x - w / 2 - 1} y={cy - 2} width={w + 2} height="4.4" rx="2.2" fill={color} />;
+				// Concentrating: narrowed eyes under a flat lid, still bright.
+				return (
+					<g>
+						<rect x={x - w / 2} y={cy - h * 0.2} width={w} height={h * 0.55} rx={w / 2.2} fill={color} />
+						<path d={`M${x - w / 2 - 1.2} ${cy - h * 0.2} H${x + w / 2 + 1.2}`} stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+						<rect x={x - w / 2 + 2} y={cy - h * 0.2 + 1.6} width={2.4} height={2.4} rx={1.2} fill="#fff" opacity="0.7" />
+					</g>
+				);
 			case "sad":
 				return (
 					<g>
@@ -370,7 +347,8 @@ function Eyes({
 				return (
 					<g className="pz-o pz-blink">
 						<rect x={x - w / 2} y={cy - h / 2} width={w} height={h} rx={w / 2} fill={color} />
-						<rect x={x - w / 2 + 2} y={cy - h / 2 + 2.2} width={2.6} height={3.6} rx={1.3} fill="#fff" opacity="0.75" />
+						<rect x={x - w / 2 + 2} y={cy - h / 2 + 2.2} width={2.6} height={3.6} rx={1.3} fill="#fff" opacity="0.8" />
+						<circle cx={x + w / 2 - 2.4} cy={cy + h / 2 - 3} r={1.1} fill="#fff" opacity="0.45" />
 					</g>
 				);
 		}
@@ -399,137 +377,51 @@ function Mouth({ cx, cy, kind, color, glowId }: { cx: number; cy: number; kind: 
 	return <g filter={glowId ? `url(#${glowId})` : undefined} opacity="0.9">{shape}</g>;
 }
 
-// --- cat: graphite shell, amber LEDs, swinging tail --------------------------
+// --- rounded plush characters: soft volume, glossy eyes, independent ears ---
 
-function Cat(props: PetSpriteProps) {
-	const { mood, look } = props;
-	const accent = SPECIES.cat.accent;
-	const face = { cx: 60, cy: 66, gap: 26, mouthY: 77 };
-	const tail = lively(mood) ? "0.55s" : mood === "sad" || mood === "sleepy" ? "4.8s" : "2.6s";
-	return (
-		<Rig {...props} face={face}>
-			{(id) => (
-				<>
-					<defs>
-						<linearGradient id={`${id}-shell`} x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stopColor="#525a66" />
-							<stop offset="0.45" stopColor="#2a2f37" />
-							<stop offset="1" stopColor="#15181d" />
-						</linearGradient>
-						<linearGradient id={`${id}-rim`} x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stopColor="#fff" stopOpacity="0.45" />
-							<stop offset="0.5" stopColor="#fff" stopOpacity="0.05" />
-							<stop offset="1" stopColor={accent} stopOpacity="0.35" />
-						</linearGradient>
-						<linearGradient id={`${id}-ear`} x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stopColor={accent} />
-							<stop offset="1" stopColor={accent} stopOpacity="0.15" />
-						</linearGradient>
-						<clipPath id={`${id}-head`}>
-							<rect x="16" y="32" width="88" height="70" rx="32" />
-						</clipPath>
-					</defs>
-
-					<g className="pz-tail" style={{ animationDuration: tail }}>
-						<path d="M86 94 C106 98 114 82 108 68 C105 61 109 54 114 55" stroke="#2b3038" strokeWidth="6.5" strokeLinecap="round" fill="none" />
-						<path d="M86 94 C106 98 114 82 108 68" stroke="#fff" strokeOpacity="0.12" strokeWidth="1.2" strokeLinecap="round" fill="none" transform="translate(-1 -2)" />
-						<circle className="pz-pulse" cx="114" cy="55" r="3" fill={accent} filter={`url(#${id}-glow)`} />
-					</g>
-
-					<g className="pz-ear-l">
-						<path d="M20 54 L25 17 Q26.5 11.5 31.5 14.5 L57 37 Z" fill="#30353d" stroke="#30353d" strokeWidth="4" strokeLinejoin="round" />
-						<path d="M28 40 L30.5 23 L46 36.5 Z" fill={`url(#${id}-ear)`} stroke={accent} strokeOpacity="0.5" strokeWidth="1" strokeLinejoin="round" filter={`url(#${id}-glow)`} />
-					</g>
-					<g className="pz-ear-r">
-						<path d="M100 54 L95 17 Q93.5 11.5 88.5 14.5 L63 37 Z" fill="#30353d" stroke="#30353d" strokeWidth="4" strokeLinejoin="round" />
-						<path d="M92 40 L89.5 23 L74 36.5 Z" fill={`url(#${id}-ear)`} stroke={accent} strokeOpacity="0.5" strokeWidth="1" strokeLinejoin="round" filter={`url(#${id}-glow)`} />
-					</g>
-
-					<rect x="16" y="32" width="88" height="70" rx="32" fill={`url(#${id}-shell)`} />
-					<g clipPath={`url(#${id}-head)`}>
-						<ellipse cx="60" cy="104" rx="34" ry="8" fill={accent} opacity="0.2" />
-						<ellipse cx="40" cy="42" rx="17" ry="5.5" transform="rotate(-16 40 42)" fill="#fff" opacity="0.13" />
-					</g>
-					<rect x="16.5" y="32.5" width="87" height="69" rx="31.5" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.2" />
-
-					<g className="pz-pulse" stroke={accent} strokeWidth="1" strokeLinecap="round" opacity="0.55">
-						<path d="M22 72 L7 68 M22 77 L6 78 M98 72 L113 68 M98 77 L114 78" />
-					</g>
-
-					<Visor id={id} x={26} y={50} w={68} h={33} accent={accent} scanning={mood === "working"} />
-					<Eyes cx={face.cx} cy={face.cy} gap={face.gap} kind={EYES[mood]} color={accent} look={look} glowId={`${id}-glow`} dim={mood === "sleepy"} />
-					<Mouth cx={face.cx} cy={face.mouthY} kind={MOUTHS[mood]} color={accent} glowId={`${id}-glow`} />
-
-					<rect className="pz-pulse" x="52" y="92" width="16" height="2.4" rx="1.2" fill={accent} opacity="0.7" style={{ animationDuration: mood === "working" ? "0.6s" : undefined }} />
-				</>
-			)}
-		</Rig>
-	);
-}
-
-// --- dog: ceramic shell, cyan LEDs, floppy ears + antenna ------------------
-
-function Dog(props: PetSpriteProps) {
-	const { mood, look } = props;
-	const accent = SPECIES.dog.accent;
-	const face = { cx: 60, cy: 62, gap: 28, mouthY: 72 };
-	const flop = lively(mood) ? "0.45s" : mood === "sad" || mood === "sleepy" ? "5s" : "3s";
-	return (
-		<Rig {...props} face={face}>
-			{(id) => (
-				<>
-					<defs>
-						<linearGradient id={`${id}-shell`} x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stopColor="#ffffff" />
-							<stop offset="0.5" stopColor="#e4e9ef" />
-							<stop offset="1" stopColor="#bcc5d0" />
-						</linearGradient>
-						<linearGradient id={`${id}-ear`} x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stopColor="#3a4552" />
-							<stop offset="1" stopColor="#1c232c" />
-						</linearGradient>
-						<clipPath id={`${id}-head`}>
-							<rect x="16" y="32" width="88" height="68" rx="30" />
-						</clipPath>
-					</defs>
-
-					<g className="pz-flop-l" style={{ animationDuration: flop }}>
-						<g transform="rotate(14 24 40)">
-							<rect x="6" y="38" width="19" height="46" rx="9.5" fill={`url(#${id}-ear)`} />
-							<rect x="11.5" y="50" width="3" height="24" rx="1.5" fill={accent} opacity="0.8" filter={`url(#${id}-glow)`} />
-						</g>
-					</g>
-					<g className="pz-flop-r" style={{ animationDuration: flop }}>
-						<g transform="rotate(-14 96 40)">
-							<rect x="95" y="38" width="19" height="46" rx="9.5" fill={`url(#${id}-ear)`} />
-							<rect x="105.5" y="50" width="3" height="24" rx="1.5" fill={accent} opacity="0.8" filter={`url(#${id}-glow)`} />
-						</g>
-					</g>
-
-					<path d="M60 33 V17" stroke="#a9b3be" strokeWidth="2" strokeLinecap="round" />
-					<circle className="pz-o pz-ping" cx="60" cy="15" r="3.4" fill="none" stroke={accent} strokeWidth="1" />
-					<circle className="pz-pulse" cx="60" cy="15" r="3.4" fill={accent} filter={`url(#${id}-glow)`} />
-
-					<rect x="16" y="32" width="88" height="68" rx="30" fill={`url(#${id}-shell)`} />
-					<g clipPath={`url(#${id}-head)`}>
-						<ellipse cx="60" cy="102" rx="36" ry="8" fill={accent} opacity="0.18" />
-						<ellipse cx="42" cy="40" rx="20" ry="5" transform="rotate(-12 42 40)" fill="#fff" opacity="0.9" />
-						<path d="M16 58 H22 M98 58 H104" stroke="#8d99a6" strokeOpacity="0.5" strokeWidth="0.8" />
-					</g>
-					<rect x="16.4" y="32.4" width="87.2" height="67.2" rx="29.6" fill="none" stroke="#9aa6b3" strokeOpacity="0.7" strokeWidth="0.8" />
-
-					<Visor id={id} x={25} y={45} w={70} h={33} accent={accent} scanning={mood === "working"} />
-					<Eyes cx={face.cx} cy={face.cy} gap={face.gap} kind={EYES[mood]} color={accent} look={look} glowId={`${id}-glow`} dim={mood === "sleepy"} />
-					<Mouth cx={face.cx} cy={face.mouthY} kind={MOUTHS[mood]} color={accent} glowId={`${id}-glow`} />
-
-					<rect x="25" y="85" width="9" height="4" rx="2" fill="#ff9aa8" opacity="0.5" />
-					<rect x="86" y="85" width="9" height="4" rx="2" fill="#ff9aa8" opacity="0.5" />
-					<ellipse cx="60" cy="88.5" rx="6.5" ry="4" fill="#26303b" />
-					<ellipse cx="58.2" cy="87.3" rx="2" ry="1" fill="#fff" opacity="0.55" />
-				</>
-			)}
-		</Rig>
-	);
+function Plush(props: PetSpriteProps & { canine: boolean }) {
+	const { canine, mood, look } = props;
+	const face = { cx: 60, cy: 57, gap: 27, mouthY: 76 };
+	const fur = canine ? ["#fff0d1", "#e1b980", "#b98958"] : ["#cbd2dd", "#8c99ae", "#59677e"];
+	const ear = canine ? "#a16d43" : "#707e94";
+	const tail = lively(mood) ? ".7s" : "3.2s";
+	return <Rig {...props} face={face}>{id => <>
+		<defs>
+			<radialGradient id={`${id}-fur`} cx="35%" cy="22%" r="85%"><stop stopColor={fur[0]}/><stop offset=".55" stopColor={fur[1]}/><stop offset="1" stopColor={fur[2]}/></radialGradient>
+			<radialGradient id={`${id}-cream`} cx="40%" cy="20%" r="90%"><stop stopColor="#fffdf1"/><stop offset="1" stopColor={canine ? "#edcf9e" : "#c9d0dc"}/></radialGradient>
+			<radialGradient id={`${id}-nose`} cx="30%" cy="20%"><stop stopColor={canine ? "#677079" : "#f8b6bb"}/><stop offset="1" stopColor={canine ? "#29313c" : "#bf7f8d"}/></radialGradient>
+			<filter id={`${id}-cheek`}><feGaussianBlur stdDeviation="1.2"/></filter>
+		</defs>
+		<g className="pz-tail" style={{animationDuration:tail}}>
+			<path d={canine ? "M78 94 C101 102 107 78 98 74" : "M80 95 C110 103 111 79 105 72"} fill="none" stroke={fur[2]} strokeWidth={canine ? 10 : 8} strokeLinecap="round"/>
+			<path d="M87 95 Q104 95 104 84" fill="none" stroke={fur[0]} strokeOpacity=".65" strokeWidth="3" strokeLinecap="round"/>
+		</g>
+		<g className="pz-breathe">
+			<ellipse cx="60" cy="89" rx="25" ry="23" fill={`url(#${id}-fur)`}/>
+			<ellipse cx="60" cy="92" rx="15" ry="17" fill={`url(#${id}-cream)`}/>
+			<ellipse cx="41" cy="105" rx="13" ry="7.5" fill={`url(#${id}-fur)`}/><ellipse cx="79" cy="105" rx="13" ry="7.5" fill={`url(#${id}-fur)`}/>
+			<path d="M37 106v3 M42 107v3 M77 107v3 M82 106v3" stroke={fur[2]} strokeOpacity=".45" strokeWidth="1.2" strokeLinecap="round"/>
+		</g>
+		{canine ? <>
+			<g className="pz-flop-l" style={{animationDuration:"3.8s"}}><path d="M35 30 C20 24 9 34 10 53 C10 72 21 78 29 65 L40 38Z" fill={ear}/><path d="M24 37 Q15 47 21 63" stroke="#e1b28a" strokeOpacity=".55" strokeWidth="4" fill="none" strokeLinecap="round"/></g>
+			<g className="pz-flop-r" style={{animationDuration:"4.1s"}}><path d="M85 30 C100 24 111 34 110 53 C110 72 99 78 91 65 L80 38Z" fill={ear}/><path d="M98 38 Q105 48 100 61" stroke="#e1b28a" strokeOpacity=".4" strokeWidth="3" fill="none" strokeLinecap="round"/></g>
+		</> : <>
+			<g className="pz-ear-l"><path d="M24 45 L25 17 Q27 9 34 16 L51 34Z" fill={`url(#${id}-fur)`}/><path d="M30 33 L31 21 L43 34Z" fill="#edb6c2"/></g>
+			<g className="pz-ear-r"><path d="M96 45 L95 17 Q93 9 86 16 L69 34Z" fill={`url(#${id}-fur)`}/><path d="M90 33 L89 21 L77 34Z" fill="#edb6c2"/></g>
+		</>}
+		<path d="M22 49 C20 29 37 24 60 24 C83 24 100 29 98 49 C108 63 98 84 81 88 C67 92 52 92 38 87 C21 83 13 64 22 49Z" fill={`url(#${id}-fur)`}/>
+		<path d="M31 35 Q45 26 60 28" stroke="#fff" strokeOpacity=".48" strokeWidth="2.6" strokeLinecap="round" fill="none"/>
+		{!canine && <path d="M48 29l5 9 M60 27v10 M72 29l-5 9" stroke={fur[2]} strokeOpacity=".45" strokeWidth="3" strokeLinecap="round"/>}
+		<ellipse cx="60" cy="75" rx={canine ? 23 : 20} ry="12" fill={`url(#${id}-cream)`}/>
+		<ellipse cx="32" cy="68" rx="7" ry="3.4" fill="#efa7b5" opacity=".6" filter={`url(#${id}-cheek)`}/><ellipse cx="88" cy="68" rx="7" ry="3.4" fill="#efa7b5" opacity=".6" filter={`url(#${id}-cheek)`}/>
+		<Eyes cx={face.cx} cy={face.cy} gap={face.gap} kind={EYES[mood]} color="#283343" look={look} w={11} h={15} dim={false}/>
+		<path d="M55 69 Q60 66 65 69 Q64 74 60 74 Q56 74 55 69Z" fill={`url(#${id}-nose)`}/>
+		<ellipse cx="58" cy="69.5" rx="1.5" ry=".8" fill="#fff" opacity=".7"/>
+		<Mouth cx={face.cx} cy={face.mouthY} kind={MOUTHS[mood]} color={canine ? "#795336" : "#56627a"}/>
+		{canine && (mood === "happy" || mood === "celebrating") && <path d="M57 78h6v4a3 3 0 0 1-6 0Z" fill="#ec98a6"/>}
+		{!canine && <path d="M29 71l-10-2 M29 76l-11 2 M91 71l10-2 M91 76l11 2" stroke="#626f86" strokeOpacity=".6" strokeWidth="1" strokeLinecap="round"/>}
+		{[35,42,78,85].map((x,i)=><path key={x} d={`M${x} ${81+i%2}l2 1.5`} stroke={fur[0]} strokeOpacity=".6" strokeWidth="1" strokeLinecap="round"/>)}
+	</>}</Rig>;
 }
 
 // --- slime: holographic gel with a glowing core ------------------------------
@@ -576,7 +468,7 @@ function Slime(props: PetSpriteProps) {
 							<stop offset="1" stopColor={accent} stopOpacity="0.6" />
 						</linearGradient>
 						<pattern id={`${id}-lines`} width="4" height="3" patternUnits="userSpaceOnUse">
-							<rect width="4" height="1" fill="#fff" opacity="0.09" />
+							<rect width="4" height="1" fill="#fff" opacity="0.05" />
 						</pattern>
 						<clipPath id={`${id}-body`}>
 							<path d={a} />
@@ -622,47 +514,45 @@ function Slime(props: PetSpriteProps) {
 
 // --- mochi: pixel art with pixel-native FX ---------------------------------
 
+/** A sakura mochi: squishy pink rice cake with a leaf sprout. */
 const MOCHI_ROWS_RAW = [
-	".........h.........",
-	"........dHHd.......",
-	".......dBTTBd......",
-	"......dBBBBBBd.....",
-	".....dBBTTTTBBd....",
-	"....dBBTTTTTTBBd...",
-	"...dBBTTSSSSSTTBBd..",
-	"..dBBTTSSSSSSSTTBBd..",
-	".dBBTTSESSSESSSTTBBd.",
-	".dBBTTSESSSESSSTTBBd.",
-	".dBBTTPSSSSSSSPTTBBd.",
-	"..dBBTTSSSSSSSTTBBd..",
-	"...dBBTTTTTTTTBBd...",
-	"....dBBBBBBBBBBd....",
-	"...dBBd......dBBd...",
-	"...dBBd......dBBd...",
-	"....dBBd....dBBd....",
-	".....dBBBBBBd.......",
+	"........lLL.......",
+	".......lLLLl......",
+	"........l.........",
+	".....oooooooo.....",
+	"...ooBBBBBBBBoo...",
+	"..oBHHBBBBBBBBBo..",
+	".oBHHBBBBBBBBBBBo.",
+	".oBHBBBBBBBBBBBBo.",
+	"oBBBBEBBBBBBEBBBBo",
+	"oBBBBEBBBBBBEBBBBo",
+	"oBBPPBBBBBBBBPPBBo",
+	"oBBBBBBBBBBBBBBBBo",
+	"obBBBBBBBBBBBBBBbo",
+	".obbBBBBBBBBBBbbo.",
+	"..oobbbbbbbbbboo..",
+	"....oooooooooo....",
 ];
 const MOCHI_PALETTE: Record<string, string> = {
-	d: "#352b21",
-	D: "#493927",
-	B: "#68523a",
-	b: "#806648",
-	T: "#a1845f",
-	H: "#c2a77e",
-	h: "#d1b88f",
-	S: "#ecd0a9",
-	E: "#211c18",
-	P: "#e27e87",
+	o: "#6b3f52",
+	B: "#ffd3de",
+	b: "#f4a9bd",
+	H: "#fff6f8",
+	P: "#ff8fab",
+	L: "#86cf8a",
+	l: "#4f9d5c",
+	E: "#3b2330",
+	M: "#8a3f5a",
 };
 const MOCHI_COLS = Math.max(...MOCHI_ROWS_RAW.map((r) => r.length));
 const MOCHI_ROWS = MOCHI_ROWS_RAW.map((row) => {
 	const pad = MOCHI_COLS - row.length;
 	return `${".".repeat(Math.floor(pad / 2))}${row}${".".repeat(Math.ceil(pad / 2))}`;
 });
-/** Horizontal runs of same-colored pixels (eyes painted as skin; drawn on top separately). */
+/** Horizontal runs of same-colored pixels (eyes painted as body; drawn on top separately). */
 const MOCHI_RUNS = MOCHI_ROWS.flatMap((row, y) => {
 	const runs: { x: number; y: number; w: number; c: string }[] = [];
-	const cells = [...row].map((p) => (p === "E" ? "S" : p));
+	const cells = [...row].map((p) => (p === "E" ? "B" : p));
 	for (let x = 0; x < cells.length; ) {
 		let end = x;
 		while (end < cells.length && cells[end] === cells[x]) end++;
@@ -673,7 +563,21 @@ const MOCHI_RUNS = MOCHI_ROWS.flatMap((row, y) => {
 });
 const MOCHI_EYE_ROW = MOCHI_ROWS.findIndex((r) => r.includes("E"));
 const MOCHI_EYE_COLS = [...MOCHI_ROWS[MOCHI_EYE_ROW]].flatMap((p, i) => (p === "E" ? [i] : []));
-const MOCHI_MOUTH_COL = Math.round((MOCHI_EYE_COLS[0] + MOCHI_EYE_COLS[1]) / 2);
+const MOCHI_MID = (MOCHI_EYE_COLS[0] + MOCHI_EYE_COLS[1]) / 2;
+const MOCHI_MOUTH: [number, number] = [Math.floor(MOCHI_MID), Math.ceil(MOCHI_MID)];
+
+/** A two-pixel mouth centred under the eyes; corners turn up or down with the mood. */
+function mochiMouthCells(mood: Mood): [number, number][] {
+	const [l, r] = MOCHI_MOUTH;
+	const y = MOCHI_EYE_ROW + 2;
+	switch (MOUTHS[mood]) {
+		case "smile": return [[l - 1, y], [r + 1, y], [l, y + 1], [r, y + 1]];
+		case "open": return [[l, y], [r, y], [l, y + 1], [r, y + 1]];
+		case "nom": return [[l, y + 1], [r, y + 1]];
+		case "frown": return [[l, y], [r, y], [l - 1, y + 1], [r + 1, y + 1]];
+		default: return [[l, y + 1], [r, y + 1]];
+	}
+}
 
 function mochiEyeCells(kind: EyeKind): [number, number, boolean][] {
 	const r = MOCHI_EYE_ROW;
@@ -719,20 +623,19 @@ function PixelMochi({ mood, busy, noPet, scale = 1 }: PetSpriteProps) {
 		>
 			<PetStyles />
 			<svg viewBox={`0 -${pad - 6} ${w} ${h + pad}`} width={w} height={h + pad} shapeRendering="crispEdges" style={{ display: "block", overflow: "visible" }}>
-				<rect x={w * 0.24} y={h + 1} width={w * 0.52} height={cell / 2} fill="#1e160f" opacity="0.28" />
-				<rect x={w * 0.32} y={h + 1 + cell / 2} width={w * 0.36} height={cell / 2} fill="#1e160f" opacity="0.18" />
+				<rect x={w * 0.24} y={h + 1} width={w * 0.52} height={cell / 2} fill="#6b3f52" opacity="0.2" />
+				<rect x={w * 0.32} y={h + 1 + cell / 2} width={w * 0.36} height={cell / 2} fill="#6b3f52" opacity="0.12" />
 
 				<g style={{ animation: bob }}>
 					<g
 						style={{
-							filter: "drop-shadow(0 5px 0 rgba(48, 37, 26, .38))",
+							filter: "drop-shadow(0 4px 0 rgba(107, 63, 82, .22))",
 							animation: working ? "pzPxGlitch 1.6s steps(1) infinite" : undefined,
 						}}
 					>
 						{MOCHI_RUNS.map((r) => (
 							<rect
 								key={`${r.x}-${r.y}`}
-								className={r.c === "h" ? "pz-pulse" : undefined}
 								x={r.x * cell}
 								y={r.y * cell}
 								width={r.w * cell}
@@ -743,8 +646,7 @@ function PixelMochi({ mood, busy, noPet, scale = 1 }: PetSpriteProps) {
 						{mochiEyeCells(EYES[mood]).map(([x, y, blink]) =>
 							px(x, y, MOCHI_PALETTE.E, `e${x}-${y}`, blink ? "pz-px-blink" : undefined),
 						)}
-						{mood === "eating" && px(MOCHI_MOUTH_COL, MOCHI_EYE_ROW + 3, "#5a2a2a", "mouth", "pz-px-nom")}
-						{mood === "celebrating" && px(MOCHI_MOUTH_COL, MOCHI_EYE_ROW + 3, "#5a2a2a", "mouth")}
+						{mochiMouthCells(mood).map(([x, y]) => px(x, y, MOCHI_PALETTE.M, `m${x}-${y}`, mood === "eating" ? "pz-px-nom" : undefined))}
 						{mood === "sad" && px(MOCHI_EYE_COLS[0], MOCHI_EYE_ROW + 2, "#8fd0ff", "tear", "pz-px-tear")}
 					</g>
 				</g>
@@ -836,6 +738,8 @@ const PET_CSS = `
 .pz-pet .pz-px-spark { animation: pzPxSpark 0.5s steps(1) infinite; }
 .pz-pet .pz-px-load { animation: pzPxLoad 0.9s steps(1) infinite; opacity: .2; }
 
+.pz-pet .pz-breathe { transform-origin: 60px 107px; animation: pzBreathe 3.8s ease-in-out infinite; }
+@keyframes pzBreathe { 0%,100% { transform: scale(1,1); } 50% { transform: scale(1.025,1.04); } }
 @keyframes pzFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes pzHum { 0%,100% { transform: translateY(-2px) rotate(-1.2deg); } 50% { transform: translateY(-3.5px) rotate(1.2deg); } }
 @keyframes pzHop { 0%,100% { transform: translateY(0) scale(1.07,.93); } 30% { transform: translateY(-13px) scale(.95,1.06); } 55% { transform: translateY(-15px) scale(1,1); } 85% { transform: translateY(0) scale(1.04,.96); } }
@@ -874,10 +778,10 @@ const PET_CSS = `
 @keyframes pzPxSpark { 0% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes pzPxLoad { 0% { opacity: 1; } 30% { opacity: .2; } }
 @keyframes pzPxGlitch {
-	0%,100% { filter: drop-shadow(0 5px 0 rgba(48,37,26,.38)); transform: translateX(0); }
+	0%,100% { filter: drop-shadow(0 4px 0 rgba(107,63,82,.22)); transform: translateX(0); }
 	82% { filter: drop-shadow(-2px 0 0 rgba(255,70,110,.7)) drop-shadow(2px 0 0 rgba(70,210,255,.7)); transform: translateX(1px); }
 	88% { filter: drop-shadow(2px 0 0 rgba(255,70,110,.7)) drop-shadow(-2px 0 0 rgba(70,210,255,.7)); transform: translateX(-1px); }
-	94% { filter: drop-shadow(0 5px 0 rgba(48,37,26,.38)); transform: translateX(0); }
+	94% { filter: drop-shadow(0 4px 0 rgba(107,63,82,.22)); transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
 	.pz-pet, .pz-pet * { animation: none !important; transition: none !important; }

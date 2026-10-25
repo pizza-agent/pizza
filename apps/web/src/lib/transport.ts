@@ -197,6 +197,30 @@ export async function subscribeExtensionUi(
 	});
 }
 
+/**
+ * Subscribe to the core `pet_state` frames. Workspace windows receive them as
+ * rpc_event; the floating pet window gets a dedicated `pet_state` event.
+ */
+export async function subscribePetState(
+	handler: (frame: Record<string, unknown> & { _cwd?: string }) => void,
+): Promise<() => void> {
+	if (isTauri()) {
+		const { listen } = await import("@tauri-apps/api/event");
+		const pick = (payload: unknown) => {
+			const frame = payload as Record<string, unknown> & { _cwd?: string };
+			if (frame?.type === "pet_state") handler(frame);
+		};
+		const unlisteners = await Promise.all([
+			listen("rpc_event", (event) => pick(event.payload)).catch(() => null),
+			listen("pet_state", (event) => pick(event.payload)).catch(() => null),
+		]);
+		return () => unlisteners.forEach((fn) => { try { fn?.(); } catch { /* registry gone (reload) */ } });
+	}
+	return subscribeSse((line) => {
+		if (line?.type === "pet_state") handler(line);
+	});
+}
+
 /** Respond to an extension_ui_request (answers pending ctx.ui.* calls). */
 export function respondExtensionUi(response: Record<string, unknown> & { id: string }): void {
 	void sendCommandRaw({ ...response, type: "extension_ui_response" }).catch(() => {});
