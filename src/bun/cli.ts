@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-process.title = "pizza";
-process.emitWarning = (() => {}) as typeof process.emitWarning;
+import "../prelude.js";
 
 await import("./register-bedrock.js");
 // Statically embed pi-ai OAuth flows into the compiled Bun binary
