@@ -21,7 +21,7 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
   Every message, model call, tool result, and file change is written to an immutable `EventStore` (SQLite). The UI, the LLM context, and the session tree are all live projections of that log. State is no longer hidden in mutable objects — it can be rebuilt, audited, and replayed, because the log is the single source of truth.
 
 - **Only one execution tool — the CLI**
-  JSON is program-friendly at the API level but not model-friendly. Pizza aggressively gives the model only one tool: the `CLI Tool`. The model uses it to call `_read`, `_write`, `_edit`, and other command-line commands. Surprisingly, it performs better and is more stable.
+  JSON is program-friendly at the API level but not model-friendly. Pizza aggressively gives the model only one tool: the `CLI Tool`. The model uses it to call `_read`, `_write`, `_edit`, and other command-line commands. Surprisingly, it performs better, is more stable, and burns fewer tokens.
 
 - **All interfaces share the same runtime**
   The desktop GUI, interactive TUI, JSON-RPC server, and one-shot print mode all consume the same `SessionFacade` event stream. Script it, embed it, or chat with it directly in the terminal — it is the same agent.
@@ -30,6 +30,9 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 - **Why New Session**
   In Pizza, you do not need to manually create a new session. Think of it as a long-term task for a friend you can chat with for ten years. A friend will manage their own context.
+
+- **Extreme token efficiency**
+  One tool means one small schema on every call — the model never carries a pile of tool definitions. And when context fills up it compacts automatically: old tool results masked for free, a summary only when needed.
 
 - **Git log-like branch tree memory**
   Sessions can fork from any earlier message. Rewind, branch, compare. Restart your life anytime, anywhere.
