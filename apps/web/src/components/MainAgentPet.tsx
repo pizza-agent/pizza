@@ -148,7 +148,7 @@ export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState,
 							openMenu(r.left + r.width / 2, r.bottom, window.screenX + r.left + r.width / 2, window.screenY + r.bottom);
 						}
 					}}
-					className="flex h-16 w-16 items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none">
+					className="-mt-2 flex items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none">
 					<span className="pointer-events-none"><PetFigure species={pet?.speciesId ?? (petState.loaded ? undefined : profile?.pet?.speciesId)} mood={running ? "working" : pet?.mood ?? "idle"} look={look} busy={running} scale={pet?.scale ?? 1} frames={species?.frames} /></span>
 				</div>
 				<div className="flex max-w-full items-center gap-0.5 rounded bg-bg/80 px-1 text-[10px] text-muted opacity-0 transition-opacity group-hover/pet:opacity-100 group-focus-within/pet:opacity-100">

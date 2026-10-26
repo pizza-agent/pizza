@@ -391,7 +391,8 @@ export function pizzaRpcBridge() {
 		const localCli = path.join(repoRoot, "dist", "src", "cli.js");
 		const useLocal = fs.existsSync(localCli);
 		const cmd = useLocal ? "node" : "pizza";
-		const args = useLocal ? [localCli, "--mode", "rpc"] : ["--mode", "rpc"];
+		const mainArgs = process.env.PIZZA_DEV_MAIN_DIR ? ["--main", "--main-dir", process.env.PIZZA_DEV_MAIN_DIR] : [];
+		const args = useLocal ? [localCli, "--mode", "rpc", ...mainArgs] : ["--mode", "rpc", ...mainArgs];
 		console.log(`[pizza-rpc-bridge] spawning ${cmd} ${args.join(" ")}...`);
 		child = spawn(cmd, args, {
 			stdio: ["pipe", "pipe", "pipe"],
