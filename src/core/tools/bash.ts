@@ -44,7 +44,7 @@ function getTempFilePath(): string {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in milliseconds (e.g. 1000 = 1 second; optional, no default timeout)" })),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -122,6 +122,7 @@ export interface BashOperations {
 		options: {
 			onData: (data: Buffer) => void;
 			signal?: AbortSignal;
+			/** Timeout in milliseconds; omitted or non-positive means no timeout. */
 			timeout?: number;
 			env?: NodeJS.ProcessEnv;
 		},
@@ -158,7 +159,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 					timeoutHandle = setTimeout(() => {
 						timedOut = true;
 						if (child.pid) killProcessTree(child.pid);
-					}, timeout * 1000);
+					}, timeout);
 				}
 				// Stream stdout and stderr.
 				child.stdout?.on("data", onData);
@@ -274,7 +275,7 @@ function formatDuration(ms: number): string {
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
-	const timeoutSuffix = timeout ? tui().theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+	const timeoutSuffix = timeout ? tui().theme.fg("muted", ` (timeout ${timeout}ms)`) : "";
 	const commandDisplay = command === null ? invalidArgText(tui().theme) : command ? command : tui().theme.fg("toolOutput", "...");
 	return tui().theme.fg("toolTitle", tui().theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
 }
@@ -764,9 +765,9 @@ export function createBashToolDefinition(
 							output += "Command aborted";
 							reject(new Error(output));
 						} else if (err.message.startsWith("timeout:")) {
-							const timeoutSecs = err.message.split(":")[1];
+							const timeoutMs = err.message.split(":")[1];
 							if (output) output += "\n\n";
-							output += `Command timed out after ${timeoutSecs} seconds`;
+							output += `Command timed out after ${timeoutMs}ms`;
 							reject(new Error(output));
 						} else {
 							reject(err);
