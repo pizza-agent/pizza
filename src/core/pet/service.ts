@@ -10,7 +10,7 @@
 
 import { applyEvent, applyReaction, effectiveMood, initialPetState, levelForXp, type PetEventKind, type PetState } from "./state.js";
 import { BUILTIN_SPECIES, DEFAULT_PET_SPECIES, LEGACY_PET_SPECIES, isValidSpecies, PET_MOODS, type PetMood, type PetSpeciesDef } from "./sprites.js";
-import { deletePetSave, listUserSpecies, loadPetRecord, migratePetSpecies, savePet, savePetProgress, type PetSave } from "./store.js";
+import { deletePetSave, listUserSpecies, loadPetRecord, migratePetSpecies, savePet, savePetProgress, savePetProgressAsync, type PetSave } from "./store.js";
 
 export type PetSpeciesSource = "builtin" | "plugin" | "user";
 
@@ -29,7 +29,6 @@ export interface PetActionDef {
 }
 
 export interface PetStatus {
-	name: string;
 	speciesId: string;
 	xp: number;
 	level: number;
@@ -55,7 +54,7 @@ export interface PetCatalog extends PetSnapshot {
 }
 
 export type PetOperation =
-	| { action: "adopt"; speciesId: string; name?: string }
+	| { action: "adopt"; speciesId: string }
 	| { action: "customize"; scale?: number }
 	| { action: "release" }
 	| { action: "feed" }
@@ -71,7 +70,6 @@ export type PetListener = (snapshot: PetSnapshot) => void;
 
 const TICK_MS = 2000;
 export const PET_SCALE_RANGE = [0.7, 1.5] as const;
-const MAX_NAME = 40;
 
 export class PetService {
 	private state: PetState = initialPetState();
@@ -82,6 +80,10 @@ export class PetService {
 	private readonly sources = new Set<PetContributionSource>();
 	private timer: ReturnType<typeof setInterval> | undefined;
 	private lastEmitted = "";
+	/** Queued background XP writes, in order; never block session events on the save lock. */
+	private progress: Promise<void> = Promise.resolve();
+	/** XP granted here that may not have reached the shared save yet. */
+	private pendingXp: number | undefined;
 
 	// ── contributions ────────────────────────────────────────────────────
 
@@ -129,7 +131,7 @@ export class PetService {
 			this.revision = migrated.revision;
 		}
 		if (this.save) {
-			this.state.xp = this.save.xp;
+			this.state.xp = Math.max(this.save.xp, this.pendingXp ?? 0);
 			this.state.level = levelForXp(this.save.xp);
 		}
 		return this.save;
@@ -139,7 +141,6 @@ export class PetService {
 		const save = this.sync();
 		if (!save) return null;
 		return {
-			name: save.name,
 			speciesId: save.speciesId,
 			xp: this.state.xp,
 			level: this.state.level,
@@ -212,8 +213,19 @@ export class PetService {
 	}
 
 	private persistProgress(): void {
-		savePetProgress(this.state.xp);
+		const xp = this.state.xp;
+		this.pendingXp = Math.max(this.pendingXp ?? 0, xp);
 		this.notify();
+		const write: Promise<void> = this.progress
+			.then(() => savePetProgressAsync(xp))
+			.then(() => {}, () => {})
+			.finally(() => { if (this.progress === write) this.pendingXp = undefined; });
+		this.progress = write;
+	}
+
+	/** Resolves once queued background XP writes have reached the save. */
+	flush(): Promise<void> {
+		return this.progress;
 	}
 
 	// ── user operations ──────────────────────────────────────────────────
@@ -225,8 +237,9 @@ export class PetService {
 			case "adopt": {
 				const species = this.findSpecies(op.speciesId);
 				if (!species) throw new Error(`Unknown pet species "${op.speciesId}".`);
-				const name = clean(op.name, MAX_NAME) || current?.name || species.name;
-				savePet({ ...current, name, speciesId: species.id, xp: current?.xp ?? 0, adoptedAt: current?.adoptedAt ?? Date.now() });
+				// The pet shows the main agent's name; `name` stays in the save only
+				// for older app versions that require it.
+				savePet({ ...current, name: current?.name ?? species.name, speciesId: species.id, xp: current?.xp ?? 0, adoptedAt: current?.adoptedAt ?? Date.now() });
 				this.state = applyEvent(this.state, "adopt");
 				break;
 			}
@@ -238,6 +251,7 @@ export class PetService {
 			}
 			case "release":
 				deletePetSave();
+				this.pendingXp = undefined;
 				this.state = initialPetState();
 				break;
 			case "feed":
@@ -255,10 +269,6 @@ export class PetService {
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
-}
-
-function clean(value: string | undefined, max: number): string {
-	return (value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 function safe<T>(fn: () => T, fallback: T): T {

@@ -7,15 +7,17 @@
  * agentDir is normally ~/.pizza/agent (PIZZA_CODING_AGENT_DIR overridable).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync, fstatSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync, fstatSync, statSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import lockfile from "proper-lockfile";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "../../config.js";
-import { BUILTIN_SPECIES, isValidSpecies, type PetSpeciesDef } from "./sprites.js";
+import { isValidSpecies, type PetSpeciesDef } from "./sprites.js";
 
 export interface PetSave {
-	name: string;
+	/** Legacy display name, kept for older app versions; the UI uses the agent name. */
+	name?: string;
 	speciesId: string;
 	xp: number;
 	adoptedAt: number;
@@ -39,22 +41,47 @@ function userPacksDir(): string {
 // Save file
 // ---------------------------------------------------------------------------
 
-/** Read data and revision from the same inode, even if another process replaces it. */
-export function loadPetRecord(): { save?: PetSave; revision: number } {
+type PetRecord = { save?: PetSave; revision: number };
+let cachedRecord: { key: string; record: PetRecord } | undefined;
+
+/**
+ * Read data and revision from the same inode, even if another process
+ * replaces it. Every process polls this, so an unchanged file (same inode,
+ * size and mtime — atomic writes always swap the inode) is not re-parsed.
+ */
+export function loadPetRecord(): PetRecord {
 	let fd: number | undefined;
 	try {
 		fd = openSync(petSavePath(), "r");
+		const stat = fstatSync(fd);
+		const key = `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+		if (cachedRecord?.key === key) return cloneRecord(cachedRecord.record);
 		const data = JSON.parse(readFileSync(fd, "utf-8")) as Partial<PetSave> | null;
-		const revision = fstatSync(fd).mtimeMs;
-		if (!data || typeof data.name !== "string" || typeof data.speciesId !== "string") return { revision };
-		return { revision, save: { ...data, name: data.name, speciesId: data.speciesId,
+		const revision = stat.mtimeMs;
+		const record: PetRecord = !data || typeof data.speciesId !== "string" ? { revision } : { revision, save: { ...data, speciesId: data.speciesId,
 			xp: typeof data.xp === "number" ? data.xp : 0,
 			adoptedAt: typeof data.adoptedAt === "number" ? data.adoptedAt : Date.now() } };
+		cachedRecord = { key, record };
+		return cloneRecord(record);
 	} catch { return { revision: 0 }; }
 	finally { if (fd !== undefined) closeSync(fd); }
 }
 
+function cloneRecord(record: PetRecord): PetRecord {
+	return record.save ? { revision: record.revision, save: { ...record.save } } : { revision: record.revision };
+}
+
 export function loadPetSave(): PetSave | undefined { return loadPetRecord().save; }
+
+function writePetSave(path: string, update: (current: PetSave | undefined) => PetSave | undefined): PetSave | undefined {
+	const temp = `${path}.${randomUUID()}.tmp`;
+	try {
+		const next = update(loadPetSave());
+		writeFileSync(temp, JSON.stringify(next ?? null, null, 2), { encoding: "utf-8", mode: 0o600 });
+		renameSync(temp, path);
+		return next;
+	} finally { rmSync(temp, { force: true }); }
+}
 
 /** Serialize read/modify/write across workspace processes; readers see whole saves. */
 function updatePetSave(update: (current: PetSave | undefined) => PetSave | undefined): PetSave | undefined {
@@ -68,13 +95,17 @@ function updatePetSave(update: (current: PetSave | undefined) => PetSave | undef
 			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
 		}
 	}
-	const temp = `${path}.${randomUUID()}.tmp`;
-	try {
-		const next = update(loadPetSave());
-		writeFileSync(temp, JSON.stringify(next ?? null, null, 2), { encoding: "utf-8", mode: 0o600 });
-		renameSync(temp, path);
-		return next;
-	} finally { rmSync(temp, { force: true }); release(); }
+	try { return writePetSave(path, update); }
+	finally { release(); }
+}
+
+/** Same as updatePetSave, but waits for the lock without blocking the event loop. */
+async function updatePetSaveAsync(update: (current: PetSave | undefined) => PetSave | undefined): Promise<PetSave | undefined> {
+	await mkdir(getAgentDir(), { recursive: true });
+	const path = petSavePath();
+	const release = await lockfile.lock(path, { realpath: false, retries: { retries: 20, minTimeout: 10, maxTimeout: 100 } });
+	try { return writePetSave(path, update); }
+	finally { await release(); }
 }
 
 /** Explicit user changes may update appearance. The desktop owns floating. */
@@ -86,8 +117,13 @@ export function savePet(save: PetSave): void {
 }
 
 /** Background XP updates must never restore an old appearance or released pet. */
+const progress = (xp: number) => (current: PetSave | undefined) => current ? { ...current, xp: Math.max(current.xp, xp) } : undefined;
 export function savePetProgress(xp: number): PetSave | undefined {
-	return updatePetSave((current) => current ? { ...current, xp: Math.max(current.xp, xp) } : undefined);
+	return updatePetSave(progress(xp));
+}
+/** Agent-activity XP: written off the event loop's critical path. */
+export function savePetProgressAsync(xp: number): Promise<PetSave | undefined> {
+	return updatePetSaveAsync(progress(xp));
 }
 
 /** Change only a still-selected legacy builtin, preserving all user progress. */
@@ -103,13 +139,24 @@ export function deletePetSave(): void {
 // Species lookup (built-ins + user packs)
 // ---------------------------------------------------------------------------
 
-/** Load user-defined species from <agentDir>/pets/*.json. Invalid files are skipped. */
+let cachedPacks: { key: string; species: PetSpeciesDef[] } | undefined;
+
+/**
+ * Load user-defined species from <agentDir>/pets/*.json. Invalid files are
+ * skipped. Polled by every process, so files are only re-read when the
+ * directory listing or a file's size/mtime changes.
+ */
 export function listUserSpecies(): PetSpeciesDef[] {
 	const dir = userPacksDir();
 	if (!existsSync(dir)) return [];
+	const files = readdirSync(dir).filter((file) => file.endsWith(".json")).sort();
+	const key = files.map((file) => {
+		try { const stat = statSync(join(dir, file)); return `${file}:${stat.size}:${stat.mtimeMs}`; }
+		catch { return `${file}:missing`; }
+	}).join("|");
+	if (cachedPacks?.key === key) return [...cachedPacks.species];
 	const species: PetSpeciesDef[] = [];
-	for (const file of readdirSync(dir)) {
-		if (!file.endsWith(".json")) continue;
+	for (const file of files) {
 		try {
 			const data = JSON.parse(readFileSync(join(dir, file), "utf-8"));
 			if (isValidSpecies(data)) species.push({ ...data, id: data.id || file.replace(/\.json$/, "") });
@@ -117,17 +164,6 @@ export function listUserSpecies(): PetSpeciesDef[] {
 			/* skip broken packs */
 		}
 	}
-	return species;
-}
-
-/** All species: user packs override built-ins with the same id. */
-export function listAllSpecies(): PetSpeciesDef[] {
-	const byId = new Map<string, PetSpeciesDef>();
-	for (const s of BUILTIN_SPECIES) byId.set(s.id, s);
-	for (const s of listUserSpecies()) byId.set(s.id, s);
-	return [...byId.values()];
-}
-
-export function findSpecies(id: string): PetSpeciesDef | undefined {
-	return listAllSpecies().find((s) => s.id === id);
+	cachedPacks = { key, species };
+	return [...species];
 }

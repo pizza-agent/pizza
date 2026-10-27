@@ -27,7 +27,7 @@ export function useMainAgentProfile(enabled: boolean, workspace: string | null |
 	const [profile, setProfile] = useState<MainAgentProfile | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
-	const pet = usePet();
+	const pet = usePet(enabled);
 	const generation = useRef(0);
 	const scope = useRef({ enabled, workspace });
 	scope.current = { enabled, workspace };

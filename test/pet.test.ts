@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAgentDir } from "../src/config.js";
@@ -12,8 +12,7 @@ import {
 } from "../src/core/pet/state.js";
 import {
 	deletePetSave,
-	findSpecies,
-	listAllSpecies,
+	listUserSpecies,
 	loadPetSave,
 	savePet,
 	savePetProgress,
@@ -83,11 +82,12 @@ describe("pet store", () => {
 	});
 
 	it("lists builtin species and merges user packs", () => {
-		const all = listAllSpecies();
+		const service = new PetService();
+		const all = service.listSpecies();
 		expect(all.map((s) => s.id)).toContain("pip");
 		expect(all.map((s) => s.id)).toContain("mozz");
 		expect(all.map((s) => s.id)).toContain("basi");
-		expect(findSpecies("basi")?.frames.idle?.length).toBeGreaterThan(0);
+		expect(service.findSpecies("basi")?.frames.idle?.length).toBeGreaterThan(0);
 
 		const dir = join(getAgentDir(), "pets");
 		mkdirSync(dir, { recursive: true });
@@ -97,11 +97,24 @@ describe("pet store", () => {
 		);
 		writeFileSync(join(dir, "broken.json"), "{not json");
 
-		const merged = listAllSpecies();
-		const dragon = findSpecies("dragon");
+		const merged = service.listSpecies();
+		const dragon = service.findSpecies("dragon");
 		expect(dragon?.name).toBe("Dragon");
+		expect(dragon?.source).toBe("user");
 		expect(framesForMood(dragon!, "happy")).toEqual(["(dragon)"]); // falls back to idle
 		expect(merged.filter((s) => s.id === "broken")).toHaveLength(0);
+	});
+
+	it("re-reads user packs only when one changes", () => {
+		const dir = join(getAgentDir(), "pets");
+		mkdirSync(dir, { recursive: true });
+		const file = join(dir, "owl.json");
+		writeFileSync(file, JSON.stringify({ id: "owl", name: "Owl", frames: { idle: ["(o)"] } }));
+		expect(listUserSpecies().find((s) => s.id === "owl")?.name).toBe("Owl");
+		writeFileSync(file, JSON.stringify({ id: "owl", name: "Snowy owl", frames: { idle: ["(O)"] } }));
+		expect(listUserSpecies().find((s) => s.id === "owl")?.name).toBe("Snowy owl");
+		rmSync(file);
+		expect(listUserSpecies().find((s) => s.id === "owl")).toBeUndefined();
 	});
 
 	it("framesForMood falls back to idle frames", () => {
@@ -121,11 +134,14 @@ describe("pet is a core feature", () => {
 		const service = new PetService();
 		expect(() => service.perform({ action: "feed" })).toThrow(/No pet/);
 		expect(() => service.perform({ action: "adopt", speciesId: "nope" })).toThrow(/Unknown/);
-		let catalog = service.perform({ action: "adopt", speciesId: "pip", name: "  Momo  " });
-		expect(catalog.pet).toMatchObject({ name: "Momo", speciesId: "pip", mood: "happy" });
+		let catalog = service.perform({ action: "adopt", speciesId: "pip" });
+		expect(catalog.pet).toMatchObject({ speciesId: "pip", mood: "happy" });
+		expect(catalog.pet).not.toHaveProperty("name");
 		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["pip", "mozz", "pomo", "basi"]));
 		catalog = service.perform({ action: "adopt", speciesId: "pomo" });
-		expect(catalog.pet?.name).toBe("Momo");
+		expect(catalog.pet?.speciesId).toBe("pomo");
+		// Older app versions require a name in the save; it is kept, never shown.
+		expect(loadPetSave()?.name).toBe("PIP");
 		catalog = service.perform({ action: "customize", scale: 9 });
 		expect(catalog.pet).toMatchObject({ scale: 1.5 });
 		service.perform({ action: "feed" });
@@ -134,9 +150,9 @@ describe("pet is a core feature", () => {
 		expect(loadPetSave()).toBeUndefined();
 	});
 
-	it("follows session activity and notifies only on change", () => {
+	it("follows session activity and notifies only on change", async () => {
 		const service = petService;
-		service.perform({ action: "adopt", speciesId: "mozz", name: "Goo" });
+		service.perform({ action: "adopt", speciesId: "mozz" });
 		const seen: PetSnapshot[] = [];
 		const stop = service.subscribe((snapshot) => seen.push(snapshot));
 		const handlers = new Set<(event: EventBase) => void>();
@@ -150,7 +166,8 @@ describe("pet is a core feature", () => {
 			expect(seen).toHaveLength(count);
 			emit("AGENT_TURN_END");
 			emit("AGENT_TURN_COMPLETED", { reason: "stop" });
-			expect(seen.at(-1)?.pet).toMatchObject({ busy: false, mood: "celebrating" });
+			expect(seen.at(-1)?.pet).toMatchObject({ busy: false, mood: "celebrating", xp: 4 });
+			await service.flush();
 			expect(loadPetSave()?.xp).toBe(4);
 			emit("TOOL_EXECUTION_END", { is_error: true });
 			expect(seen.at(-1)?.pet?.mood).toBe("sad");
@@ -190,7 +207,8 @@ describe("shared pet appearance", () => {
   expect(loadPetSave()).toBeUndefined();
  });
  it("another process's changes reach listeners and a released pet is never resurrected", async () => {
-  vi.useFakeTimers();
+  // Only the 2s poll is faked; the async save lock keeps real timers.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const service = new PetService();
   const seen: PetSnapshot[] = [];
   const stop = service.subscribe((snapshot) => seen.push(snapshot));
@@ -200,13 +218,15 @@ describe("shared pet appearance", () => {
    expect(seen.at(-1)?.pet?.speciesId).toBe("pip");
    savePet({name:"Dog",speciesId:"pomo",xp:15,adoptedAt:1});
    await vi.advanceTimersByTimeAsync(2100);
-   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"pomo",name:"Dog",xp:15});
+   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"pomo",xp:15});
    service.dispatch("turn_end");
+   await service.flush();
    expect(loadPetSave()).toMatchObject({speciesId:"pomo",xp:19});
    deletePetSave();
    await vi.advanceTimersByTimeAsync(2100);
    expect(seen.at(-1)?.pet).toBeNull();
    service.dispatch("turn_end");
+   await service.flush();
    expect(loadPetSave()).toBeUndefined();
   } finally { stop(); vi.useRealTimers(); }
  });
@@ -221,7 +241,7 @@ describe("Pizza family migration", () => {
  it("moves a retired builtin to PIP and preserves user data", () => {
   savePet({name:"Wang",speciesId:"dog",xp:180,adoptedAt:123,scale:1.25,subtitle:"hello"});
   const pet = new PetService().status();
-  expect(pet).toMatchObject({name:"Wang",speciesId:"pip",xp:180,adoptedAt:123,scale:1.25});
+  expect(pet).toMatchObject({speciesId:"pip",xp:180,adoptedAt:123,scale:1.25});
   expect(pet).not.toHaveProperty("subtitle");
   expect(loadPetSave()?.speciesId).toBe("pip");
  });

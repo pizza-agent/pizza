@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mergePetFrames, type PetSnapshot, type PetStatus } from "../apps/web/src/lib/pet";
+import { mergePetFrames, type PetSnapshot, type PetStatus } from "../apps/web/src/lib/pet-frames";
 
 const status = (over: Partial<PetStatus> = {}): PetStatus => ({
-	name: "Mochi", speciesId: "dog", xp: 40, level: 3, mood: "idle", busy: false,
+	speciesId: "dog", xp: 40, level: 3, mood: "idle", busy: false,
 	scale: 1, adoptedAt: 1, floating: null, ...over,
 });
 const frame = (pet: PetStatus | null, at: number) => ({ snapshot: { pet, species: null } as PetSnapshot, at });
@@ -10,10 +10,10 @@ const frame = (pet: PetStatus | null, at: number) => ({ snapshot: { pet, species
 describe("pet frames from several workspace sidecars", () => {
 	it("takes identity from the newest frame", () => {
 		const merged = mergePetFrames(new Map([
-			["/a", frame(status({ speciesId: "cat", name: "Old" }), 1)],
-			["/b", frame(status({ speciesId: "dog", name: "New", mood: "happy" }), 2)],
+			["/a", frame(status({ speciesId: "cat" }), 1)],
+			["/b", frame(status({ speciesId: "dog", mood: "happy" }), 2)],
 		]), 3);
-		expect(merged?.pet).toMatchObject({ speciesId: "dog", name: "New", mood: "happy", busy: false });
+		expect(merged?.pet).toMatchObject({ speciesId: "dog", mood: "happy", busy: false });
 	});
 
 	it("works while any workspace is busy, until that flag goes stale", () => {

@@ -15,6 +15,7 @@ import type {
 	RpcPetStatus,
 } from "@tomsun28/pizza-protocol";
 import { isTauri } from "./platform";
+import { levelForXp, mergePetFrames, type Frame } from "./pet-frames";
 import { sendCommandAwait, subscribePetState } from "./transport";
 
 export type PetMood = RpcPetMood;
@@ -24,15 +25,13 @@ export type PetAction = RpcPetAction;
 export type PetCatalog = RpcPetCatalog;
 export type PetOperation = RpcPetOperation;
 export type PetSnapshot = RpcPetSnapshot;
+export { levelForXp, mergePetFrames } from "./pet-frames";
 
 /** The pet's first-class settings page. */
 export const PET_SETTINGS_PATH = "/settings?page=pet";
 
 export const PET_SCALE_MIN = 0.7;
 export const PET_SCALE_MAX = 1.5;
-
-/** Mirrors core/pet/state.ts levelForXp. */
-export const levelForXp = (xp: number) => Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 10)) + 1);
 
 /** The pet lives with the local main agent, whatever workspace is open. */
 const targetMain = () => isTauri();
@@ -59,10 +58,9 @@ async function readSave(): Promise<PetStatus | null | undefined> {
 	if (!isTauri()) return undefined;
 	const { invoke } = await import("@tauri-apps/api/core");
 	const save = await invoke<Record<string, unknown> | null>("get_pet_state");
-	if (!save || typeof save.speciesId !== "string" || typeof save.name !== "string") return null;
+	if (!save || typeof save.speciesId !== "string") return null;
 	const xp = typeof save.xp === "number" ? save.xp : 0;
 	return {
-		name: save.name,
 		speciesId: save.speciesId,
 		xp,
 		level: levelForXp(xp),
@@ -74,30 +72,8 @@ async function readSave(): Promise<PetStatus | null | undefined> {
 	};
 }
 
-interface Frame { snapshot: PetSnapshot; at: number }
-
-/** A busy flag nobody refreshed for this long is treated as stale (sidecar gone). */
-const BUSY_STALE_MS = 5 * 60_000;
-
-/**
- * Several local sidecars (one per workspace) report the same pet. Identity
- * comes from the newest frame; the pet works while any of them is busy.
- */
-export function mergePetFrames(frames: ReadonlyMap<string, Frame>, now = Date.now()): PetSnapshot | undefined {
-	let newest: Frame | undefined;
-	for (const frame of frames.values()) {
-		const revision = frame.snapshot.revision ?? 0;
-		const previous = newest?.snapshot.revision ?? 0;
-		if (!newest || revision > previous || (revision === previous && frame.at >= newest.at)) newest = frame;
-	}
-	const pet = newest?.snapshot.pet;
-	if (!newest || !pet) return newest?.snapshot;
-	const busy = [...frames.values()].some((f) => f.snapshot.pet?.busy && now - f.at < BUSY_STALE_MS);
-	const mood: PetMood = busy ? "working" : pet.mood === "working" ? "idle" : pet.mood;
-	return { ...newest.snapshot, pet: { ...pet, busy, mood } };
-}
-
-export function usePet() {
+/** `enabled: false` skips the subscription and RPCs (non-main workspaces). */
+export function usePet(enabled = true) {
 	const [snapshot, setSnapshot] = useState<PetSnapshot | undefined>();
 	const [catalog, setCatalog] = useState<PetSpecies[]>([]);
 	const [actions, setActions] = useState<PetAction[]>([]);
@@ -132,6 +108,7 @@ export function usePet() {
 	}, [applyCatalog]);
 
 	useEffect(() => {
+		if (!enabled) return;
 		let disposed = false;
 		const cleanups: Array<() => void> = [];
 		const add = (fn: () => void) => { if (disposed) fn(); else cleanups.push(fn); };
@@ -156,7 +133,7 @@ export function usePet() {
 				.then((open) => { if (!disposed) setFloating(open); }).catch(() => {});
 		}
 		return () => { disposed = true; cleanups.forEach((fn) => fn()); };
-	}, [apply, refresh]);
+	}, [apply, refresh, enabled]);
 
 	return {
 		pet: snapshot?.pet ?? null,

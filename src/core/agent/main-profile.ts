@@ -146,7 +146,7 @@ export async function loadMainProfile(input?: MainAgentRoots): Promise<MainAgent
 	return {
 		soul: { initialized, name, summary: initialized ? preview(soul!.content.replace(/^(?:[-*]\s*)?(?:\*\*)?(?:Name|名字|姓名|名称)(?:\*\*)?\s*[:：].+$/gim, ""), 220, true) : "", sourceId: "SOUL.md" },
 		userProfile: user ? { sourceId: user.sourceId, summary: preview(user.content, 220, true) } : null,
-		pet: pet ? { name: pet.name, speciesId: pet.speciesId } : null,
+		pet: pet ? { speciesId: pet.speciesId } : null,
 		memories, memoriesTruncated: all.length > MAX_MEMORIES, journal,
 	};
 }

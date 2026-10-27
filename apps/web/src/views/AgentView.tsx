@@ -6,7 +6,7 @@ import type { RpcSessionState, TypedEvent } from "@/lib/types";
 import { Conversation, type TimelineItem } from "@/components/Conversation";
 import { Tooltip } from "@/components/Tooltip";
 import { ChatSearch } from "@/components/ChatSearch";
-import { ArrowUp, X } from "lucide-react";
+import { ArrowUp, Search, X } from "lucide-react";
 import { textMatches } from "@/lib/highlight";
 import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/components/Composer";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
@@ -1272,7 +1272,7 @@ export default function AgentView({
 	const [searchQuery, setSearchQuery] = useState("");
 	const [matchIndex, setMatchIndex] = useState(0);
 	// Incremented to imperatively (re)focus the search input — bumped on every
-	// ⌘/Ctrl+F so the bar re-selects its text
+	// ⌘/Ctrl+F and on open via the header button so the bar re-selects its text
 	// even when it was already open.
 	const [focusSignal, setFocusSignal] = useState(0);
 	const trimmedQuery = searchQuery.trim();
@@ -1303,7 +1303,7 @@ export default function AgentView({
 	// Global shortcut: ⌘/Ctrl+F opens (or re-focuses) the search bar and
 	// prevents the browser/webview native find bar. The bar is never toggled
 	// closed by the shortcut (matches editors/browsers); use Escape or the
-	// popup close control to dismiss. Escape is only handled here while open so we
+	// header button to dismiss. Escape is only handled here while open so we
 	// never swallow it from other controls.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -1390,8 +1390,8 @@ export default function AgentView({
 			<div
 				data-tauri-drag-region="deep"
 				className={cn(
-					"relative flex shrink-0 items-center pr-20 transition-[padding] duration-150",
-					isMainAgent ? "pointer-events-none absolute inset-x-0 top-0 z-40 h-0" : "h-11 bg-surface/80 backdrop-blur after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border/50",
+					"relative flex shrink-0 items-center transition-[padding] duration-150",
+					isMainAgent ? "pr-20 pointer-events-none absolute inset-x-0 top-0 z-40 h-0" : "h-11 pr-[120px] bg-surface/80 backdrop-blur after:pointer-events-none after:absolute after:inset-x-4 after:bottom-0 after:h-px after:bg-border/50",
 					sidebarCollapsed ? "pl-[120px]" : "pl-6",
 				)}
 			>
@@ -1411,6 +1411,21 @@ export default function AgentView({
 					</Tooltip>
 				) : (
 					<span className="min-w-0 flex-1" />
+				)}
+				{!isMainAgent && (
+					<button
+						type="button"
+						onClick={() => setSearchOpen((o) => { if (!o) setFocusSignal((s) => s + 1); return !o; })}
+						title={t("search.toggleHint")}
+						aria-label={t("search.toggleHint")}
+						aria-pressed={searchOpen}
+						className={cn(
+							"absolute right-[84px] top-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-surface-2",
+							searchOpen ? "text-accent" : "text-muted/60 hover:text-muted",
+						)}
+					>
+						{searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+					</button>
 				)}
 				{searchOpen && (
 					<div className="pointer-events-auto"><ChatSearch

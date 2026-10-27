@@ -35,7 +35,6 @@ export default function WorkspacePane({
 	isMain?: boolean;
 	running?: boolean;
 	connected?: boolean;
-	sidebarCollapsed?: boolean;
 }) {
 	const { t } = useTranslation();
 	const [workspaceRightOpen, setWorkspaceRightOpen] = usePersistedState<boolean>("right-dock-open", true);

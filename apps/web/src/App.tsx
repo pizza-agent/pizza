@@ -14,7 +14,7 @@ import { ConfirmHost } from "@/components/ui";
 import { alertDialog } from "@/lib/confirm";
 import { PET_SETTINGS_PATH } from "@/lib/pet";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
-import { isTauri, isMainChatCwd, isRemoteWorkspaceKey, samePath } from "@/lib/utils";
+import { isTauri, isMainChatCwd, isRemoteWorkspaceKey, MAIN_CHAT_CWD, samePath } from "@/lib/utils";
 import { setWorkspacePaths } from "@/lib/workspace-paths";
 
 function isMainAgentConflictError(message: string): boolean {
@@ -314,7 +314,7 @@ function AppInner() {
 			localStorage.setItem("pizza:main-right-dock-open", "true");
 			localStorage.setItem("pizza:main-right-dock-tab", JSON.stringify("agent"));
 			window.dispatchEvent(new Event("pizza:open-agent-profile"));
-			handleSelectWorkspace("~/.pizza/main");
+			handleSelectWorkspace(MAIN_CHAT_CWD);
 			navigate("/");
 		})).then(fn => { if (disposed) fn(); else unlisten = fn; }).catch(() => {});
 		return () => { disposed = true; unlisten?.(); };

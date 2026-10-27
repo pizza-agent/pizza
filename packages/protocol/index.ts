@@ -632,7 +632,7 @@ export interface MainJournalPage {
 export interface MainAgentProfile {
 	soul: { initialized: boolean; name?: string; summary: string; sourceId: string };
 	userProfile: { summary: string; sourceId: string } | null;
-	pet: { name: string; speciesId: string } | null;
+	pet: { speciesId: string } | null;
 	memories: MainMemorySummary[];
 	memoriesTruncated: boolean;
 	journal: MainJournalPage;
@@ -645,7 +645,6 @@ export interface MainAgentProfile {
 export type RpcPetMood = "idle" | "working" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
 
 export interface RpcPetStatus {
-	name: string;
 	speciesId: string;
 	xp: number;
 	level: number;
@@ -687,7 +686,7 @@ export interface RpcPetCatalog extends RpcPetSnapshot {
 }
 
 export type RpcPetOperation =
-	| { action: "adopt"; speciesId: string; name?: string }
+	| { action: "adopt"; speciesId: string }
 	| { action: "customize"; scale?: number }
 	| { action: "release" }
 	| { action: "feed" }

@@ -107,6 +107,8 @@ export type BashBuiltinDetails =
 /**
  * Pluggable operations for the cli tool's shell execution path.
  * Override these to delegate command execution to remote systems (for example SSH).
+ * `options.timeout` is in milliseconds (earlier releases used seconds), passed through
+ * unchanged from the tool call.
  */
 export interface BashOperations {
 	/**

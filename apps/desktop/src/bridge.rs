@@ -3112,13 +3112,20 @@ fn emit_to_pet_window(app: &AppHandle, frame: &Value, cwd: &str) {
 			// Identity belongs to the shared save, never to a stale sidecar.
 			let save = get_pet_state().unwrap_or(Value::Null);
 			if frame.get("pet").map(Value::is_null).unwrap_or(true) {
-				if save.is_null() { close_pet_window_keep_flag(app); }
+				if save.is_null() {
+					close_pet_window_keep_flag(app);
+				}
 				return;
 			}
 			if frame.pointer("/pet/speciesId").and_then(Value::as_str)
-				!= save.get("speciesId").and_then(Value::as_str) { return; }
+				!= save.get("speciesId").and_then(Value::as_str)
+			{
+				return;
+			}
 			if let Some(state) = app.try_state::<BridgeState>() {
-				if let Ok(mut slot) = state.pet_state_frame.lock() { *slot = Some(frame.clone()); }
+				if let Ok(mut slot) = state.pet_state_frame.lock() {
+					*slot = Some(frame.clone());
+				}
 			}
 			// Window ownership changes only through explicit actions/startup
 			// restore: a delayed frame must never reopen a pet the user docked.
@@ -3177,21 +3184,40 @@ pub async fn toggle_pet_window(app: AppHandle) -> Result<String, String> {
 
 fn open_pet_window(app: &AppHandle, point: Option<(f64, f64)>) -> Result<(), String> {
 	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
-		if let Some((x, y)) = point { position_pet_at(&win, x, y)?; }
+		if let Some((x, y)) = point {
+			position_pet_at(&win, x, y)?;
+		}
 		return Ok(());
 	}
-	let builder = tauri::WebviewWindowBuilder::new(app, PET_WINDOW_LABEL, tauri::WebviewUrl::App("pet.html".into()))
-		.title("Pizza Pet").inner_size(300.0, 300.0).max_inner_size(300.0, 300.0)
-		.resizable(false).maximizable(false).minimizable(false).decorations(false)
-		.always_on_top(true).skip_taskbar(true).shadow(false).visible(false).focused(false)
-		.background_color(tauri::webview::Color(0, 0, 0, 0));
+	let builder = tauri::WebviewWindowBuilder::new(
+		app,
+		PET_WINDOW_LABEL,
+		tauri::WebviewUrl::App("pet.html".into()),
+	)
+	.title("Pizza Pet")
+	.inner_size(300.0, 300.0)
+	.max_inner_size(300.0, 300.0)
+	.resizable(false)
+	.maximizable(false)
+	.minimizable(false)
+	.decorations(false)
+	.always_on_top(true)
+	.skip_taskbar(true)
+	.shadow(false)
+	.visible(false)
+	.focused(false)
+	.background_color(tauri::webview::Color(0, 0, 0, 0));
 	#[cfg(target_os = "macos")]
 	// The pet never takes focus, so let the first click (and right-click for
 	// its menu) through instead of only activating the window.
-	let builder = builder.transparent(true).visible_on_all_workspaces(true).accept_first_mouse(true);
+	let builder = builder
+		.transparent(true)
+		.visible_on_all_workspaces(true)
+		.accept_first_mouse(true);
 	let win = builder.build().map_err(|e| format!("create pet: {e}"))?;
-	if let Some((x, y)) = point { position_pet_at(&win, x, y)?; }
-	else if let Ok(Some(monitor)) = win.primary_monitor() {
+	if let Some((x, y)) = point {
+		position_pet_at(&win, x, y)?;
+	} else if let Ok(Some(monitor)) = win.primary_monitor() {
 		let scale = monitor.scale_factor();
 		let x = (monitor.position().x as f64 + monitor.size().width as f64) / scale - 180.0;
 		let y = (monitor.position().y as f64 + monitor.size().height as f64) / scale - 180.0;
@@ -3202,10 +3228,15 @@ fn open_pet_window(app: &AppHandle, point: Option<(f64, f64)>) -> Result<(), Str
 }
 
 fn position_pet_at(win: &tauri::WebviewWindow, x: f64, y: f64) -> Result<(), String> {
-	if !x.is_finite() || !y.is_finite() { return Err("Invalid pet position".into()); }
+	if !x.is_finite() || !y.is_finite() {
+		return Err("Invalid pet position".into());
+	}
 	// The compact pet's centre is fixed even when its chat controls expand.
-	win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x - 150.0, y - 56.0)))
-		.map_err(|e| e.to_string())
+	win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+		x - 150.0,
+		y - 56.0,
+	)))
+	.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -3216,7 +3247,9 @@ pub async fn detach_pet_window(app: AppHandle, x: f64, y: f64) -> Result<(), Str
 
 #[tauri::command]
 pub fn move_pet_window(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
-	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) { position_pet_at(&win, x, y)?; }
+	if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
+		position_pet_at(&win, x, y)?;
+	}
 	Ok(())
 }
 
@@ -3228,7 +3261,9 @@ pub fn pet_window_ready(app: AppHandle) -> Result<(), String> {
 		notify_pet_window_state(&app, true);
 		if let Some(state) = app.try_state::<BridgeState>() {
 			let frame = state.pet_state_frame.lock().ok().and_then(|s| s.clone());
-			if let Some(frame) = frame { emit_to_pet_window(&app, &frame, ""); }
+			if let Some(frame) = frame {
+				emit_to_pet_window(&app, &frame, "");
+			}
 		}
 	}
 	Ok(())
@@ -3236,7 +3271,9 @@ pub fn pet_window_ready(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_pet_window_state(app: AppHandle) -> bool {
-	app.get_webview_window(PET_WINDOW_LABEL).map(|w| w.is_visible().unwrap_or(false)).unwrap_or(false)
+	app.get_webview_window(PET_WINDOW_LABEL)
+		.map(|w| w.is_visible().unwrap_or(false))
+		.unwrap_or(false)
 }
 
 #[tauri::command]
@@ -3260,17 +3297,36 @@ fn set_pet_floating_flag(floating: bool) {
 	let lock = dir.join("pet.json.lock");
 	let mut acquired = false;
 	for _ in 0..10 {
-		if std::fs::create_dir(&lock).is_ok() { acquired = true; break; }
+		if std::fs::create_dir(&lock).is_ok() {
+			acquired = true;
+			break;
+		}
+		// Same rule as proper-lockfile's default `stale`: a holder that crashed
+		// leaves a lock nobody refreshes; reclaim it after 10s.
+		let stale = std::fs::metadata(&lock)
+			.and_then(|m| m.modified())
+			.ok()
+			.and_then(|t| t.elapsed().ok())
+			.is_some_and(|age| age > std::time::Duration::from_secs(10));
+		if stale {
+			let _ = std::fs::remove_dir(&lock);
+			continue;
+		}
 		std::thread::sleep(std::time::Duration::from_millis(10));
 	}
-	if !acquired { log_file("pet floating preference: save is busy"); return; }
+	if !acquired {
+		log_file("pet floating preference: save is busy");
+		return;
+	}
 	let temp = dir.join(format!("pet.{}.tmp", uuid::Uuid::new_v4()));
 	let _ = (|| -> Result<(), Box<dyn std::error::Error>> {
 		let mut save: Value = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
 		if let Some(obj) = save.as_object_mut() {
 			obj.insert("floating".into(), Value::Bool(floating));
 			std::fs::write(&temp, serde_json::to_string_pretty(&save)?)?;
-			if let Ok(metadata) = std::fs::metadata(&path) { let _ = std::fs::set_permissions(&temp, metadata.permissions()); }
+			if let Ok(metadata) = std::fs::metadata(&path) {
+				let _ = std::fs::set_permissions(&temp, metadata.permissions());
+			}
 			std::fs::rename(&temp, &path)?;
 		}
 		Ok(())

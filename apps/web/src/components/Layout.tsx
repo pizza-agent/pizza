@@ -508,7 +508,7 @@ export default function Layout({
 					   traffic lights itself (sidebarCollapsed=true in the context). */
 					<Outlet context={{ sidebarCollapsed: true } satisfies LayoutOutletContext} />
 				) : (
-					<WorkspacePane workspace={workspace} ptyPort={state?.ptyPort} isMain={state?.isMainAgent === true && isMainChat} running={state?.isStreaming ?? false} connected={online} sidebarCollapsed={collapsed}>
+					<WorkspacePane workspace={workspace} ptyPort={state?.ptyPort} isMain={state?.isMainAgent === true && isMainChat} running={state?.isStreaming ?? false} connected={online}>
 						<Outlet context={{ sidebarCollapsed: collapsed, isMainAgent: state?.isMainAgent === true && isMainChat } satisfies LayoutOutletContext} />
 					</WorkspacePane>
 				)}
