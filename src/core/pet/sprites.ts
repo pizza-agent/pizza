@@ -52,64 +52,18 @@ export function framesForMood(species: PetSpeciesDef, mood: PetMood): string[] {
 // Built-in species
 // ---------------------------------------------------------------------------
 
-const CAT: PetSpeciesDef = {
-	id: "cat",
-	name: "Cat",
-	description: "A calm companion. Judges your diffs silently.",
-	frames: {
-		idle: [" /\\_/\\\n( o.o )\n > ^ <", " /\\_/\\\n( -.- )\n > ^ <"],
-		working: [" /\\_/\\\n( o.o ) ~\n > ^ <", " /\\_/\\\n( o.o )\n > ^ <~"],
-		celebrating: [" /\\_/\\\n( ^o^ )\n > ^ <", "\\ /\\_/\n( ^o^ )\n > ^ <"],
-		happy: [" /\\_/\\\n( ^.^ )\n > ^ <"],
-		sad: [" /\\_/\\\n( ;_; )\n > ^ <"],
-		sleepy: [" /\\_/\\\n( -.- )z\n > ^ <", " /\\_/\\\n( -.- ) zZ\n > ^ <"],
-		eating: [" /\\_/\\\n( omo )\n > = <"],
-	},
-};
+/** Only the Pizza family is included in the default picker. */
+export const DEFAULT_PET_SPECIES = "pip";
+export const LEGACY_PET_SPECIES: ReadonlySet<string> = new Set(["cat", "dog", "slime", "pixel-mochi"]);
 
-const DOG: PetSpeciesDef = {
-	id: "dog",
-	name: "Dog",
-	description: "Loyal. Gets excited every time a test passes.",
-	frames: {
-		idle: [" __\no o  __\n V  (_)\n ~~~~", " __\n- -  __\n V  (_)\n ~~~~"],
-		working: [" __\no o  __!\n V  (_)\n ~~~~", " __\no o  __\n V  (_)!\n ~~~~"],
-		celebrating: [" __\n^o^  __\n V  (_)\n ~~~~", "  __/\n^o^  _\n V  (_)\n ~~~~"],
-		happy: [" __\n^.^  __\n V  (_)\n ~~~~"],
-		sad: [" __\nu u  __\n V  (_)\n ~~~~"],
-		sleepy: [" __\n- -  __z\n V  (_)\n ~~~~", " __\n- -  __ zZ\n V  (_)\n ~~~~"],
-		eating: [" __\nomo  __\n V  (_)\n ~~~~"],
-	},
-};
+const pizzaFrames = (body: string): PetSpeciesDef["frames"] => ({
+	idle: [body], working: [body + " ~"], happy: [body + " :)"],
+	celebrating: [body + " *"], sad: [body + " ."], sleepy: [body + " z"], eating: [body + " o"],
+});
 
-const SLIME: PetSpeciesDef = {
-	id: "slime",
-	name: "Slime",
-	description: "A blob of pure vibes. Immune to segfaults.",
-	frames: {
-		idle: [" .----.\n( o  o )\n `----'", " .----.\n( -  - )\n `----'"],
-		working: [" .----.\n( o  o )~`=\n `----'", " .----.\n( o  o ) =`~\n `----'"],
-		celebrating: ["  .----.\n\\( o  o )/\n  `----'", " .----.  \n/( ^  ^ )\\\n  `----'"],
-		happy: [" .----.\n( ^  ^ )\n `----'"],
-		sad: [" .----.\n( ;  ; )\n `----'"],
-		sleepy: [" .----.\n( -  - )z\n `----'", " .----.\n( -  - ) Zz\n `----'"],
-		eating: [" .----.\n( owo )\n `----'"],
-	},
-};
-
-const MOCHI: PetSpeciesDef = {
-	id: "pixel-mochi",
-	name: "Mochi",
-	description: "A squishy sakura rice cake in pixels, with a leaf on top.",
-	frames: {
-		idle: ["   ,\n .-'-.\n( o o )\n `-w-'", "   ,\n .-'-.\n( - - )\n `-w-'"],
-		working: ["   ,\n .-'-.\n( o o )~\n `---'", "   ,\n .-'-.\n( o o ) ~\n `---'"],
-		celebrating: [" \\ , /\n .-'-.\n( ^ ^ )\n `-o-'"],
-		happy: ["   ,\n .-'-.\n( ^ ^ )\n `-w-'"],
-		sad: ["   ,\n .-'-.\n( ; ; )\n `-n-'"],
-		sleepy: ["   ,\n .-'-.\n( - - ) z\n `---'"],
-		eating: ["   ,\n .-'-.\n( o o )\n `-o-'"],
-	},
-};
-
-export const BUILTIN_SPECIES: readonly PetSpeciesDef[] = [CAT, DOG, SLIME, MOCHI];
+export const BUILTIN_SPECIES: PetSpeciesDef[] = [
+	{ id: "pip", name: "PIP", description: "A little pizza slice. Warm, curious, always ready.", frames: pizzaFrames(" /====\\\n \\ o o /\n  \\___/") },
+	{ id: "mozz", name: "MOZZ", description: "A soft mozzarella cloud with a golden curl.", frames: pizzaFrames("  ~\n (o o)\n (_~_)") },
+	{ id: "pomo", name: "POMO", description: "A cheerful tomato with a tiny basil crown.", frames: pizzaFrames("  v\n (o o)\n (___)") },
+	{ id: "basi", name: "BASI", description: "A quiet basil leaf, folded into a little friend.", frames: pizzaFrames("  /\n /o o)\n \__/") },
+];

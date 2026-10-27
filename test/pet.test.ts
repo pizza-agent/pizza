@@ -84,10 +84,10 @@ describe("pet store", () => {
 
 	it("lists builtin species and merges user packs", () => {
 		const all = listAllSpecies();
-		expect(all.map((s) => s.id)).toContain("cat");
-		expect(all.map((s) => s.id)).toContain("slime");
-		expect(all.map((s) => s.id)).toContain("pixel-mochi");
-		expect(findSpecies("pixel-mochi")?.frames.idle?.length).toBeGreaterThan(0);
+		expect(all.map((s) => s.id)).toContain("pip");
+		expect(all.map((s) => s.id)).toContain("mozz");
+		expect(all.map((s) => s.id)).toContain("basi");
+		expect(findSpecies("basi")?.frames.idle?.length).toBeGreaterThan(0);
 
 		const dir = join(getAgentDir(), "pets");
 		mkdirSync(dir, { recursive: true });
@@ -105,7 +105,7 @@ describe("pet store", () => {
 	});
 
 	it("framesForMood falls back to idle frames", () => {
-		const cat = BUILTIN_SPECIES.find((s) => s.id === "cat")!;
+		const cat = BUILTIN_SPECIES.find((s) => s.id === "pip")!;
 		expect(framesForMood(cat, "happy").length).toBeGreaterThan(0);
 	});
 });
@@ -117,17 +117,17 @@ describe("pet is a core feature", () => {
 		expect(BUILTIN_EXTENSIONS.map((ext) => ext.id)).not.toContain("pet");
 	});
 
-	it("adopts, renames, customizes and releases through one service", () => {
+	it("adopts, customizes and releases through one service", () => {
 		const service = new PetService();
-		expect(() => service.perform({ action: "rename", name: "x" })).toThrow(/No pet/);
+		expect(() => service.perform({ action: "feed" })).toThrow(/No pet/);
 		expect(() => service.perform({ action: "adopt", speciesId: "nope" })).toThrow(/Unknown/);
-		let catalog = service.perform({ action: "adopt", speciesId: "cat", name: "  Momo  " });
-		expect(catalog.pet).toMatchObject({ name: "Momo", speciesId: "cat", mood: "happy" });
-		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["cat", "dog", "slime", "pixel-mochi"]));
-		catalog = service.perform({ action: "adopt", speciesId: "dog" });
+		let catalog = service.perform({ action: "adopt", speciesId: "pip", name: "  Momo  " });
+		expect(catalog.pet).toMatchObject({ name: "Momo", speciesId: "pip", mood: "happy" });
+		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["pip", "mozz", "pomo", "basi"]));
+		catalog = service.perform({ action: "adopt", speciesId: "pomo" });
 		expect(catalog.pet?.name).toBe("Momo");
-		catalog = service.perform({ action: "customize", scale: 9, subtitle: "  pair  programmer " });
-		expect(catalog.pet).toMatchObject({ scale: 1.5, subtitle: "pair programmer" });
+		catalog = service.perform({ action: "customize", scale: 9 });
+		expect(catalog.pet).toMatchObject({ scale: 1.5 });
 		service.perform({ action: "feed" });
 		expect(loadPetSave()?.xp).toBe(2);
 		expect(service.perform({ action: "release" }).pet).toBeNull();
@@ -136,7 +136,7 @@ describe("pet is a core feature", () => {
 
 	it("follows session activity and notifies only on change", () => {
 		const service = petService;
-		service.perform({ action: "adopt", speciesId: "slime", name: "Goo" });
+		service.perform({ action: "adopt", speciesId: "mozz", name: "Goo" });
 		const seen: PetSnapshot[] = [];
 		const stop = service.subscribe((snapshot) => seen.push(snapshot));
 		const handlers = new Set<(event: EventBase) => void>();
@@ -181,10 +181,10 @@ describe("pet is a core feature", () => {
 
 describe("shared pet appearance", () => {
  it("background progress preserves a newer selection, name, size and floating flag", () => {
-  savePet({name:"Old",speciesId:"cat",xp:10,adoptedAt:1});
-  savePet({name:"New",speciesId:"dog",xp:30,adoptedAt:1,scale:1.2,subtitle:"hello"});
+  savePet({name:"Old",speciesId:"pip",xp:10,adoptedAt:1});
+  savePet({name:"New",speciesId:"pomo",xp:30,adoptedAt:1,scale:1.2,subtitle:"hello"});
   const result=savePetProgress(20);
-  expect(result).toMatchObject({name:"New",speciesId:"dog",xp:30,scale:1.2,subtitle:"hello"});
+  expect(result).toMatchObject({name:"New",speciesId:"pomo",xp:30,scale:1.2,subtitle:"hello"});
   deletePetSave();
   expect(savePetProgress(50)).toBeUndefined();
   expect(loadPetSave()).toBeUndefined();
@@ -195,19 +195,41 @@ describe("shared pet appearance", () => {
   const seen: PetSnapshot[] = [];
   const stop = service.subscribe((snapshot) => seen.push(snapshot));
   try {
-   savePet({name:"Cat",speciesId:"cat",xp:0,adoptedAt:1});
+   savePet({name:"Cat",speciesId:"pip",xp:0,adoptedAt:1});
    service.notify();
-   expect(seen.at(-1)?.pet?.speciesId).toBe("cat");
-   savePet({name:"Dog",speciesId:"dog",xp:15,adoptedAt:1});
+   expect(seen.at(-1)?.pet?.speciesId).toBe("pip");
+   savePet({name:"Dog",speciesId:"pomo",xp:15,adoptedAt:1});
    await vi.advanceTimersByTimeAsync(2100);
-   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"dog",name:"Dog",xp:15});
+   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"pomo",name:"Dog",xp:15});
    service.dispatch("turn_end");
-   expect(loadPetSave()).toMatchObject({speciesId:"dog",xp:19});
+   expect(loadPetSave()).toMatchObject({speciesId:"pomo",xp:19});
    deletePetSave();
    await vi.advanceTimersByTimeAsync(2100);
    expect(seen.at(-1)?.pet).toBeNull();
    service.dispatch("turn_end");
    expect(loadPetSave()).toBeUndefined();
   } finally { stop(); vi.useRealTimers(); }
+ });
+});
+
+
+describe("Pizza family migration", () => {
+ afterEach(() => deletePetSave());
+ it("exposes exactly four Pizza defaults", () => {
+  expect(BUILTIN_SPECIES.map(s=>s.id)).toEqual(["pip","mozz","pomo","basi"]);
+ });
+ it("moves a retired builtin to PIP and preserves user data", () => {
+  savePet({name:"Wang",speciesId:"dog",xp:180,adoptedAt:123,scale:1.25,subtitle:"hello"});
+  const pet = new PetService().status();
+  expect(pet).toMatchObject({name:"Wang",speciesId:"pip",xp:180,adoptedAt:123,scale:1.25});
+  expect(pet).not.toHaveProperty("subtitle");
+  expect(loadPetSave()?.speciesId).toBe("pip");
+ });
+ it("keeps a plugin-owned legacy id and user-defined art", () => {
+  savePet({name:"Custom",speciesId:"cat",xp:10,adoptedAt:1});
+  const service=new PetService();
+  const remove=service.addContributionSource({species:()=>[{id:"cat",name:"Custom cat",frames:{idle:["custom"]}}],actions:()=>[]});
+  try { expect(service.snapshot()).toMatchObject({pet:{speciesId:"cat"},species:{source:"plugin",frames:{idle:["custom"]}}}); }
+  finally { remove(); }
  });
 });

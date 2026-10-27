@@ -23,10 +23,12 @@ import { PetFigure } from "./components/PetFigure";
 import { PetMenu, petPluginItems, type PetMenuItem } from "./components/PetMenu";
 import { invokePetWindow, usePet } from "./lib/pet";
 import { sendCommandAwait } from "./lib/transport";
+import type { MainAgentProfile } from "./lib/main-agent-profile";
 
 function PetFloat() {
 	const { t } = useTranslation();
 	const { pet, species, loaded, actions, act } = usePet();
+	const [readySpecies, setReadySpecies] = useState<string | null>(null);
 	const [hover, setHover] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
 	const [input, setInput] = useState("");
@@ -39,9 +41,17 @@ function PetFloat() {
 	const dragRef = useRef<{ x: number; y: number } | null>(null);
 	const justDraggedRef = useRef(false);
 	const dismissMenu = useCallback(() => setMenu(null), []);
+	const [agentName, setAgentName] = useState("");
 	useEffect(() => {
-		if (loaded) void invoke("pet_window_ready").catch(() => {});
-	}, [loaded]);
+		const load = () => { void sendCommandAwait<MainAgentProfile>({ type: "main_profile" }, 8000, true).then((r) => setAgentName(r.data?.soul.name ?? "")).catch(() => {}); };
+		load();
+		window.addEventListener("focus", load);
+		return () => window.removeEventListener("focus", load);
+	}, []);
+	const name = agentName || t("layout.agent");
+	useEffect(() => {
+		if (loaded && readySpecies === (pet?.speciesId ?? "none")) void invoke("pet_window_ready").catch(() => {});
+	}, [loaded, readySpecies, pet?.speciesId]);
 	useEffect(() => {
 		if (!hover || pet?.speciesId === "pixel-mochi") return;
 		let alive = true;
@@ -66,6 +76,7 @@ function PetFloat() {
 	}, [input, busy]);
 	const transcribe = useCallback((audioB64: string, mimeType: string) => invoke<string>("transcribe_audio", { audioB64, mimeType }), []);
 	const run = (command: Parameters<typeof invokePetWindow>[0]) => { void invokePetWindow(command).catch((e) => setError(String(e))); };
+	const petSize = 64 * Math.min(1.5, Math.max(.7, pet?.scale ?? 1));
 	const showChat = chatOpen || hover || Boolean(input) || busy || Boolean(error);
 
 	const items: PetMenuItem[] = [
@@ -81,26 +92,26 @@ function PetFloat() {
 	];
 
 	return <div style={shellStyle}>
-		<div style={{ position: "absolute", left: 118, top: 24, width: 64, height: 64, cursor: "grab" }} ref={bodyRef}
+		<div style={{ position: "absolute", left: 150 - petSize / 2, top: 56 - petSize / 2, width: petSize, height: petSize, cursor: "grab" }} ref={bodyRef}
 			onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
 			onContextMenu={(e) => { e.preventDefault(); dragRef.current = null; setMenu({ x: e.clientX, y: e.clientY }); }}
 			onMouseDown={(e) => { if (e.button === 0) { justDraggedRef.current = false; dragRef.current = { x: e.clientX, y: e.clientY }; } }}
 			onMouseMove={(e) => { const start = dragRef.current; if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) { dragRef.current = null; justDraggedRef.current = true; void getCurrentWindow().startDragging().catch(() => {}); } }}
 			onMouseUp={() => { dragRef.current = null; }}
 		>
-			<button type="button" aria-label={pet?.name ?? t("pet.menu.adopt")} aria-haspopup="menu" title={t("pet.floatHint")}
+			<button type="button" aria-label={pet ? name : t("pet.menu.adopt")} aria-haspopup="menu" title={t("pet.floatHint")}
 				style={{ all: "unset", display: "flex", cursor: "inherit" }}
 				onClick={() => { if (!justDraggedRef.current) setChatOpen((v) => !v); }}
 				onKeyDown={(e) => { if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left + r.width / 2, y: r.bottom }); } }}
 				onDoubleClick={() => run("dock_pet_window")}>
-				<PetFigure species={pet?.speciesId} mood={pet?.mood} look={look} busy={busy || pet?.busy} scale={pet?.scale} frames={species?.frames} />
+				<PetFigure species={pet?.speciesId} mood={pet?.mood} look={look} busy={busy || pet?.busy} scale={pet?.scale} frames={species?.frames} onReady={() => setReadySpecies(pet?.speciesId ?? "none")} />
 			</button>
 		</div>
 		{showChat && <div data-nodrag onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{ position: "absolute", top: 96, left: 22, width: 256, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-			{pet && <span style={{ ...petChipStyle, fontSize: 10 }}>{pet.name}{pet.subtitle ? ` · ${pet.subtitle}` : ""}</span>}
+			{pet && <span style={{ ...petChipStyle, fontSize: 10 }}>{name}</span>}
 			<PetChatPill input={input} setInput={setInput} onSend={sendPrompt} onTranscribe={transcribe} sending={busy} error={error} sent={sent} autoFocus={chatOpen} onActive={() => setChatOpen(true)} />
 		</div>}
-		{menu && <PetMenu x={menu.x} y={menu.y} title={pet?.name} level={pet?.level} items={items} onDismiss={dismissMenu} />}
+		{menu && <PetMenu x={menu.x} y={menu.y} title={name} level={pet?.level} items={items} onDismiss={dismissMenu} />}
 	</div>;
 }
 

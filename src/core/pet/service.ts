@@ -9,8 +9,8 @@
  */
 
 import { applyEvent, applyReaction, effectiveMood, initialPetState, levelForXp, type PetEventKind, type PetState } from "./state.js";
-import { BUILTIN_SPECIES, isValidSpecies, PET_MOODS, type PetMood, type PetSpeciesDef } from "./sprites.js";
-import { deletePetSave, listUserSpecies, loadPetSave, savePet, savePetProgress, type PetSave } from "./store.js";
+import { BUILTIN_SPECIES, DEFAULT_PET_SPECIES, LEGACY_PET_SPECIES, isValidSpecies, PET_MOODS, type PetMood, type PetSpeciesDef } from "./sprites.js";
+import { deletePetSave, listUserSpecies, loadPetRecord, migratePetSpecies, savePet, savePetProgress, type PetSave } from "./store.js";
 
 export type PetSpeciesSource = "builtin" | "plugin" | "user";
 
@@ -36,7 +36,6 @@ export interface PetStatus {
 	mood: PetMood;
 	busy: boolean;
 	scale: number;
-	subtitle: string;
 	adoptedAt: number;
 	/** Owned by the desktop app: the floating window was open last run. */
 	floating: boolean | null;
@@ -44,6 +43,8 @@ export interface PetStatus {
 
 /** Live state pushed to UIs. `species` carries frames for custom (non-builtin) art. */
 export interface PetSnapshot {
+	/** Shared-save revision orders identity changes across workspace processes. */
+	revision?: number;
 	pet: PetStatus | null;
 	species: PetSpeciesInfo | null;
 }
@@ -55,8 +56,7 @@ export interface PetCatalog extends PetSnapshot {
 
 export type PetOperation =
 	| { action: "adopt"; speciesId: string; name?: string }
-	| { action: "rename"; name: string }
-	| { action: "customize"; scale?: number; subtitle?: string }
+	| { action: "customize"; scale?: number }
 	| { action: "release" }
 	| { action: "feed" }
 	| { action: "play" };
@@ -72,11 +72,11 @@ export type PetListener = (snapshot: PetSnapshot) => void;
 const TICK_MS = 2000;
 export const PET_SCALE_RANGE = [0.7, 1.5] as const;
 const MAX_NAME = 40;
-const MAX_SUBTITLE = 80;
 
 export class PetService {
 	private state: PetState = initialPetState();
 	private save: PetSave | undefined;
+	private revision = 0;
 	private readonly busy = new Set<symbol>();
 	private readonly listeners = new Set<PetListener>();
 	private readonly sources = new Set<PetContributionSource>();
@@ -119,7 +119,15 @@ export class PetService {
 
 	/** The shared save owns identity and XP; this process owns transient mood. */
 	private sync(): PetSave | undefined {
-		this.save = loadPetSave();
+		const record = loadPetRecord();
+		this.save = record.save;
+		this.revision = record.revision;
+		if (this.save && LEGACY_PET_SPECIES.has(this.save.speciesId) && !this.findSpecies(this.save.speciesId)) {
+			migratePetSpecies(this.save.speciesId, DEFAULT_PET_SPECIES);
+			const migrated = loadPetRecord();
+			this.save = migrated.save;
+			this.revision = migrated.revision;
+		}
 		if (this.save) {
 			this.state.xp = this.save.xp;
 			this.state.level = levelForXp(this.save.xp);
@@ -138,7 +146,6 @@ export class PetService {
 			mood: effectiveMood(this.state, { agentBusy: this.busy.size > 0 }),
 			busy: this.busy.size > 0,
 			scale: typeof save.scale === "number" ? clamp(save.scale, ...PET_SCALE_RANGE) : 1,
-			subtitle: typeof save.subtitle === "string" ? save.subtitle : "",
 			adoptedAt: save.adoptedAt,
 			floating: typeof save.floating === "boolean" ? save.floating : null,
 		};
@@ -147,7 +154,7 @@ export class PetService {
 	snapshot(): PetSnapshot {
 		const pet = this.status();
 		const species = pet ? this.findSpecies(pet.speciesId) : undefined;
-		return { pet, species: species && species.source !== "builtin" ? species : null };
+		return { pet, revision: this.revision, species: species && species.source !== "builtin" ? species : null };
 	}
 
 	catalog(): PetCatalog {
@@ -223,16 +230,9 @@ export class PetService {
 				this.state = applyEvent(this.state, "adopt");
 				break;
 			}
-			case "rename": {
-				const name = clean(op.name, MAX_NAME);
-				if (!name) throw new Error("A pet needs a name.");
-				savePet({ ...current!, name });
-				break;
-			}
 			case "customize": {
 				const next: PetSave = { ...current! };
 				if (typeof op.scale === "number" && Number.isFinite(op.scale)) next.scale = clamp(op.scale, ...PET_SCALE_RANGE);
-				if (typeof op.subtitle === "string") next.subtitle = clean(op.subtitle, MAX_SUBTITLE);
 				savePet(next);
 				break;
 			}

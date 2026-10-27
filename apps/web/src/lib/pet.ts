@@ -69,7 +69,6 @@ async function readSave(): Promise<PetStatus | null | undefined> {
 		mood: "idle",
 		busy: false,
 		scale: typeof save.scale === "number" ? save.scale : 1,
-		subtitle: typeof save.subtitle === "string" ? save.subtitle : "",
 		adoptedAt: typeof save.adoptedAt === "number" ? save.adoptedAt : Date.now(),
 		floating: typeof save.floating === "boolean" ? save.floating : null,
 	};
@@ -86,7 +85,11 @@ const BUSY_STALE_MS = 5 * 60_000;
  */
 export function mergePetFrames(frames: ReadonlyMap<string, Frame>, now = Date.now()): PetSnapshot | undefined {
 	let newest: Frame | undefined;
-	for (const frame of frames.values()) if (!newest || frame.at >= newest.at) newest = frame;
+	for (const frame of frames.values()) {
+		const revision = frame.snapshot.revision ?? 0;
+		const previous = newest?.snapshot.revision ?? 0;
+		if (!newest || revision > previous || (revision === previous && frame.at >= newest.at)) newest = frame;
+	}
 	const pet = newest?.snapshot.pet;
 	if (!newest || !pet) return newest?.snapshot;
 	const busy = [...frames.values()].some((f) => f.snapshot.pet?.busy && now - f.at < BUSY_STALE_MS);
@@ -103,11 +106,12 @@ export function usePet() {
 	const frames = useRef(new Map<string, Frame>());
 
 	const apply = useCallback((source: string, next: PetSnapshot) => {
+		if ((frames.current.get(source)?.snapshot.revision ?? 0) > (next.revision ?? 0)) return;
 		frames.current.set(source, { snapshot: next, at: Date.now() });
 		setSnapshot(mergePetFrames(frames.current));
 	}, []);
 	const applyCatalog = useCallback((next: PetCatalog) => {
-		apply("rpc", { pet: next.pet, species: next.species });
+		apply("rpc", { pet: next.pet, species: next.species, revision: next.revision });
 		setCatalog(next.catalog);
 		setActions(next.actions);
 		setError("");
@@ -137,7 +141,7 @@ export function usePet() {
 		void subscribePetState((frame) => {
 			// A remote workspace reports another machine's save.
 			if (disposed || frame._cwd?.startsWith("remote://")) return;
-			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, species: (frame.species as PetSpecies | null) ?? null });
+			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, species: (frame.species as PetSpecies | null) ?? null, revision: typeof frame.revision === "number" && Number.isFinite(frame.revision) ? frame.revision : undefined });
 		}).then(add).catch(() => {});
 		void refresh();
 		const onFocus = () => { void refresh(); };

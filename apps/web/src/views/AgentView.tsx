@@ -1349,6 +1349,25 @@ export default function AgentView({
 		titleCopyTimerRef.current = setTimeout(() => setTitleCopied(false), 1500);
 	}, [sessionTitle]);
 
+	// Fade only content passing above the viewport. At the beginning of history,
+	// keep the first message fully readable. No React renders on scroll.
+	useEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		let frame = 0;
+		const update = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				element.style.setProperty("--chat-top-fade", `${Math.min(isMainAgent ? 40 : 24, Math.max(0, element.scrollTop))}px`);
+			});
+		};
+		const observer = new ResizeObserver(update);
+		observer.observe(element);
+		element.addEventListener("scroll", update, { passive: true });
+		update();
+		return () => { cancelAnimationFrame(frame); observer.disconnect(); element.removeEventListener("scroll", update); };
+	}, [isMainAgent, workspace, items.length]);
+
 	// Empty-state greeting — one of the readyPrompts strings, re-rolled each
 	// time the conversation becomes empty (mount counts via the ref seed).
 	const [greetingIdx, setGreetingIdx] = useState(() => Math.floor(Math.random() * 10));
@@ -1411,7 +1430,7 @@ export default function AgentView({
 					{t("agent.remoteProviderMissing")}
 				</div>
 			)}
-			<div ref={scrollRef} className={cn("min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
+			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
 						{loadingHistory || waitingForWorkspace ? (

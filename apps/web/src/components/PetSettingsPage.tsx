@@ -37,9 +37,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 	const [chatError, setChatError] = useState("");
 	const [chatSent, setChatSent] = useState(false);
 	const [customizeOpen, setCustomizeOpen] = useState(false);
-	const [customName, setCustomName] = useState("");
 	const [customScale, setCustomScale] = useState(1);
-	const [customSubtitle, setCustomSubtitle] = useState("");
 
 	const run = useCallback(async (op: PetOperation) => {
 		setPending(true);
@@ -68,22 +66,18 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 
 	const release = async () => {
 		if (!pet) return;
-		const ok = await confirmDialog({ message: t("settings.pet.releaseConfirm", { name: pet.name }), confirmLabel: t("settings.pet.release"), danger: true });
+		const ok = await confirmDialog({ message: t("settings.pet.releaseConfirm", { name: catalog.find((s) => s.id === pet.speciesId)?.name ?? pet.speciesId }), confirmLabel: t("settings.pet.release"), danger: true });
 		if (ok) void run({ action: "release" });
 	};
 	const openCustomize = () => {
 		if (!pet) return;
-		setCustomName(pet.name);
 		setCustomScale(pet.scale);
-		setCustomSubtitle(pet.subtitle);
 		setCustomizeOpen(true);
 	};
 	const saveCustomize = async () => {
 		if (!pet) return;
 		setCustomizeOpen(false);
-		const name = customName.trim();
-		if (name && name !== pet.name) await run({ action: "rename", name });
-		await run({ action: "customize", scale: customScale, subtitle: customSubtitle });
+		await run({ action: "customize", scale: customScale });
 	};
 	const createCustomPet = () => {
 		const targetWorkspace = workspace || MAIN_CHAT_CWD;
@@ -126,9 +120,8 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 					<>
 						<PetFigure species={pet.speciesId} mood={mood} busy={pet.busy} scale={pet.scale} size={128} frames={customArt?.frames} />
 						<div style={petChipStyle}>
-							{pet.name} · {t("settings.pet.level", { level: pet.level })} · {t(`pet.moods.${mood}`)}
+							{t("settings.pet.level", { level: pet.level })} · {t(`pet.moods.${mood}`)}
 						</div>
-						{pet.subtitle && <p className="max-w-sm text-center text-xs text-muted">{pet.subtitle}</p>}
 						<PetChatPill
 							input={input}
 							setInput={setInput}
@@ -160,7 +153,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 					</>
 				) : (
 					<div className="flex flex-col items-center gap-3 py-6">
-						<div className="opacity-50 grayscale"><PetFigure species="slime" size={110} /></div>
+						<div className="opacity-50 grayscale"><PetFigure species="pip" size={110} /></div>
 						<p className="text-sm text-muted">{t("settings.pet.noPet")}</p>
 					</div>
 				)}
@@ -224,8 +217,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 							<div className="flex h-[96px] items-center justify-center">
 								<PetFigure species={s.id} mood={active ? mood : "idle"} scale={active ? pet!.scale : 1} busy={active && pet!.busy} size={88} frames={art(s)} />
 							</div>
-							<span className="text-[13px] font-medium text-fg">{active ? pet!.name : s.name}</span>
-							{s.description && <span className="text-xs text-muted">{s.description}</span>}
+							<span className="text-[13px] font-medium text-fg">{s.name}</span>
 							{active && (
 								<span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
 									{t("settings.pet.current")}
@@ -251,21 +243,13 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 							</div>
 							<PetFigure species={pet.speciesId} mood={mood} scale={customScale} size={64} frames={customArt?.frames} />
 						</div>
-						<label className="mb-2 block text-[13px] font-medium text-fg" htmlFor="pet-name">{t("settings.pet.name")}</label>
-						<input
-							id="pet-name"
-							value={customName}
-							maxLength={40}
-							autoFocus
-							onChange={(event) => setCustomName(event.target.value)}
-							className="mb-5 h-9 w-full rounded-lg border border-border bg-bg px-3 text-sm text-fg outline-none placeholder:text-muted focus:border-accent"
-						/>
 						<label className="mb-2 flex items-center justify-between text-[13px] font-medium text-fg" htmlFor="pet-scale">
 							<span>{t("settings.pet.size")}</span>
 							<span className="text-muted">{Math.round(customScale * 100)}%</span>
 						</label>
 						<input
 							id="pet-scale"
+							autoFocus
 							type="range"
 							min={PET_SCALE_MIN}
 							max={PET_SCALE_MAX}
@@ -274,21 +258,11 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 							onChange={(event) => setCustomScale(Number(event.target.value))}
 							className="mb-5 w-full accent-accent"
 						/>
-						<label className="mb-2 block text-[13px] font-medium text-fg" htmlFor="pet-subtitle">{t("settings.pet.subtitleLabel")}</label>
-						<input
-							id="pet-subtitle"
-							value={customSubtitle}
-							maxLength={80}
-							onChange={(event) => setCustomSubtitle(event.target.value)}
-							placeholder={t("settings.pet.subtitlePlaceholder")}
-							className="mb-1 h-9 w-full rounded-lg border border-border bg-bg px-3 text-sm text-fg outline-none placeholder:text-muted focus:border-accent"
-						/>
-						<p className="text-right text-[11px] text-muted">{customSubtitle.length}/80</p>
 						<div className="mt-5 flex justify-end gap-2">
 							<button type="button" onClick={() => setCustomizeOpen(false)} className="rounded-lg px-3 py-1.5 text-[13px] text-muted hover:bg-surface-2 hover:text-fg">
 								{t("settings.pet.cancel")}
 							</button>
-							<button type="button" disabled={!customName.trim()} onClick={() => void saveCustomize()} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:brightness-95 active:scale-[0.98] disabled:opacity-50">
+							<button type="button" onClick={() => void saveCustomize()} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:brightness-95 active:scale-[0.98]">
 								{t("settings.pet.save")}
 							</button>
 						</div>

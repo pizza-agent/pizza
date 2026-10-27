@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { PetSprite, SPECIES, type Mood } from './pet-shared';
 import type { PetSpecies } from '@/lib/pet';
@@ -26,21 +26,25 @@ function AsciiPet({ frames, mood, size }: { frames: Frames; mood: Mood; size: nu
 }
 
 /** The same compact character and soft local halo inside and outside the app. */
-export function PetFigure({ species, mood = 'idle', look = { x: 0, y: 0 }, busy = false, scale = 1, size = 64, frames, halo = true }: {
+export function PetFigure({ species, mood = 'idle', look = { x: 0, y: 0 }, busy = false, scale = 1, size = 64, frames, halo = true, onReady }: {
  species?: string; mood?: Mood; look?: {x:number;y:number}; busy?: boolean; scale?: number; size?: number;
  /** Art for non-builtin species. */
  frames?: Frames | null;
  halo?: boolean;
+ onReady?: () => void;
 }) {
+ const figure = useRef<HTMLSpanElement>(null);
+
  const amount = Math.min(1.5, Math.max(.7, scale));
  const dim = Math.round(size * amount);
- const sprite = species && SPECIES[species]
-  ? <PetSprite species={species} mood={mood} look={look} busy={busy} scale={dim / 112}/>
+ const readyCallback=useRef(onReady);readyCallback.current=onReady;
+ const builtin=Boolean(species && SPECIES[species] && !frames);
+ useEffect(()=>{if(!builtin)readyCallback.current?.();},[builtin,species]);
+ const sprite = species && SPECIES[species] && !frames
+  ? <PetSprite species={species} mood={mood} look={look} busy={busy} scale={dim / 112} onReady={onReady}/>
   : null;
- const blur = Math.round(Math.max(4, dim * 0.045));
- return <span className="pet-figure" data-pet-species={species ?? 'none'} style={{width:dim,height:dim,'--pet-accent':SPECIES[species ?? '']?.accent ?? '#abb9c8'} as React.CSSProperties}>
+ return <span ref={figure} className="pet-figure" data-pet-species={species ?? 'none'} style={{width:dim,height:dim,'--pet-accent':SPECIES[species ?? '']?.accent ?? '#abb9c8'} as React.CSSProperties}>
   {halo && <span className="pet-figure__aura" aria-hidden="true"/>}
-  {halo && sprite && <span className="pet-figure__glow" aria-hidden="true" style={{filter:`blur(${blur}px) saturate(1.5)`}}>{sprite}</span>}
   <span className="pet-figure__art">{sprite ?? (species && frames ? <AsciiPet frames={frames} mood={mood} size={dim}/> : <Bot size={size*.55} strokeWidth={1.3} style={{color:'#969ba3'}}/>)}</span>
  </span>;
 }

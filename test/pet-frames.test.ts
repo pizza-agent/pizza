@@ -3,7 +3,7 @@ import { mergePetFrames, type PetSnapshot, type PetStatus } from "../apps/web/sr
 
 const status = (over: Partial<PetStatus> = {}): PetStatus => ({
 	name: "Mochi", speciesId: "dog", xp: 40, level: 3, mood: "idle", busy: false,
-	scale: 1, subtitle: "", adoptedAt: 1, floating: null, ...over,
+	scale: 1, adoptedAt: 1, floating: null, ...over,
 });
 const frame = (pet: PetStatus | null, at: number) => ({ snapshot: { pet, species: null } as PetSnapshot, at });
 
@@ -32,4 +32,18 @@ describe("pet frames from several workspace sidecars", () => {
 		]), 3);
 		expect(merged?.pet).toBeNull();
 	});
+});
+
+
+describe("ordered pet appearance updates", () => {
+ it("keeps a newer selection even when an old workspace frame arrives later", () => {
+  const selected={snapshot:{pet:status({speciesId:"pip"}),species:null,revision:200},at:10};
+  const delayed={snapshot:{pet:status({speciesId:"mozz"}),species:null,revision:100},at:20};
+  expect(mergePetFrames(new Map([["rpc",selected],["old",delayed]]))?.pet?.speciesId).toBe("pip");
+ });
+ it("does not resurrect a released pet from an in-flight frame", () => {
+  const released={snapshot:{pet:null,species:null,revision:300},at:10};
+  const delayed={snapshot:{pet:status(),species:null,revision:200},at:20};
+  expect(mergePetFrames(new Map([["rpc",released],["old",delayed]]))?.pet).toBeNull();
+ });
 });

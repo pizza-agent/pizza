@@ -652,7 +652,6 @@ export interface RpcPetStatus {
 	mood: RpcPetMood;
 	busy: boolean;
 	scale: number;
-	subtitle: string;
 	adoptedAt: number;
 	floating: boolean | null;
 }
@@ -675,6 +674,8 @@ export interface RpcPetAction {
 }
 
 export interface RpcPetSnapshot {
+	/** Shared-save revision; prevents delayed frames undoing an appearance change. */
+	revision?: number;
 	pet: RpcPetStatus | null;
 	/** Active species definition when it is not a builtin (custom art). */
 	species: RpcPetSpecies | null;
@@ -687,8 +688,7 @@ export interface RpcPetCatalog extends RpcPetSnapshot {
 
 export type RpcPetOperation =
 	| { action: "adopt"; speciesId: string; name?: string }
-	| { action: "rename"; name: string }
-	| { action: "customize"; scale?: number; subtitle?: string }
+	| { action: "customize"; scale?: number }
 	| { action: "release" }
 	| { action: "feed" }
 	| { action: "play" };

@@ -7,7 +7,7 @@
  * agentDir is normally ~/.pizza/agent (PIZZA_CODING_AGENT_DIR overridable).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync, fstatSync } from "node:fs";
 import lockfile from "proper-lockfile";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -39,22 +39,22 @@ function userPacksDir(): string {
 // Save file
 // ---------------------------------------------------------------------------
 
-export function loadPetSave(): PetSave | undefined {
+/** Read data and revision from the same inode, even if another process replaces it. */
+export function loadPetRecord(): { save?: PetSave; revision: number } {
+	let fd: number | undefined;
 	try {
-		const raw = readFileSync(petSavePath(), "utf-8");
-		const data = JSON.parse(raw) as Partial<PetSave>;
-		if (typeof data.name !== "string" || typeof data.speciesId !== "string") return undefined;
-		return {
-			...data,
-			name: data.name,
-			speciesId: data.speciesId,
+		fd = openSync(petSavePath(), "r");
+		const data = JSON.parse(readFileSync(fd, "utf-8")) as Partial<PetSave> | null;
+		const revision = fstatSync(fd).mtimeMs;
+		if (!data || typeof data.name !== "string" || typeof data.speciesId !== "string") return { revision };
+		return { revision, save: { ...data, name: data.name, speciesId: data.speciesId,
 			xp: typeof data.xp === "number" ? data.xp : 0,
-			adoptedAt: typeof data.adoptedAt === "number" ? data.adoptedAt : Date.now(),
-		};
-	} catch {
-		return undefined;
-	}
+			adoptedAt: typeof data.adoptedAt === "number" ? data.adoptedAt : Date.now() } };
+	} catch { return { revision: 0 }; }
+	finally { if (fd !== undefined) closeSync(fd); }
 }
+
+export function loadPetSave(): PetSave | undefined { return loadPetRecord().save; }
 
 /** Serialize read/modify/write across workspace processes; readers see whole saves. */
 function updatePetSave(update: (current: PetSave | undefined) => PetSave | undefined): PetSave | undefined {
@@ -88,6 +88,11 @@ export function savePet(save: PetSave): void {
 /** Background XP updates must never restore an old appearance or released pet. */
 export function savePetProgress(xp: number): PetSave | undefined {
 	return updatePetSave((current) => current ? { ...current, xp: Math.max(current.xp, xp) } : undefined);
+}
+
+/** Change only a still-selected legacy builtin, preserving all user progress. */
+export function migratePetSpecies(expectedId: string, speciesId: string): PetSave | undefined {
+	return updatePetSave(current => current?.speciesId === expectedId ? { ...current, speciesId } : current);
 }
 
 export function deletePetSave(): void {
