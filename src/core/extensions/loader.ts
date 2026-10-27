@@ -23,6 +23,8 @@ import type { ExecOptions } from "../exec/exec.js";
 import { execCommand } from "../exec/exec.js";
 import { createSyntheticSourceInfo } from "../skills/source-info.js";
 import { type McpServerConfig, McpServerRegistry, mcpNamespace, validateMcpServerConfig } from "../mcp/servers.js";
+import { petService, type PetActionDef } from "../pet/service.js";
+import { isValidSpecies, type PetMood, type PetSpeciesDef } from "../pet/sprites.js";
 import type {
 	BuiltinCommandDefinition,
 	Extension,
@@ -330,6 +332,28 @@ function createExtensionAPI(
 		registerMenu(menu: ExtensionMenu): void {
 			runtime.assertActive();
 			extension.menus.set(menu.id, { ...menu, sourceInfo: extension.sourceInfo });
+		},
+
+		pet: {
+			registerSpecies(species: PetSpeciesDef): void {
+				runtime.assertActive();
+				if (!isValidSpecies(species)) throw new Error("pet.registerSpecies: expected { id, name, frames: { <mood>: string[] } }");
+				(extension.petSpecies ??= new Map()).set(species.id, species);
+				petService.notify();
+			},
+			registerAction(action: PetActionDef): void {
+				runtime.assertActive();
+				if (!action?.id || !action.label || !action.command) throw new Error("pet.registerAction: expected { id, label, command }");
+				(extension.petActions ??= new Map()).set(action.id, action);
+			},
+			react(mood: PetMood, options?: { xp?: number }): void {
+				runtime.assertActive();
+				petService.react(mood, options);
+			},
+			getState() {
+				runtime.assertActive();
+				return petService.status();
+			},
 		},
 
 		// Flag access - checks extension registered it, reads from runtime

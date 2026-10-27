@@ -1,6 +1,6 @@
 /**
- * pet-shared.tsx — pet visuals shared by the floating window (pet.tsx) and
- * the settings page (PetSettingsPage): the chat pill and shared chip styles.
+ * pet-shared.tsx — pet UI shared by the floating window (pet.tsx) and the
+ * settings page (PetSettingsPage): the chat pill and shared chip styles.
  * Built-in pet artwork lives in pet-sprites.tsx (re-exported here).
  */
 
@@ -9,22 +9,7 @@ import { ArrowUp, Mic, Square } from "lucide-react";
 
 export { PetSprite, SPECIES, type PetSpriteProps } from "./pet-sprites";
 
-export type Mood = "idle" | "working" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
-
-export interface PetMeta {
-	species: string;
-	name: string;
-	level: number;
-	xp?: number;
-	mood: Mood;
-	busy?: boolean;
-	floating?: boolean | null;
-	scale?: number;
-	subtitle?: string;
-}
-
-/** Mirrors state.ts levelForXp so surfaces can label the pet from the raw save. */
-export const levelForXp = (xp: number) => Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 10)) + 1);
+export type { PetMood as Mood } from "@/lib/pet";
 
 // --- chat pill (input + round record button) --------------------------------
 
@@ -199,16 +184,6 @@ export const petChipStyle: React.CSSProperties = {
 	backdropFilter: "blur(6px)",
 	border: "1px solid rgba(255,255,255,0.10)",
 	whiteSpace: "nowrap",
-};
-
-export const petAsciiStyle: React.CSSProperties = {
-	margin: "4px 0 0",
-	fontSize: 11,
-	lineHeight: 1.25,
-	color: "#d4f7d4",
-	background: "rgba(20,24,28,0.82)",
-	borderRadius: 12,
-	padding: "8px 12px",
 };
 
 const chatBarStyle: React.CSSProperties = {

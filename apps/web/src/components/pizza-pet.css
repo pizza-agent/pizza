@@ -1,0 +1,285 @@
+.pizza-pet {
+	position: relative;
+	display: block;
+	flex: none;
+	overflow: visible;
+	pointer-events: auto;
+	--pet-gx: 0;
+	--pet-gy: 0;
+}
+.pizza-pet svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+}
+.pizza-pet__motion,
+.pizza-pet__attention {
+	transform-box: view-box;
+	transform-origin: 56px 65px;
+}
+.pizza-pet__motion {
+	animation: pizzaSway 10s ease-in-out var(--pet-fidget-delay) infinite;
+}
+.pizza-pet[data-fidget="stretch"] .pizza-pet__motion {
+	animation-name: pizzaStretch;
+}
+.pizza-pet__attention {
+	translate: calc(var(--pet-gx) * 1px) calc(var(--pet-gy) * 0.8px);
+	rotate: calc(var(--pet-gx) * 2deg);
+	transition:
+		translate 0.22s ease-out,
+		rotate 0.3s ease-out;
+}
+.pizza-pet__gaze {
+	transform: translate(calc(var(--pet-gx) * 3px), calc(var(--pet-gy) * 2.4px));
+	transition: transform 0.2s ease-out;
+}
+.pizza-pet__expression,
+.pizza-pet__blink {
+	transform-box: fill-box;
+	transform-origin: center;
+}
+.pizza-pet__expression {
+	animation: pizzaCurious 10s ease-in-out var(--pet-fidget-delay) infinite;
+}
+.pizza-pet__blink {
+	animation: pizzaBlink 5.2s linear var(--pet-delay) infinite;
+}
+.pizza-pet__smile {
+	opacity: 0;
+	transition: opacity 0.12s ease-out;
+}
+.pizza-pet__eye {
+	transition: opacity 0.12s ease-out;
+}
+.pizza-pet__cheek {
+	opacity: 0.5;
+	transition: opacity 0.25s ease-out;
+}
+.pizza-pet__mouth {
+	transition: opacity 0.2s ease-out;
+}
+.pizza-pet:is([data-mood="happy"], [data-mood="celebrating"], [data-petted="true"]) .pizza-pet__cheek {
+	opacity: 0.8;
+}
+.pizza-pet[data-mood="sad"] .pizza-pet__mouth {
+	opacity: 0;
+}
+.pizza-pet[data-mood="working"] .pizza-pet__motion {
+	animation: pizzaWork 1.9s ease-in-out infinite;
+}
+.pizza-pet[data-mood="working"] .pizza-pet__expression {
+	animation: none;
+	transform: scaleY(0.76);
+}
+.pizza-pet[data-mood="happy"] .pizza-pet__motion {
+	animation: pizzaSway 8s ease-in-out var(--pet-fidget-delay) infinite;
+}
+.pizza-pet:is([data-mood="happy"], [data-mood="celebrating"]) .pizza-pet__eye {
+	opacity: 0;
+}
+.pizza-pet:is([data-mood="happy"], [data-mood="celebrating"]) .pizza-pet__smile {
+	opacity: 1;
+}
+.pizza-pet[data-mood="celebrating"] .pizza-pet__motion {
+	animation: pizzaCelebrate 1.4s ease-in-out infinite;
+}
+.pizza-pet[data-mood="sad"] .pizza-pet__motion {
+	animation: none;
+	transform: translateY(2px) rotate(-4deg);
+}
+.pizza-pet[data-mood="sad"] .pizza-pet__expression {
+	animation: none;
+	transform: scaleY(0.65);
+}
+.pizza-pet[data-mood="sleepy"] .pizza-pet__motion {
+	animation: pizzaDoze 6s ease-in-out infinite;
+}
+.pizza-pet[data-mood="sleepy"] .pizza-pet__expression {
+	animation: pizzaPeek 10s ease-in-out var(--pet-fidget-delay) infinite;
+}
+.pizza-pet[data-mood="eating"] .pizza-pet__motion {
+	animation: pizzaNibble 0.9s ease-in-out infinite;
+}
+.pizza-pet[data-petted="true"]:is([data-mood="idle"], [data-mood="sleepy"], [data-mood="happy"]) .pizza-pet__attention {
+	animation: pizzaNuzzle 1.5s ease-in-out infinite;
+}
+.pizza-pet[data-petted="true"]:is([data-mood="idle"], [data-mood="sleepy"], [data-mood="happy"]) .pizza-pet__eye {
+	opacity: 0;
+}
+.pizza-pet[data-petted="true"]:is([data-mood="idle"], [data-mood="sleepy"], [data-mood="happy"]) .pizza-pet__smile {
+	opacity: 1;
+}
+.pizza-pet[data-poked="true"] .pizza-pet__motion {
+	animation: pizzaPoke 0.65s ease-out 1;
+}
+.pizza-pet[data-animate="false"] *,
+[data-main-agent-pet-layer] [aria-hidden="true"] .pizza-pet * {
+	animation-play-state: paused !important;
+}
+@keyframes pizzaBlink {
+	0%,
+	28%,
+	34%,
+	68%,
+	74%,
+	100% {
+		transform: scaleY(1);
+	}
+	30.5%,
+	70.5% {
+		transform: scaleY(0.04);
+	}
+	32%,
+	72% {
+		transform: scaleY(1.06);
+	}
+}
+@keyframes pizzaSway {
+	0%,
+	9%,
+	100% {
+		transform: none;
+	}
+	2% {
+		transform: rotate(-5deg);
+	}
+	4.5% {
+		transform: rotate(4deg);
+	}
+	7% {
+		transform: rotate(-1.5deg);
+	}
+}
+@keyframes pizzaStretch {
+	0%,
+	10%,
+	100% {
+		transform: none;
+	}
+	4% {
+		transform: scale(0.97, 1.045);
+	}
+	7% {
+		transform: scale(1.025, 0.98);
+	}
+}
+@keyframes pizzaCurious {
+	0%,
+	48%,
+	68%,
+	100% {
+		transform: scale(1);
+	}
+	53%,
+	62% {
+		transform: scale(1.12, 1.14);
+	}
+}
+@keyframes pizzaWork {
+	0%,
+	100% {
+		transform: rotate(-1deg);
+	}
+	35% {
+		transform: translateY(-1.2px) rotate(2deg);
+	}
+	70% {
+		transform: rotate(-1deg);
+	}
+}
+@keyframes pizzaCelebrate {
+	0%,
+	60%,
+	100% {
+		transform: none;
+	}
+	18% {
+		transform: scale(1.05, 0.95);
+	}
+	38% {
+		transform: translateY(-3px) scale(0.97, 1.04);
+	}
+	53% {
+		transform: scale(1.025, 0.98);
+	}
+}
+@keyframes pizzaDoze {
+	0%,
+	100% {
+		transform: rotate(-4deg);
+	}
+	50% {
+		transform: translateY(1px) rotate(-3deg);
+	}
+}
+@keyframes pizzaPeek {
+	0%,
+	40%,
+	76%,
+	100% {
+		transform: scaleY(0.13);
+	}
+	52%,
+	65% {
+		transform: scaleY(0.95);
+	}
+}
+@keyframes pizzaNibble {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	35% {
+		transform: scale(1.035, 0.97);
+	}
+	65% {
+		transform: scale(0.985, 1.02);
+	}
+}
+@keyframes pizzaNuzzle {
+	0%,
+	100% {
+		rotate: 4deg;
+		translate: 1px 0;
+	}
+	45% {
+		rotate: 7deg;
+		translate: 2px -1px;
+	}
+}
+@keyframes pizzaPoke {
+	0%,
+	100% {
+		transform: none;
+	}
+	30% {
+		transform: scale(0.96, 1.055) rotate(-7deg);
+	}
+	60% {
+		transform: scale(1.04, 0.96) rotate(4deg);
+	}
+	82% {
+		transform: rotate(-1deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.pizza-pet * {
+		animation: none !important;
+		transition: none !important;
+	}
+	.pizza-pet__attention {
+		translate: none !important;
+		rotate: none !important;
+	}
+	.pizza-pet__gaze {
+		transform: none !important;
+	}
+	.pizza-pet[data-mood="sleepy"] .pizza-pet__expression {
+		transform: scaleY(0.13);
+	}
+}
+
+[data-main-agent-pet-layer] [aria-hidden="true"] .pizza-pet {pointer-events:none;}

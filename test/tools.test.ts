@@ -635,10 +635,22 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
-		it("should respect timeout", async () => {
-			await expect(bashTool.execute("test-call-10", { command: "sleep 5", timeout: 1 })).rejects.toThrow(
-				/timed out/i,
+		it("should respect timeout in milliseconds", async () => {
+			await expect(bashTool.execute("test-call-10", { command: "sleep 5", timeout: 100 })).rejects.toThrow(
+				"Command timed out after 100ms",
 			);
+		});
+
+		it("should let a command finish within its millisecond timeout", async () => {
+			const result = await bashTool.execute("test-timeout-completes", { command: "echo ok", timeout: 1000 });
+			expect(getTextOutput(result).trim()).toBe("ok");
+		});
+
+		it("should pass milliseconds unchanged to custom command operations", async () => {
+			const exec = vi.fn(async () => ({ exitCode: 0 }));
+			const tool = createBashTool(testDir, { operations: { exec } });
+			await tool.execute("test-custom-timeout", { command: "echo ok", timeout: 1500 });
+			expect(exec).toHaveBeenCalledWith("echo ok", testDir, expect.objectContaining({ timeout: 1500 }));
 		});
 
 		it("should throw error when cwd does not exist", async () => {

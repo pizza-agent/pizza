@@ -19,7 +19,7 @@ const PINNED_KEY = "pizza:pinned-workspaces";
 const COLLAPSED_KEY = "pizza:sidebar-collapsed";
 
 /** Context passed to routed views so their top header can clear the macOS traffic lights + toggle when the sidebar is collapsed. */
-export type LayoutOutletContext = { sidebarCollapsed: boolean };
+export type LayoutOutletContext = { sidebarCollapsed: boolean; isMainAgent?: boolean };
 
 function getPinnedWorkspaces(): Set<string> {
 	try {
@@ -508,8 +508,8 @@ export default function Layout({
 					   traffic lights itself (sidebarCollapsed=true in the context). */
 					<Outlet context={{ sidebarCollapsed: true } satisfies LayoutOutletContext} />
 				) : (
-					<WorkspacePane workspace={workspace} ptyPort={state?.ptyPort}>
-						<Outlet context={{ sidebarCollapsed: collapsed } satisfies LayoutOutletContext} />
+					<WorkspacePane workspace={workspace} ptyPort={state?.ptyPort} isMain={state?.isMainAgent === true && isMainChat} running={state?.isStreaming ?? false} connected={online}>
+						<Outlet context={{ sidebarCollapsed: collapsed, isMainAgent: state?.isMainAgent === true && isMainChat } satisfies LayoutOutletContext} />
 					</WorkspacePane>
 				)}
 				</div>

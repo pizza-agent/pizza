@@ -181,9 +181,47 @@ describe("runRpcModeWithFacade", () => {
 		rpcIo.lineHandler!(JSON.stringify({ id: "capabilities", type: "get_state" }));
 		rpcIo.lineHandler!(JSON.stringify({ id: "unsupported", type: "unknown_future_command" }));
 		await vi.waitFor(() => {
-			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "capabilities", data: expect.objectContaining({ capabilities: { mcpManagement: true } }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "capabilities", data: expect.objectContaining({ capabilities: { mcpManagement: true, mainProfile: false } }) }));
 			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "unsupported", success: false, error: "Unknown command: unknown_future_command" }));
 		});
+	});
+
+	it("gates profile commands by main capability and reads identity through RPC", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		rpcIo.lineHandler!(JSON.stringify({ id: "denied", type: "main_profile" }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "denied", success: false })));
+		const mainDir = makeTempDir();
+		mkdirSync(join(mainDir, "memory"));
+		writeFileSync(join(mainDir, "SOUL.md"), "# Identity\n\nName: Atlas\n\nClear and curious.");
+		Object.defineProperty(facade, "mainAgent", { value: { mainDir, memoryDir: join(mainDir, "memory") } });
+		rpcIo.lineHandler!(JSON.stringify({ id: "profile", type: "main_profile" }));
+		rpcIo.lineHandler!(JSON.stringify({ id: "main-state", type: "get_state" }));
+		rpcIo.lineHandler!(JSON.stringify({ id: "document", type: "main_document_read", sourceId: "SOUL.md" }));
+		await vi.waitFor(() => {
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "profile", success: true, data: expect.objectContaining({ soul: expect.objectContaining({ name: "Atlas", initialized: true }) }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "main-state", data: expect.objectContaining({ isMainAgent: true, capabilities: { mcpManagement: true, mainProfile: true } }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "document", success: true, data: expect.objectContaining({ sourceId: "SOUL.md" }) }));
+		});
+	});
+
+	it("writes main documents through the same RPC and rejects stale revisions", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		rpcIo.lineHandler!(JSON.stringify({ id: "denied-write", type: "main_document_write", sourceId: "SOUL.md", content: "No", expectedRevision: "0".repeat(64) }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "denied-write", success: false })));
+		const mainDir = makeTempDir();
+		writeFileSync(join(mainDir, "SOUL.md"), "# Identity\n\nName: Atlas");
+		Object.defineProperty(facade, "mainAgent", { value: { mainDir, memoryDir: join(mainDir, "memory") } });
+		rpcIo.lineHandler!(JSON.stringify({ id: "edit-base", type: "main_document_read", sourceId: "SOUL.md" }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "edit-base", success: true })));
+		const base = parseOutputLines().find((line) => line.id === "edit-base")!.data as { revision: string };
+		rpcIo.lineHandler!(JSON.stringify({ id: "save-source", type: "main_document_write", sourceId: "SOUL.md", content: "# Identity\n\nName: Nova", expectedRevision: base.revision }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "save-source", success: true, data: expect.objectContaining({ content: "# Identity\n\nName: Nova" }) })));
+		rpcIo.lineHandler!(JSON.stringify({ id: "stale-save", type: "main_document_write", sourceId: "SOUL.md", content: "Overwrite", expectedRevision: base.revision }));
+		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "stale-save", success: false, error: expect.stringContaining("DOCUMENT_CONFLICT") })));
 	});
 
 	it("routes desktop MCP commands to the active internal command and reports disabled extensions", async () => {

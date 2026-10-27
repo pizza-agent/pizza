@@ -12,7 +12,7 @@ Help the user design a companion that can be adopted in Pizza. Keep the collabor
 1. Ask what the pet should be (animal, creature, object, or character) and for one or two personality or color details. If the user already supplied a clear concept, do not ask again.
 2. Invent a short display name and a stable lowercase `id` using only `a-z`, `0-9`, and hyphens. Check `~/.pizza/agent/pets/` before writing. Never overwrite an existing pack; choose a distinct id if necessary.
 3. Create `~/.pizza/agent/pets/<id>.json` with a valid species definition. Use concise ASCII sprites that remain legible in a terminal. Give each mood a frame array, and vary frames for idle and working when useful.
-4. Confirm the file path and tell the user to choose the new creature from Settings > Extensions > Pet, or run `/pet adopt <id>`.
+4. Confirm the file path and tell the user to choose the new creature from Settings > Pet (or right-click the pet and pick its appearance settings).
 
 ## Species file format
 

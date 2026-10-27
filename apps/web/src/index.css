@@ -206,6 +206,12 @@
 	}
 }
 
+/* Mask the history itself, so theme colours remain exact and controls stay crisp. */
+.chat-scroll-fade {
+	mask-image: linear-gradient(to bottom, transparent 0, #000 var(--chat-top-fade, 0px), #000 100%);
+	-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--chat-top-fade, 0px), #000 100%);
+}
+
 /* Hide scrollbar while keeping the element scrollable. */
 .scrollbar-hide {
 	scrollbar-width: none;

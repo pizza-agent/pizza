@@ -91,6 +91,13 @@ export function applyEvent(state: PetState, kind: PetEventKind, now: number = Da
 	return next;
 }
 
+/** A plugin-driven reaction: show `mood` for a while and optionally grant XP. */
+export function applyReaction(state: PetState, mood: PetMood, xp = 0, now: number = Date.now()): PetState {
+	const next: PetState = { ...state, xp: state.xp + Math.max(0, Math.floor(xp)), lastEventAt: now, mood, moodSince: now };
+	next.level = levelForXp(next.xp);
+	return next;
+}
+
 /**
  * Resolve what the pet should look like right now.
  *

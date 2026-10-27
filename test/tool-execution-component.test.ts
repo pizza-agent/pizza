@@ -105,6 +105,14 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("README.md");
 	});
 
+	test("cli call renders its timeout in milliseconds", () => {
+		const component = new ToolExecutionComponent(
+			"cli", "tool-timeout-ms", { command: "echo ok", timeout: 1500 }, {},
+			createBashToolDefinition(process.cwd()), createFakeTui(), process.cwd(),
+		);
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("(timeout 1500ms)");
+	});
+
 	test("cli execute emits an initial empty partial update before output arrives", async () => {
 		const updates: Array<{ content: Array<{ type: string; text?: string }>; details?: unknown }> = [];
 		const operations: BashOperations = {

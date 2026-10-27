@@ -298,6 +298,14 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "main_profile" }
+	| { id?: string; type: "main_document_read"; sourceId: string }
+	| { id?: string; type: "main_document_write"; sourceId: string; content: string; expectedRevision: string }
+	| { id?: string; type: "main_journal_list"; before?: string; limit?: number }
+
+	// Pet (the app companion)
+	| { id?: string; type: "pet_get" }
+	| { id?: string; type: "pet_action"; op: RpcPetOperation }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -597,9 +605,103 @@ export interface RpcExtensionPermissionState {
 // RPC State
 // ============================================================================
 
+/** Source ids are relative to the configured main identity/memory roots. */
+export interface MainAgentDocument {
+	/** Content hash used to detect edits made after this document was loaded. */
+	revision: string;
+	sourceId: string;
+	path: string;
+	content: string;
+}
+export interface MainMemorySummary {
+	sourceId: string;
+	title: string;
+	summary: string;
+	status: "indexed" | "unindexed" | "stale" | "unavailable";
+}
+export interface MainJournalSummary {
+	sourceId: string;
+	date: string;
+	title: string;
+	preview: string;
+}
+export interface MainJournalPage {
+	entries: MainJournalSummary[];
+	nextBefore?: string;
+}
+export interface MainAgentProfile {
+	soul: { initialized: boolean; name?: string; summary: string; sourceId: string };
+	userProfile: { summary: string; sourceId: string } | null;
+	pet: { speciesId: string } | null;
+	memories: MainMemorySummary[];
+	memoriesTruncated: boolean;
+	journal: MainJournalPage;
+}
+
+// ============================================================================
+// Pet (the app companion — a core feature that plugins can extend)
+// ============================================================================
+
+export type RpcPetMood = "idle" | "working" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
+
+export interface RpcPetStatus {
+	speciesId: string;
+	xp: number;
+	level: number;
+	mood: RpcPetMood;
+	busy: boolean;
+	scale: number;
+	adoptedAt: number;
+	floating: boolean | null;
+}
+
+export interface RpcPetSpecies {
+	id: string;
+	name: string;
+	description?: string;
+	/** ASCII frames per mood (the art for non-builtin species). */
+	frames: Partial<Record<RpcPetMood, string[]>>;
+	source: "builtin" | "plugin" | "user";
+}
+
+/** A plugin-contributed pet menu entry; `command` is steered into the session. */
+export interface RpcPetAction {
+	id: string;
+	label: string;
+	description?: string;
+	command: string;
+}
+
+export interface RpcPetSnapshot {
+	/** Shared-save revision; prevents delayed frames undoing an appearance change. */
+	revision?: number;
+	pet: RpcPetStatus | null;
+	/** Active species definition when it is not a builtin (custom art). */
+	species: RpcPetSpecies | null;
+}
+
+export interface RpcPetCatalog extends RpcPetSnapshot {
+	catalog: RpcPetSpecies[];
+	actions: RpcPetAction[];
+}
+
+export type RpcPetOperation =
+	| { action: "adopt"; speciesId: string }
+	| { action: "customize"; scale?: number }
+	| { action: "release" }
+	| { action: "feed" }
+	| { action: "play" };
+
+/** Pushed on stdout whenever the pet's state changes. */
+export interface RpcPetStateEvent extends RpcPetSnapshot {
+	type: "pet_state";
+}
+
 export interface RpcSessionState {
 	/** Backend features used to reject incompatible desktop/backend combinations early. */
-	capabilities?: { mcpManagement?: boolean };
+	capabilities?: { mcpManagement?: boolean; mainProfile?: boolean };
+	/** Explicit backend identity; paths are not an authorization signal. */
+	isMainAgent?: boolean;
 	model?: ModelInfo;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
@@ -729,6 +831,10 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| { id?: string; type: "response"; command: "main_profile"; success: true; data: MainAgentProfile }
+	| { id?: string; type: "response"; command: "main_document_read"; success: true; data: MainAgentDocument }
+	| { id?: string; type: "response"; command: "main_document_write"; success: true; data: MainAgentDocument }
+	| { id?: string; type: "response"; command: "main_journal_list"; success: true; data: MainJournalPage }
 
 	// Model
 	| { id?: string; type: "response"; command: "set_model"; success: true; data: ModelInfo }
@@ -797,6 +903,8 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "mcp_command"; success: true; data: { text: string } }
 	| { id?: string; type: "response"; command: "get_extensions"; success: true; data: { extensions: RpcExtensionInfo[] } }
 	| { id?: string; type: "response"; command: "get_extension_menus"; success: true; data: { menus: RpcExtensionMenu[] } }
+	| { id?: string; type: "response"; command: "pet_get"; success: true; data: RpcPetCatalog }
+	| { id?: string; type: "response"; command: "pet_action"; success: true; data: RpcPetCatalog }
 	| { id?: string; type: "response"; command: "get_themes"; success: true; data: { themes: RpcThemeInfo[] } }
 	| { id?: string; type: "response"; command: "set_extension_enabled"; success: true; data: { id: string; enabled: boolean; requiresReload: boolean } }
 	| { id?: string; type: "response"; command: "install_extension"; success: true; data: { extensionId: string; ok: boolean; message: string; installed: boolean } }

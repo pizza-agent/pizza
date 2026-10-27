@@ -13,6 +13,7 @@ import type { CompactionEntry } from "../types/session-types.js";
 import type { EventStore } from "../event-store/store.js";
 import type { KeybindingsConfig } from "../commands/keybindings.js";
 import type { ModelRegistry } from "../models/model-registry.js";
+import type { PetContributionSource } from "../pet/service.js";
 import { eventToMessage } from "../projection/event-to-message.js";
 import type { ExtensionSessionManager } from "./session-context.js";
 import type { BuildSystemPromptOptions } from "../context/system-prompt.js";
@@ -791,6 +792,14 @@ export class ExtensionRunner {
 			}
 		}
 		return menus;
+	}
+
+	/** Pet species and actions contributed by loaded extensions (`pizza.pet`). */
+	getPetContributions(): PetContributionSource {
+		return {
+			species: () => this.extensions.flatMap((ext) => [...(ext.petSpecies?.values() ?? [])]),
+			actions: () => this.extensions.flatMap((ext) => [...(ext.petActions?.values() ?? [])]),
+		};
 	}
 
 	getCommand(name: string): ResolvedCommand | undefined {

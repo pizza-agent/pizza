@@ -21,6 +21,60 @@
     "confirm": "Confirm",
     "notice": "Notice"
   },
+  "mainAgent": {
+    "profileTitle": "Agent profile",
+    "openProfile": "View agent information",
+    "petDesktopHint": "Drag to move · Drag outside the app to float · Double-click for Agent info",
+    "petHint": "Drag to move · Double-click for agent information",
+    "openDock": "Open right panel",
+    "closeDock": "Close right panel",
+    "identity": "Identity & voice",
+    "aboutYou": "About you",
+    "preferencesHint": "Your information and preferences, in your control",
+    "memories": "Long-term memory",
+    "recentJournal": "Recent journal",
+    "journal": "Journal",
+    "viewAll": "View all",
+    "edit": "Edit",
+    "back": "Back",
+    "refresh": "Refresh agent information",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "loadError": "Could not load agent information.",
+    "idle": "Ready",
+    "working": "Working",
+    "disconnected": "Disconnected",
+    "noSoul": "Define the name, values and voice you want your agent to have.",
+    "soulPrompt": "Let’s define your identity, values and voice together.",
+    "noPreferences": "What would you like me to know about your preferences?",
+    "preferencesPrompt": "I would like to share my preferences with you. Help me save them to my user profile.",
+    "noMemories": "There are no saved memories yet.",
+    "memoryHint": "View the source of each memory and update it at any time.",
+    "searchMemories": "Search titles and summaries",
+    "noMatches": "No matching memories.",
+    "memoryLimit": "Showing the first 200 memories. The full library is available in Files.",
+    "noJournal": "When there is something worth remembering, your journal will appear here.",
+    "journalPrompt": "Let’s review what we actually did and learned today, and save a short journal entry.",
+    "startInChat": "Continue in chat",
+    "loadMore": "Load earlier entries",
+    "appearance": "Appearance",
+    "memoryStatus": {
+      "indexed": "Indexed",
+      "unindexed": "Not yet indexed",
+      "stale": "Source file is missing",
+      "unavailable": "Source file is unavailable"
+    },
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "editorHint": "Edit the source here. Save with ⌘/Ctrl+S.",
+    "documentContent": "Document content",
+    "conflict": "This file changed elsewhere. Your draft is preserved. Copy it, or reload the source to merge your changes.",
+    "copyDraft": "Copy draft",
+    "reloadSource": "Reload source",
+    "reloadHint": "Replace this draft with the latest source.",
+    "editAppearance": "Change appearance"
+  },
   "layout": {
     "brandTagline": "Create together.",
     "agent": "Agent",
@@ -501,7 +555,9 @@
     "unavailable": "Interactive terminal is unavailable in this environment."
   },
   "dock": {
-    "toggleRight": "Toggle side panel"
+    "toggleRight": "Toggle side panel",
+    "openRight": "Open right panel",
+    "closeRight": "Close right panel"
   },
   "theme": {
     "light": "Light",
@@ -758,17 +814,16 @@
       "search": "Search settings...",
       "scheduler": "Scheduled tasks",
       "groupIntegrations": "Integrations",
-      "groupExtensions": "Extensions"
+      "groupExtensions": "Extensions",
+      "pet": "Pet"
     },
     "pet": {
-      "subtitle": "Your desktop companion. It reacts to the agent's work.",
+      "subtitle": "Your agent’s companion. It reacts to the agent’s work, and plugins can add new looks and actions.",
       "showMini": "Show mini",
       "hideMini": "Hide mini",
       "customize": "Customize",
-      "customizeHint": "Adjust the pet's size and the line shown beneath it.",
+      "customizeHint": "Adjust how large your pet appears.",
       "size": "Pet size",
-      "subtitleLabel": "Small title",
-      "subtitlePlaceholder": "A tiny companion for big ideas",
       "save": "Save",
       "cancel": "Cancel",
       "myPets": "My pets",
@@ -778,7 +833,14 @@
       "adoptCta": "Adopt a pet",
       "none": "None",
       "noneDescription": "Release your companion",
-      "current": "Current"
+      "current": "Current",
+      "release": "Release",
+      "releaseConfirm": "Release {{name}}? Its save will be deleted.",
+      "pluginActions": "Plugin actions",
+      "sourcePlugin": "Plugin",
+      "sourceUser": "Custom",
+      "actionError": "Action failed: {{error}}",
+      "level": "Lv.{{level}}"
     },
     "general": {
       "compaction": "Compaction",
@@ -966,5 +1028,31 @@
       "font": "Font",
       "remove": "Remove this element"
     }
+  },
+  "pet": {
+    "menu": {
+      "chat": "Chat",
+      "closeChat": "Close chat",
+      "float": "Float on desktop",
+      "dock": "Back to app",
+      "hideFloat": "Hide floating pet",
+      "feed": "Feed",
+      "play": "Play",
+      "settings": "Appearance settings",
+      "profile": "Agent profile",
+      "adopt": "Choose a pet"
+    },
+    "moods": {
+      "idle": "Idle",
+      "working": "Working",
+      "celebrating": "Celebrating",
+      "happy": "Happy",
+      "sad": "Sad",
+      "sleepy": "Sleepy",
+      "eating": "Eating"
+    },
+    "hint": "Drag to move · Double-click for agent profile · Right-click for more",
+    "desktopHint": "Drag to move · Drag outside the app to float · Double-click for agent profile · Right-click for more",
+    "floatHint": "Drag to move · Double-click to return to the app · Right-click for more"
   }
 }

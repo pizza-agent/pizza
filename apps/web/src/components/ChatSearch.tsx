@@ -59,7 +59,7 @@ export function ChatSearch({
 			data-no-drag
 			data-tauri-drag-region="false"
 			className={cn(
-				"absolute right-4 top-11 flex items-center gap-1 rounded-lg border border-border bg-surface px-1.5 py-1 shadow-lg",
+				"absolute right-4 top-11 flex max-w-[calc(100%_-_2rem)] items-center gap-1 rounded-lg border border-border bg-surface px-1.5 py-1 shadow-lg",
 				Z.chrome,
 			)}
 			onKeyDown={(e) => {
@@ -88,7 +88,7 @@ export function ChatSearch({
 				placeholder={t("search.placeholder")}
 				spellCheck={false}
 				// Keep the bar compact; the counter shows on the right.
-				className="w-44 bg-transparent px-1.5 py-1 text-sm text-fg outline-none placeholder:text-muted"
+				className="min-w-0 w-44 bg-transparent px-1.5 py-1 text-sm text-fg outline-none placeholder:text-muted"
 			/>
 			<span className="min-w-[3.5rem] shrink-0 text-right font-mono text-[11px] tabular-nums text-muted">
 				{counter}
