@@ -10,8 +10,6 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-![Pizza desktop demo](./resources/demo-desktop.gif)
-
 ## About It
 
 ### Under the hood
@@ -77,8 +75,6 @@ xattr -cr /Applications/Pizza.app
 npm install -g @tomsun28/pizza
 pizza
 ```
-
-![Pizza TUI demo](./resources/demo-tui.gif)
 
 ### One-shot & scripting
 

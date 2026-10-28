@@ -10,7 +10,6 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-![Pizza desktop demo](./resources/demo-desktop.gif)
 
 ## 关于它
 
@@ -77,8 +76,6 @@ xattr -cr /Applications/Pizza.app
 npm install -g @tomsun28/pizza
 pizza
 ```
-
-![Pizza TUI 演示](./resources/demo-tui.gif)
 
 ### 单次执行 & 脚本化
 
