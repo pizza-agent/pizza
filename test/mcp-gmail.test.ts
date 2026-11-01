@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 import { InMemoryAuthStorageBackend } from "../src/core/auth/auth-storage.js";
 import { createDefaultTransport, McpOAuthCredentialStore, McpServerConnection } from "../src/builtin-extensions/mcp/runtime.js";
 import { signInMcpServer } from "../src/builtin-extensions/mcp/oauth.js";
@@ -13,7 +14,19 @@ import { validateMcpServerConfig } from "../src/core/mcp/servers.js";
 import { MCP_CONNECTOR_CATALOG, PIZZA_GMAIL_API_MCP_URL, PIZZA_GMAIL_MCP_URL } from "../src/builtin-extensions/connectors/catalog.js";
 
 const gmail = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "gmail")!.config;
-afterEach(() => vi.unstubAllGlobals());
+// Callback fixtures must stay local even when another suite configures a system proxy.
+let previousDispatcher: Dispatcher;
+let directDispatcher: Agent;
+beforeEach(() => {
+	previousDispatcher = getGlobalDispatcher();
+	directDispatcher = new Agent();
+	setGlobalDispatcher(directDispatcher);
+});
+afterEach(async () => {
+	vi.unstubAllGlobals();
+	setGlobalDispatcher(previousDispatcher);
+	await directDispatcher.close();
+});
 
 describe("Gmail MCP authorization", () => {
 	it("restricts a Google client secret to the owner's configuration file, including existing files", () => {

@@ -1,11 +1,24 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 import { createMcpAuthProvider, signInMcpServer } from "../src/builtin-extensions/mcp/oauth.js";
 import { authorizeMcp, McpOAuthProvider, MemoryOAuthStateStore } from "../src/core/mcp/oauth/index.js";
 import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_OAUTH_CLIENT_ID } from "../src/builtin-extensions/connectors/catalog.js";
 import { validateMcpServerConfig } from "../src/core/mcp/servers.js";
 
-afterEach(() => vi.unstubAllGlobals());
+// Callback fixtures must stay local even when another suite configures a system proxy.
+let previousDispatcher: Dispatcher;
+let directDispatcher: Agent;
+beforeEach(() => {
+	previousDispatcher = getGlobalDispatcher();
+	directDispatcher = new Agent();
+	setGlobalDispatcher(directDispatcher);
+});
+afterEach(async () => {
+	vi.unstubAllGlobals();
+	setGlobalDispatcher(previousDispatcher);
+	await directDispatcher.close();
+});
 
 describe("Notion and X OAuth interoperability", () => {
 	it.each(["https://mcp.notion.com", "https://unexpected.example", undefined])("registers a public Notion client and validates the returned issuer: %s", async (iss) => {

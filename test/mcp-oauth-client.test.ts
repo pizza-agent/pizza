@@ -3,7 +3,8 @@ import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 import { FileAuthStorageBackend } from "../src/core/auth/auth-storage.js";
 import { MemoryOAuthStateStore } from "../src/core/mcp/oauth/index.js";
 import { signInMcpServer, McpSignInCancelledError } from "../src/builtin-extensions/mcp/oauth.js";
@@ -11,7 +12,19 @@ import { McpServerConnection, McpOAuthCredentialStore, createDefaultTransport } 
 import { PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID, PIZZA_GITHUB_OAUTH_AS_METADATA } from "../src/builtin-extensions/connectors/catalog.js";
 import { PIZZA_OAUTH_LOGO } from "../src/builtin-extensions/mcp/oauth-logo.js";
 
-afterEach(() => vi.unstubAllGlobals());
+// Callback fixtures must stay local even when another suite configures a system proxy.
+let previousDispatcher: Dispatcher;
+let directDispatcher: Agent;
+beforeEach(() => {
+	previousDispatcher = getGlobalDispatcher();
+	directDispatcher = new Agent();
+	setGlobalDispatcher(directDispatcher);
+});
+afterEach(async () => {
+	vi.unstubAllGlobals();
+	setGlobalDispatcher(previousDispatcher);
+	await directDispatcher.close();
+});
 
 describe("MCP OAuth client workflow", () => {
 	it("upgrades existing Pizza GitHub installs while leaving custom clients on their configured flow", async () => {
