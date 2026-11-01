@@ -54,6 +54,7 @@ const DIST_WHITELIST = [
 	"README.md",
 	"CHANGELOG.md",
 	"providers.json",
+	"assets/google-desktop-oauth.json",
 	"src",
 	"packages",
 	"docs",

@@ -105,6 +105,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
 		const expiresAt = tokens.expires_in === undefined ? undefined : Date.now() + tokens.expires_in * 1000;
 		await this.update((value) => {
 			const next: McpOAuthState = { ...value, tokens };
+			delete next.codeVerifier;
+			delete next.oauthState;
 			if (expiresAt === undefined) delete next.tokensExpireAt;
 			else next.tokensExpireAt = expiresAt;
 			return next;

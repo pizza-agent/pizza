@@ -1,3 +1,5 @@
+import { validateAuthorizationParams } from "./oauth/authorization-params.js";
+
 /**
  * MCP server configuration and the servers extensions register with `pizza.registerMcpServer()`.
  *
@@ -87,6 +89,14 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
 
 /** OAuth client settings for servers that do not support dynamic client registration. */
 export interface McpOAuthConfig {
+	/** Include RFC 8707 resource in browser authorization requests. Default true; X requires false. Token requests still bind the resource. */
+	authorizationResourceIndicator?: boolean;
+	/** Additional provider options, for example Google's access_type=offline. */
+	authorizationParams?: Record<string, string>;
+	/** Read-only tool used to verify authorization when discovery is public. */
+	authCheck?: { tool: string; arguments?: Record<string, unknown> };
+	/** RFC 8628 device authorization endpoint for public native clients. */
+	deviceAuthorizationUrl?: string;
 	/** Pre-registered client id. Without it, Pizza registers a client with the authorization server. */
 	clientId?: string;
 	/** May reference environment variables (`${NAME}`) or commands (`!cmd`). */
@@ -120,6 +130,17 @@ export interface McpOAuthConfig {
 	 * The document is trusted as configured. Must use https, except on loopback hosts.
 	 */
 	authServerMetadataUrl?: string;
+	/**
+	 * Inline authorization server metadata (RFC 8414). Trusted as configured — used when the AS does
+	 * not publish well-known metadata (e.g. GitHub OAuth). Takes precedence over discovery / URL fetch.
+	 */
+	authorizationServerMetadata?: {
+		issuer: string;
+		authorization_endpoint: string;
+		token_endpoint: string;
+		response_types_supported: string[];
+		[key: string]: unknown;
+	};
 }
 
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
@@ -133,6 +154,8 @@ export function isLoopbackRedirectUri(value: string): boolean {
 
 export interface McpHttpServerConfig extends McpServerConfigBase {
 	type?: "http" | "streamable-http";
+	/** Execute the bundled Gmail MCP adapter locally against the stable Gmail REST API. */
+	adapter?: "gmail";
 	url: string;
 	/** Values may reference environment variables (`${NAME}`) or commands (`!cmd`). */
 	headers?: Record<string, string>;
@@ -164,6 +187,19 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 function validateOAuth(value: unknown): string | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)) return "oauth must be an object";
+	if (value.authorizationResourceIndicator !== undefined && typeof value.authorizationResourceIndicator !== "boolean") return "oauth.authorizationResourceIndicator must be a boolean";
+	const paramsError = validateAuthorizationParams(value.authorizationParams);
+	if (paramsError) return paramsError;
+	if (value.authCheck !== undefined) {
+		if (!isRecord(value.authCheck) || typeof value.authCheck.tool !== "string" || !value.authCheck.tool.trim()) return "oauth.authCheck.tool must be a non-empty string";
+		if (value.authCheck.arguments !== undefined && !isRecord(value.authCheck.arguments)) return "oauth.authCheck.arguments must be an object";
+	}
+	if (value.deviceAuthorizationUrl !== undefined) {
+		const url = typeof value.deviceAuthorizationUrl === "string" && URL.canParse(value.deviceAuthorizationUrl) ? new URL(value.deviceAuthorizationUrl) : undefined;
+		if (!url || !(url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname)))) return "oauth.deviceAuthorizationUrl must be an https URL, or http on loopback";
+		if (typeof value.clientId !== "string" || !value.clientId.trim()) return "oauth.deviceAuthorizationUrl requires oauth.clientId";
+		if (!isRecord(value.authorizationServerMetadata) || typeof value.authorizationServerMetadata.token_endpoint !== "string") return "oauth.deviceAuthorizationUrl requires authorizationServerMetadata.token_endpoint";
+	}
 	if (value.clientId !== undefined && typeof value.clientId !== "string") return "oauth.clientId must be a string";
 	if (value.clientSecret !== undefined && typeof value.clientSecret !== "string") {
 		return "oauth.clientSecret must be a string";
@@ -200,6 +236,18 @@ function validateOAuth(value: unknown): string | undefined {
 		const url = typeof metadataUrl === "string" && URL.canParse(metadataUrl) ? new URL(metadataUrl) : undefined;
 		if (!url || !(url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname)))) {
 			return "oauth.authServerMetadataUrl must be an https URL, or http on localhost, 127.0.0.1, or [::1]";
+		}
+	}
+	const inlineMeta = value.authorizationServerMetadata;
+	if (inlineMeta !== undefined) {
+		if (!isRecord(inlineMeta)) return "oauth.authorizationServerMetadata must be an object";
+		for (const key of ["issuer", "authorization_endpoint", "token_endpoint"] as const) {
+			if (typeof inlineMeta[key] !== "string" || !inlineMeta[key]) {
+				return `oauth.authorizationServerMetadata.${key} must be a non-empty string`;
+			}
+		}
+		if (!Array.isArray(inlineMeta.response_types_supported) || inlineMeta.response_types_supported.length === 0) {
+			return "oauth.authorizationServerMetadata.response_types_supported must be a non-empty array";
 		}
 	}
 	return undefined;
@@ -267,6 +315,7 @@ export function validateMcpServerConfig(name: string, raw: unknown): McpServerCo
 	if (type === "sse") return `server "${name}": legacy SSE transport is not supported; use the streamable HTTP URL`;
 
 	if (typeof value.url === "string" && (type === undefined || type === "http" || type === "streamable-http")) {
+		if (value.adapter !== undefined && (value.adapter !== "gmail" || value.url !== "https://gmail.googleapis.com/gmail/v1/users/me")) return `server "${name}": the gmail adapter requires https://gmail.googleapis.com/gmail/v1/users/me`;
 		if (!URL.canParse(value.url) || !/^https?:$/.test(new URL(value.url).protocol)) {
 			return `server "${name}": url must be an http or https URL`;
 		}

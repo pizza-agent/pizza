@@ -4,6 +4,7 @@ export {
 	OAuthCallbackServer,
 	type OAuthCallbackServerOptions,
 } from "./callback.js";
+export { authorizeDevice, type OAuthDevicePrompt } from "./device.js";
 export {
 	buildAuthorizationServerDiscoveryUrls,
 	discoverAuthorizationServerMetadata,

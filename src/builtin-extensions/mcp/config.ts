@@ -5,7 +5,7 @@
  * (also falling back to `<project>/.pi/mcp.json` for compatibility).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CONFIG_DIR_NAME } from "../../config.js";
 import { collectConfigCommands, registerTrustedConfigCommands } from "../../core/config/resolve-config-value.js";
@@ -178,12 +178,38 @@ export function updateMcpServerConfig(
 	});
 }
 
+/**
+ * Marketplace re-install must not wipe a user's custom `oauth.clientId` when the incoming
+ * catalog oauth omits it (empty `{}` placeholder). Product defaults (e.g. GitHub) ship
+ * `clientId` in the catalog as a public client — no `clientSecret` is merged back in, so
+ * a prior secret is not re-attached on re-add.
+ */
+export function mergeMcpServerConfigPreservingOAuthCredentials(
+	previous: unknown,
+	next: McpServerConfig,
+): McpServerConfig {
+	if (!isRecord(previous) || !("url" in next)) return next;
+	if (!isRecord(previous.oauth)) return next;
+	// Only merge when the incoming config also declares oauth (including empty `{}`).
+	if (!("oauth" in next) || next.oauth === undefined || !isRecord(next.oauth as unknown)) return next;
+	const mergedOauth: Record<string, unknown> = { ...(next.oauth as Record<string, unknown>) };
+	let changed = false;
+	const prevId = previous.oauth.clientId;
+	const curId = mergedOauth.clientId;
+	if (typeof prevId === "string" && prevId && (curId === undefined || curId === "")) {
+		mergedOauth.clientId = prevId;
+		changed = true;
+	}
+	if (!changed) return next;
+	return { ...next, oauth: mergedOauth as McpOAuthConfig };
+}
+
 export function addMcpServerConfig(path: string, name: string, config: McpServerConfig): boolean {
 	let replaced = false;
 	editMcpServers(path, (servers, parsed) => {
 		const target = servers ?? {};
 		replaced = target[name] !== undefined;
-		target[name] = config;
+		target[name] = mergeMcpServerConfigPreservingOAuthCredentials(target[name], config);
 		parsed.mcpServers = target;
 		return true;
 	});
@@ -215,5 +241,8 @@ function editMcpServers(
 	if (!edit(servers, parsed)) return;
 	const indent = (text && /^([ \t]+)\S/m.exec(text)?.[1]) || "  ";
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(parsed, null, indent)}\n`);
+	writeFileSync(path, `${JSON.stringify(parsed, null, indent)}\n`, { mode: 0o600 });
+	const containsClientSecret = Object.values(isRecord(parsed.mcpServers) ? parsed.mcpServers : {}).some((server) =>
+		isRecord(server) && isRecord(server.oauth) && typeof server.oauth.clientSecret === "string" && server.oauth.clientSecret.length > 0);
+	if (containsClientSecret) chmodSync(path, 0o600);
 }

@@ -24,7 +24,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { RpcClient } from "../rpc/rpc-client.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
-import { ChannelSupervisor } from "./channel-supervisor.js";
+import { adapterProxyEnv, ChannelSupervisor } from "./channel-supervisor.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
 import { prefetchLoginShellPath } from "../../src/utils/login-shell-path.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
@@ -364,7 +364,12 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		// so those agents must install the waiting approval handler instead.
 		// Passing PIZZA_HEADLESS here blanket was a bug: the desktop user's own
 		// main-agent conversation auto-rejected every gated tool call.
-		return interactive ? { PIZZA_AGENT_DIR: agentDir } : { PIZZA_AGENT_DIR: agentDir, PIZZA_HEADLESS: "1" };
+		// Forward the resolved proxy (+ NO_PROXY bypasses) so MCP HTTP clients
+		// in the agent match channel adapters.
+		const proxyEnv = adapterProxyEnv(agentDir);
+		return interactive
+			? { ...proxyEnv, PIZZA_AGENT_DIR: agentDir }
+			: { ...proxyEnv, PIZZA_AGENT_DIR: agentDir, PIZZA_HEADLESS: "1" };
 	}
 
 	/** In-flight spawns keyed by cwd — dedupes concurrent getOrCreateAgent

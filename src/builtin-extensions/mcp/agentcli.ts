@@ -541,6 +541,10 @@ export interface AgentCliServerView {
 	ready?: Promise<void>;
 }
 
+export type AgentCliSignInResult =
+	| { ok: true; tools: number }
+	| { ok: false; error: string; cancelled?: boolean };
+
 export interface AgentCliHost {
 	refreshConfig?(ctx: ExtensionContext): void;
 	getServers(): readonly AgentCliServerView[];
@@ -553,6 +557,23 @@ export interface AgentCliHost {
 		options: { local?: boolean; cwd: string },
 	): Promise<{ path: string; replaced: boolean }>;
 	removeServer(name: string, options: { local?: boolean; cwd: string }): Promise<{ path: string; removed: boolean }>;
+	/** Start OAuth for a live MCP server (including extension-scoped builtins). */
+	signIn?(
+		name: string,
+		options?: {
+			signal?: AbortSignal;
+			onAuthUrl?: (url: string) => void;
+			onDeviceCode?: (prompt: { userCode: string; verificationUri: string; expiresAt: number }) => void;
+		},
+	): Promise<AgentCliSignInResult>;
+	/** Resolve a pending redirect-URL prompt from the desktop login dialog. */
+	answerRedirect?(url: string): boolean;
+	/** Abort an in-flight `signIn`. */
+	cancelSignIn?(): void;
+	/** Enable or disable a live MCP server (extension builtins or mcp.json). */
+	setEnabled?(name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }>;
+	/** Clear stored OAuth credentials; server typically returns to needs-auth. */
+	signOut?(name: string): Promise<{ name: string; removed: boolean }>;
 }
 
 function firstLine(text: string | undefined): string {
@@ -604,6 +625,12 @@ Usage:
   _agentcli <server> resource <uri>             Read an MCP resource from <server>
   _agentcli server list [--wait] [--output json|text]    List configured servers
   _agentcli server tools <server> [--refresh]   List a server's tools
+  _agentcli server login <server>               Sign in to an OAuth MCP server
+  _agentcli server login-answer <redirect-url>  Paste redirect URL for an in-flight login
+  _agentcli server login-cancel                 Cancel an in-flight OAuth login
+  _agentcli server logout <server>              Sign out / clear OAuth credentials
+  _agentcli server enable <name>                Enable an MCP server
+  _agentcli server disable <name>               Disable an MCP server
   _agentcli server add <name> [options] ...     Add an MCP server to mcp.json
   _agentcli server remove <name> [-l]           Remove an MCP server from mcp.json
 
@@ -706,6 +733,12 @@ async function handleServerSubcommand(
 			"Usage:",
 			"  _agentcli server list [--wait] [--output json|text]",
 			"  _agentcli server tools <server> [--refresh] [--output json|text]",
+			"  _agentcli server login <server>",
+			"  _agentcli server login-answer <redirect-url>",
+			"  _agentcli server login-cancel",
+			"  _agentcli server logout <server>",
+			"  _agentcli server enable <name>",
+			"  _agentcli server disable <name>",
 			"  _agentcli server add <name> [--local] [--url <url> | -- <command> [args...]] [--env KEY=VAL] [--header 'Name: val'] [--description <text>]",
 			"  _agentcli server remove <name> [--local]",
 			"",
@@ -732,9 +765,11 @@ async function handleServerSubcommand(
 			command?: string;
 			description?: string;
 			error?: string;
+			oauth?: boolean;
 		}> = host.getServers().map((s) => {
 			const cfg = s.entry.config;
 			const type = "url" in cfg ? "http" : "stdio";
+			const oauth = Boolean(s.connection?.oauthUrl);
 			return {
 				name: s.entry.name,
 				scope: s.entry.scope,
@@ -743,6 +778,7 @@ async function handleServerSubcommand(
 				enabled: isEnabled(s),
 				state: s.connection?.state ?? (isEnabled(s) ? "starting" : "disabled"),
 				tools: visibleTools(s).length,
+				...(oauth ? { oauth: true } : {}),
 				...(s.connection?.hasResources ? { resources: true } : {}),
 				...("url" in cfg ? { url: cfg.url } : { command: [cfg.command, ...(cfg.args ?? [])].join(" ") }),
 				...(cfg.description ? { description: cfg.description } : {}),
@@ -931,9 +967,93 @@ async function handleServerSubcommand(
 		return JSON.stringify({ ok: true, removed: name, config: path }, null, 2);
 	}
 
+	if (sub === "login") {
+		const name = rest.find((t) => !t.startsWith("-"));
+		if (!name) {
+			throw agentCliErrors.invalidArgument("missing server name", "Usage: _agentcli server login <server>");
+		}
+		if (!host.signIn) {
+			throw agentCliErrors.execution("MCP sign-in is not available in this session");
+		}
+		try {
+			const result = await host.signIn(name, {
+				signal,
+				onDeviceCode: (prompt) => {
+					ctx.ui.setStatus(`mcp-login-device:${name}`, JSON.stringify(prompt));
+					ctx.ui.notify(`Enter code ${prompt.userCode} at ${prompt.verificationUri} to connect ${name} to Pizza.`, "info");
+				},
+				onAuthUrl: (url) => {
+					ctx.ui.setStatus(`mcp-login:${name}`, url);
+					ctx.ui.notify(`Sign in to MCP server "${name}" in your browser:\n${url}`, "info");
+				},
+			});
+			if (!result.ok) {
+				if (result.cancelled) {
+					return JSON.stringify(
+						{ ok: false, cancelled: true, error: { code: "CANCELLED", message: result.error } },
+						null,
+						2,
+					);
+				}
+				throw agentCliErrors.auth(result.error, name);
+			}
+			return JSON.stringify({ ok: true, data: { name, tools: result.tools } }, null, 2);
+		} finally {
+			ctx.ui.setStatus(`mcp-login:${name}`, undefined);
+			ctx.ui.setStatus(`mcp-login-device:${name}`, undefined);
+		}
+	}
+
+	if (sub === "login-answer") {
+		const url = rest.join(" ").trim();
+		if (!url) {
+			throw agentCliErrors.invalidArgument(
+				"missing redirect URL",
+				"Usage: _agentcli server login-answer <redirect-url>",
+			);
+		}
+		if (!host.answerRedirect?.(url)) {
+			throw agentCliErrors.execution("No MCP sign-in is waiting for a redirect URL");
+		}
+		return JSON.stringify({ ok: true }, null, 2);
+	}
+
+	if (sub === "login-cancel") {
+		host.cancelSignIn?.();
+		return JSON.stringify({ ok: true }, null, 2);
+	}
+
+	if (sub === "logout" || sub === "sign-out" || sub === "signout") {
+		const name = rest.find((t) => !t.startsWith("-"));
+		if (!name) {
+			throw agentCliErrors.invalidArgument("missing server name", "Usage: _agentcli server logout <server>");
+		}
+		if (!host.signOut) {
+			throw agentCliErrors.connect("MCP logout is unavailable in this session", { server: name });
+		}
+		const result = await host.signOut(name);
+		return JSON.stringify({ ok: true, data: { name: result.name, removed: result.removed } }, null, 2);
+	}
+
+	if (sub === "enable" || sub === "disable") {
+		const name = rest.find((t) => !t.startsWith("-"));
+		if (!name) {
+			throw agentCliErrors.invalidArgument(
+				"missing server name",
+				`Usage: _agentcli server ${sub} <name>`,
+			);
+		}
+		if (!host.setEnabled) {
+			throw agentCliErrors.connect(`MCP ${sub} is unavailable in this session`, { server: name });
+		}
+		const enabled = sub === "enable";
+		const result = await host.setEnabled(name, enabled);
+		return JSON.stringify({ ok: true, data: { name: result.name, enabled: result.enabled } }, null, 2);
+	}
+
 	throw agentCliErrors.notFound(
 		`unknown server subcommand "${sub}"`,
-		"Available: list, tools, add, remove",
+		"Available: list, tools, login, login-answer, login-cancel, logout, enable, disable, add, remove",
 	);
 }
 

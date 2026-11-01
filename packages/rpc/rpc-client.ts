@@ -4,7 +4,7 @@
  * Spawns the agent in RPC mode and provides a typed API for all operations.
  */
 
-import { COMPACTION_RPC_TIMEOUT_MS } from "../protocol/index.js";
+import { COMPACTION_RPC_TIMEOUT_MS, MCP_LOGIN_RPC_TIMEOUT_MS } from "../protocol/index.js";
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "../../src/core/agent/types.js";
@@ -561,7 +561,8 @@ export class RpcClient {
 	 * gateway multiplexer can forward arbitrary frames without a per-command
 	 * typed wrapper.
 	 */
-	async sendCommand(command: RpcCommand, timeoutMs = command.type === "compact" ? COMPACTION_RPC_TIMEOUT_MS : 30_000): Promise<RpcResponse> {
+	async sendCommand(command: RpcCommand, timeoutMs = command.type === "compact" ? COMPACTION_RPC_TIMEOUT_MS :
+		command.type === "mcp_command" && command.args[0] === "server" && command.args[1] === "login" ? MCP_LOGIN_RPC_TIMEOUT_MS : 30_000): Promise<RpcResponse> {
 		if (!this.process?.stdin) {
 			throw new Error("Client not started");
 		}

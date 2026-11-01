@@ -60,6 +60,28 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
 
 ## 快速开始
 
+### 连接 GitHub MCP
+
+在 **设置 → 插件 → MCPs → MCP Marketplace** 安装 GitHub。Pizza 自动开始登录并显示设备验证码；在 GitHub 页面选择账号、输入验证码并授权后，Pizza 自动保存凭据、连接服务器并加载工具。安装项支持查看工具、重新登录和退出登录。取消或登录失败时安装项会保留，可以重试。
+
+GitHub 使用设备授权流程，无需用户配置 client ID 或 secret，也无需接收本机回调。Pizza OAuth App 的维护者需要在 GitHub 应用设置中启用 **Device Flow**。已有安装使用相同 Pizza client ID 时自动切换到设备授权。自行配置 `oauth.clientSecret` 的客户端继续使用授权码与 PKCE；其他 MCP 的回调页面使用 Pizza 品牌，成功页在 token 交换并保存后显示。
+
+终端中运行 `pizza mcp login github --timeout 900`，按提示输入设备验证码。凭据保存在 Pizza agent 配置目录的 `mcp-auth.json` 中；`pizza mcp logout github` 清除本机凭据。
+
+### 连接 Gmail MCP
+
+在 MCP Marketplace 安装 Gmail，直接打开 Google 登录授权。Pizza 使用已注册的 Desktop OAuth 客户端、PKCE、自动本机回调与可刷新的凭据。用户无需自行创建 Google Cloud 项目或填写 Web client secret，也无需加入 Gmail MCP 开发预览。本地 MCP 适配层运行在 Pizza 内，通过正式 Gmail API 访问邮箱。
+
+工具支持邮箱身份、标签、分页搜索、邮件、会话、附件和草稿编辑；回复保存为会话内草稿，供用户在 Gmail 中检查。连接时通过只读标签请求验证授权。产品维护者仍需启用 Gmail API、配置同意页面和测试用户，并在公开发布时完成所申请受限权限的 Google 验证。高级用户手动添加的 Google 官方预览 MCP 保留独立 OAuth 配置。
+
+发布构建需要提供 **Desktop** 客户端 JSON：`PIZZA_GOOGLE_DESKTOP_CLIENT_FILE=/path/to/desktop-client.json npm run build`（桌面打包时同样传入该变量）。构建只把匹配的 `installed` 客户端登记参数放入运行时资源，并拒绝 Web 客户端文件。Google 在 token 交换时仍要求 Desktop 的 `client_secret` 字段；对于安装型应用，它属于公开登记参数，不是保密凭据，授权交换由 PKCE 保护。原始 JSON 放在源码目录外，用户 access token 和 refresh token 不会打包。详见 [Google 安装型应用说明](https://developers.google.com/identity/protocols/oauth2#installed)。
+
+### 连接 Notion 和 X MCP
+
+Notion 支持动态注册 OAuth 客户端。在 MCP Marketplace 安装 Notion，打开浏览器授权工作区即可，无需另外创建开发者应用。Pizza 申请标准的 `default` 权限，验证回调中的签发者，并保存可刷新的凭据。
+
+X 通过 Pizza 自身的 OAuth 流程直连 `https://api.x.com/mcp`。在 X 开发者应用中启用 OAuth 2.0，注册 `http://127.0.0.1:8766/callback`。在 Pizza 的 X 配置中，**Native App** 只需填写 OAuth 2.0 Client ID；**Web / Automated App** 还需填写 client secret。初始权限为 `tweet.read users.read offline.access`，支持自动刷新 token。实际工具访问权限取决于应用的 API 注册状态和套餐。以前从市场安装的 xurl 条目可通过配置向导转换，其他自定义 stdio 配置仍可使用。详见 [X 官方 OAuth 指南](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)。
+
 ### 桌面应用
 
 从 [GitHub Releases](https://github.com/pizza-agent/pizza/releases) 下载对应平台的安装包（macOS / Linux / Windows），安装后打开即可使用。

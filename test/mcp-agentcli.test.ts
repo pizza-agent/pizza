@@ -13,7 +13,9 @@ import {
 } from "../src/builtin-extensions/mcp/agentcli.js";
 import { runMcpCommand } from "../src/builtin-extensions/mcp/cli.js";
 import {
+	addMcpServerConfig,
 	loadMcpConfig,
+	mergeMcpServerConfigPreservingOAuthCredentials,
 	type McpServerEntry,
 	updateMcpServerConfig,
 } from "../src/builtin-extensions/mcp/config.js";
@@ -172,6 +174,88 @@ describe("McpClient protocol (in-memory & HTTP)", () => {
 	});
 });
 
+describe("mergeMcpServerConfigPreservingOAuthCredentials", () => {
+	it("keeps custom clientId when marketplace oauth placeholder would wipe it", () => {
+		const previous = {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: { clientId: "Ov23liTESTCLIENTID000", clientSecret: "test-secret-value-not-real" },
+		};
+		const next = {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: { callbackUrl: "http://127.0.0.1/callback" },
+			description: "from catalog",
+		};
+		const merged = mergeMcpServerConfigPreservingOAuthCredentials(previous, next);
+		expect("oauth" in merged && merged.oauth).toMatchObject({
+			callbackUrl: "http://127.0.0.1/callback",
+			clientId: "Ov23liTESTCLIENTID000",
+		});
+		// Public-client product path: do not re-attach a prior clientSecret.
+		expect("oauth" in merged && merged.oauth && "clientSecret" in (merged.oauth as object)).toBe(false);
+	});
+
+	it("does not invent credentials when previous had none", () => {
+		const next = {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: { callbackUrl: "http://127.0.0.1/callback" },
+		};
+		expect(mergeMcpServerConfigPreservingOAuthCredentials({ url: next.url, oauth: {} }, next)).toEqual(next);
+	});
+
+	it("catalog product clientId wins over previous secret-bearing oauth", () => {
+		const previous = {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: { clientId: "Ov23liOLDCLIENTID0000", clientSecret: "test-secret-value-not-real" },
+		};
+		const next = {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: {
+				clientId: "Ov23liPRODUCTCLIENTID",
+				callbackUrl: "http://127.0.0.1/callback",
+			},
+		};
+		const merged = mergeMcpServerConfigPreservingOAuthCredentials(previous, next);
+		expect(merged).toEqual(next);
+	});
+});
+
+describe("addMcpServerConfig preserves OAuth credentials", () => {
+	const dirs: string[] = [];
+	afterEach(() => {
+		for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("re-add with empty oauth keeps clientId on disk without re-attaching secret", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pizza-mcp-preserve-"));
+		dirs.push(dir);
+		const path = join(dir, "mcp.json");
+		writeFileSync(
+			path,
+			JSON.stringify({
+				mcpServers: {
+					github: {
+						url: "https://api.githubcopilot.com/mcp/",
+						oauth: { clientId: "Ov23liTESTCLIENTID000", clientSecret: "test-secret-value-not-real" },
+					},
+				},
+			}),
+		);
+		const replaced = addMcpServerConfig(path, "github", {
+			url: "https://api.githubcopilot.com/mcp/",
+			oauth: { callbackUrl: "http://127.0.0.1/callback" },
+			description: "catalog reinstall",
+		});
+		expect(replaced).toBe(true);
+		const saved = JSON.parse(readFileSync(path, "utf8")).mcpServers.github;
+		expect(saved.oauth).toMatchObject({
+			callbackUrl: "http://127.0.0.1/callback",
+			clientId: "Ov23liTESTCLIENTID000",
+		});
+		expect(saved.oauth.clientSecret).toBeUndefined();
+		expect(saved.description).toBe("catalog reinstall");
+	});
+});
+
 describe("MCP config & `pizza mcp` CLI", () => {
 	const dirs: string[] = [];
 	afterEach(() => {
@@ -323,6 +407,141 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 		expect(waitForServer).not.toHaveBeenCalled();
 		await run(["server", "list", "--wait"]);
 		expect(waitForAllServers).toHaveBeenCalledOnce();
+	});
+
+	it("publishes device verification codes to the client and clears them after login", async () => {
+		const setStatus = vi.fn();
+		const prompt = { userCode: "PZZA-TEST", verificationUri: "https://github.com/login/device", expiresAt: Date.now() + 900000 };
+		const command = createAgentCliBuiltinCommand({
+			getServers: () => [], getConfigErrors: () => [], waitForServer: async () => undefined,
+			waitForAllServers: async () => {}, addServer: async () => ({ path: "mcp.json", replaced: false }),
+			removeServer: async () => ({ path: "mcp.json", removed: false }),
+			signIn: async (_name, options) => {
+				options?.onDeviceCode?.(prompt);
+				options?.onAuthUrl?.(prompt.verificationUri);
+				return { ok: true, tools: 40 };
+			},
+		});
+		const result = await command.execute("device-login", command.parseArguments(["server", "login", "github"]), undefined, undefined,
+			{ cwd: process.cwd(), ui: { setStatus, notify: vi.fn() } } as never);
+		expect(JSON.parse(getTextOutput(result))).toMatchObject({ ok: true, data: { tools: 40 } });
+		expect(setStatus).toHaveBeenCalledWith("mcp-login-device:github", JSON.stringify(prompt));
+		expect(setStatus).toHaveBeenCalledWith("mcp-login-device:github", undefined);
+	});
+
+	it("supports session-routed server login / login-answer / login-cancel", async () => {
+		const statuses: Array<{ key: string; text: string | undefined }> = [];
+		const ui = {
+			setStatus: (statusKey: string, statusText: string | undefined) => {
+				statuses.push({ key: statusKey, text: statusText });
+			},
+			notify: () => {},
+		};
+		let resolveRedirect: ((url: string | undefined) => void) | undefined;
+		let aborted = false;
+		const signIn = vi.fn(async (_name: string, options?: { signal?: AbortSignal; onAuthUrl?: (url: string) => void }) => {
+			options?.onAuthUrl?.("https://auth.example/authorize?x=1");
+			const url = await new Promise<string | undefined>((resolve) => {
+				resolveRedirect = resolve;
+				options?.signal?.addEventListener("abort", () => {
+					aborted = true;
+					resolve(undefined);
+				}, { once: true });
+			});
+			if (!url) return { ok: false, error: "Sign-in cancelled.", cancelled: true };
+			return { ok: true, tools: 4 };
+		});
+		const answerRedirect = vi.fn((url: string) => {
+			if (!resolveRedirect) return false;
+			resolveRedirect(url);
+			resolveRedirect = undefined;
+			return true;
+		});
+		const cancelSignIn = vi.fn(() => {
+			resolveRedirect?.(undefined);
+			resolveRedirect = undefined;
+		});
+		const command = createAgentCliBuiltinCommand({
+			getServers: () => [{
+				entry: { name: "notion", source: "extension", scope: "extension", config: { url: "https://mcp.notion.com/mcp" } },
+				connection: { state: "needs-auth", tools: [], oauthUrl: "https://mcp.notion.com/mcp" } as never,
+				ready: Promise.resolve(),
+			}],
+			getConfigErrors: () => [],
+			waitForAllServers: async () => {},
+			waitForServer: async () => undefined,
+			addServer: async () => ({ path: "mcp.json", replaced: false }),
+			removeServer: async () => ({ path: "mcp.json", removed: false }),
+			signIn,
+			answerRedirect,
+			cancelSignIn,
+		});
+		const ctx = { ui, cwd: process.cwd() } as never;
+		const run = (args: string[]) => command.execute("login-test", command.parseArguments(args), undefined, undefined, ctx);
+
+		const loginPromise = run(["server", "login", "notion"]);
+		// Allow signIn to publish the auth URL.
+		await vi.waitFor(() => {
+			expect(statuses.some((s) => s.key === "mcp-login:notion" && s.text?.includes("auth.example"))).toBe(true);
+		});
+		const answer = JSON.parse(getTextOutput(await run(["server", "login-answer", "http://127.0.0.1:9/callback?code=abc&state=s"])));
+		expect(answer).toEqual({ ok: true });
+		expect(answerRedirect).toHaveBeenCalledOnce();
+		const login = JSON.parse(getTextOutput(await loginPromise));
+		expect(login).toMatchObject({ ok: true, data: { name: "notion", tools: 4 } });
+		expect(statuses).toContainEqual({ key: "mcp-login:notion", text: undefined });
+		expect(statuses).toContainEqual({ key: "mcp-login-device:notion", text: undefined });
+
+		const cancelPromise = run(["server", "login", "notion"]);
+		await vi.waitFor(() => expect(signIn).toHaveBeenCalledTimes(2));
+		expect(JSON.parse(getTextOutput(await run(["server", "login-cancel"])))).toEqual({ ok: true });
+		expect(cancelSignIn).toHaveBeenCalled();
+		const cancelled = JSON.parse(getTextOutput(await cancelPromise));
+		expect(cancelled).toMatchObject({ ok: false, cancelled: true });
+		expect(aborted || cancelled.cancelled).toBe(true);
+	});
+
+	it("supports session-routed server enable / disable / logout", async () => {
+		const setEnabled = vi.fn(async (name: string, enabled: boolean) => ({ name, enabled }));
+		const signOut = vi.fn(async (name: string) => ({ name, removed: true }));
+		const servers = [{
+			entry: { name: "github", source: "extension", scope: "extension" as const, config: { url: "https://api.githubcopilot.com/mcp/" } },
+			connection: { state: "connected", tools: [{ name: "get_me" }], oauthUrl: "https://api.githubcopilot.com/mcp/" } as never,
+			ready: Promise.resolve(),
+		}];
+		const command = createAgentCliBuiltinCommand({
+			getServers: () => servers,
+			getConfigErrors: () => [],
+			waitForAllServers: async () => {},
+			waitForServer: async () => undefined,
+			addServer: async () => ({ path: "mcp.json", replaced: false }),
+			removeServer: async () => ({ path: "mcp.json", removed: false }),
+			setEnabled,
+			signOut,
+		});
+		const run = (args: string[]) =>
+			command.execute("toggle-test", command.parseArguments(args), undefined, undefined, {} as never);
+
+		expect(JSON.parse(getTextOutput(await run(["server", "disable", "github"])))).toEqual({
+			ok: true,
+			data: { name: "github", enabled: false },
+		});
+		expect(setEnabled).toHaveBeenCalledWith("github", false);
+
+		expect(JSON.parse(getTextOutput(await run(["server", "enable", "github"])))).toEqual({
+			ok: true,
+			data: { name: "github", enabled: true },
+		});
+		expect(setEnabled).toHaveBeenCalledWith("github", true);
+
+		expect(JSON.parse(getTextOutput(await run(["server", "logout", "github"])))).toEqual({
+			ok: true,
+			data: { name: "github", removed: true },
+		});
+		expect(signOut).toHaveBeenCalledWith("github");
+
+		const listed = JSON.parse(getTextOutput(await run(["server", "list"])));
+		expect(listed.data[0]).toMatchObject({ name: "github", oauth: true });
 	});
 
 	it("discovers configured servers via `_agentcli -h` and `_agentcli server list`", async () => {

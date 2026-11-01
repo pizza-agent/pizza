@@ -115,10 +115,22 @@ pub struct GatewayChannel {
 	closer: Arc<dyn Fn() + Send + Sync>,
 }
 
+/// Interactive OAuth needs the same 17-minute budget as the web and Node RPC clients.
 /// Long model calls need room beyond the agent's own five-minute deadline.
 pub(crate) fn rpc_timeout(frame: &Value) -> std::time::Duration {
 	std::time::Duration::from_secs(match frame.get("type").and_then(Value::as_str) {
 		Some("compact") => 320,
+		Some("mcp_command")
+			if frame
+				.get("args")
+				.and_then(Value::as_array)
+				.is_some_and(|args| {
+					args.first().and_then(Value::as_str) == Some("server")
+						&& args.get(1).and_then(Value::as_str) == Some("login")
+				}) =>
+		{
+			17 * 60
+		}
 		_ => 60,
 	})
 }
@@ -1184,6 +1196,27 @@ mod tests {
 			rpc_timeout(&json!({"type": "get_state"})),
 			std::time::Duration::from_secs(60)
 		);
+	}
+
+	#[test]
+	fn oauth_deadline_allows_interactive_login_without_slowing_other_mcp_commands() {
+		assert_eq!(
+			rpc_timeout(&json!({"type":"mcp_command","args":["server","login","gmail"]})),
+			std::time::Duration::from_secs(17 * 60)
+		);
+		for args in [
+			json!(["server", "list"]),
+			json!(["server", "login-answer", "url"]),
+			json!(["server", "login-cancel"]),
+			json!(["gmail", "get_profile"]),
+			json!([]),
+			json!(null),
+		] {
+			assert_eq!(
+				rpc_timeout(&json!({"type":"mcp_command","args":args})),
+				std::time::Duration::from_secs(60)
+			);
+		}
 	}
 
 	#[test]

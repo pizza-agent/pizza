@@ -30,6 +30,9 @@ describe("channel supervisor adapterProxyEnv", () => {
 		const env = adapterProxyEnv(dir);
 		expect(env.HTTPS_PROXY).toBe("http://proxy.local:8080");
 		expect(env.http_proxy).toBe("http://proxy.local:8080");
+		expect(env.NO_PROXY).toContain("mcp.notion.com");
+		expect(env.NO_PROXY).toContain("api.githubcopilot.com");
+		expect(env.NO_PROXY).toContain(".githubcopilot.com");
 	});
 
 	it('returns nothing to inject when the proxy is "off" or unset', () => {

@@ -17,6 +17,7 @@ export default defineConfig({
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
 			"@tomsun28/pizza-protocol": path.resolve(__dirname, "../../packages/protocol/index.ts"),
+			"@pizza/mcp-connector-catalog": path.resolve(__dirname, "../../src/builtin-extensions/connectors/catalog.ts"),
 		},
 	},
 	build: {

@@ -137,14 +137,31 @@ const PROXY_ENV_VARS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"
  *  common names. Empty when the proxy is unset or explicitly "off" — inline
  *  adapters share the daemon env, so there is nothing to inject (and no way
  *  to strip the daemon's own env). Exported for tests. */
+/** Hosts that break through common local HTTP proxies (Clash/V2Ray HTTP port)
+ *  with TLS ECONNRESET; undici then surfaces a bare "fetch failed". Bypass them
+ *  via NO_PROXY so MCP OAuth / metadata hosts stay reachable while channels still
+ *  use the proxy. Keep github.com off this list — it often needs the proxy. */
+const PROXY_BYPASS_HOSTS = ["mcp.notion.com", ".notion.com", "api.githubcopilot.com", ".githubcopilot.com"];
+
+function mergeNoProxy(extra: string[]): string {
+	const existing = process.env.NO_PROXY ?? process.env.no_proxy ?? "";
+	const parts = new Set(
+		[...existing.split(","), ...extra].map((p) => p.trim()).filter(Boolean),
+	);
+	return [...parts].join(",");
+}
+
 export function adapterProxyEnv(agentDir: string): Record<string, string> {
 	const proxy = systemProxy(agentDir);
 	if (!proxy) return {};
+	const noProxy = mergeNoProxy(PROXY_BYPASS_HOSTS);
 	return {
 		HTTPS_PROXY: proxy,
 		https_proxy: proxy,
 		HTTP_PROXY: proxy,
 		http_proxy: proxy,
+		NO_PROXY: noProxy,
+		no_proxy: noProxy,
 	};
 }
 

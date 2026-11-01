@@ -7,6 +7,7 @@ import { type AuthStorageBackend, FileAuthStorageBackend } from "../../core/auth
 import type { AuthProvider, McpFetch } from "../../core/mcp/index.js";
 import {
 	type AuthorizationServerMetadata,
+	authorizeDevice,
 	authorizeMcp,
 	McpOAuthAuthorizationRequiredError,
 	McpOAuthProvider,
@@ -16,12 +17,14 @@ import {
 	type OAuthCallbackPage,
 	OAuthCallbackServer,
 	type OAuthChallenge,
+	type OAuthDevicePrompt,
 	type OAuthClientInformationMixed,
 	type OAuthClientMetadataDocument,
 	parseWwwAuthenticate,
 	stepUpScope,
 } from "../../core/mcp/oauth/index.js";
 import { mcpNamespace } from "../../core/mcp/servers.js";
+import { PIZZA_OAUTH_LOGO } from "./oauth-logo.js";
 
 const CALLBACK_HOST = "127.0.0.1";
 const CALLBACK_PATH = "/callback";
@@ -32,8 +35,6 @@ const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
 const REFRESH_LOCK_STALE_MS = 20_000;
 const REFRESH_LOCK_WAIT_MS = 25_000;
 const REFRESH_LOCK_RETRY_MS = 100;
-
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true"><path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/><path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/><path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/></svg>`;
 
 function escapeHtml(value: string): string {
 	return value
@@ -54,7 +55,8 @@ function renderOAuthPage(options: { title: string; heading: string; message: str
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title}</title>
+  <title>Pizza · ${title}</title>
+  <link rel="icon" type="image/png" href="${PIZZA_OAUTH_LOGO}" />
   <style>
     :root { --text: #fafafa; --text-dim: #a1a1aa; --page-bg: #09090b; }
     * { box-sizing: border-box; }
@@ -62,6 +64,7 @@ function renderOAuthPage(options: { title: string; heading: string; message: str
     body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--page-bg); color: var(--text); font-family: system-ui, sans-serif; text-align: center; }
     main { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .logo { width: 72px; height: 72px; display: block; margin-bottom: 24px; }
+    .brand { margin-bottom: 24px; font-size: 14px; font-weight: 600; letter-spacing: .12em; color: #f6c65b; }
     h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.15; font-weight: 650; }
     p { margin: 0; line-height: 1.7; color: var(--text-dim); font-size: 15px; }
     .details { margin-top: 16px; font-family: monospace; font-size: 13px; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; }
@@ -69,7 +72,8 @@ function renderOAuthPage(options: { title: string; heading: string; message: str
 </head>
 <body>
   <main>
-    <div class="logo">${LOGO_SVG}</div>
+    <img class="logo" src="${PIZZA_OAUTH_LOGO}" alt="Pizza" aria-label="Pizza" width="72" height="72" />
+    <div class="brand">PIZZA</div>
     <h1>${heading}</h1>
     <p>${message}</p>
     ${details ? `<div class="details">${details}</div>` : ""}
@@ -87,6 +91,9 @@ function oauthErrorHtml(message: string, details?: string): string {
 }
 
 export interface McpOAuthSettings {
+	authorizationResourceIndicator?: boolean;
+	authorizationParams?: Record<string, string>;
+	deviceAuthorizationUrl?: string;
 	clientId?: string;
 	/** Already resolved. */
 	clientSecret?: string;
@@ -96,6 +103,8 @@ export interface McpOAuthSettings {
 	clientName?: string;
 	clientRegistration?: "dcr" | "cimd";
 	authServerMetadataUrl?: URL;
+	/** Inline AS metadata (e.g. GitHub); preferred over discovery. */
+	authorizationServerMetadata?: AuthorizationServerMetadata;
 }
 
 interface CallbackSettings {
@@ -318,6 +327,7 @@ export function createMcpAuthProvider(options: {
 					serverUrl,
 					resourceMetadataUrl: challenge?.resourceMetadataUrl,
 					authorizationServerMetadataUrl: settings.authServerMetadataUrl,
+					authorizationServerMetadata: settings.authorizationServerMetadata,
 					scope: challenge?.scope,
 					fetch: timedFetch(fetch),
 				});
@@ -353,6 +363,7 @@ export function createMcpAuthProvider(options: {
 
 export interface McpSignInPrompt {
 	showAuthorizationUrl(url: URL): void;
+	showDeviceCode?(prompt: OAuthDevicePrompt): void;
 	promptForRedirectUrl(signal: AbortSignal): Promise<string | undefined>;
 }
 
@@ -375,9 +386,9 @@ function responseFromRedirectUrl(input: string, state: string, redirectUrl: URL)
 	if (url.origin !== redirectUrl.origin || url.pathname !== redirectUrl.pathname) {
 		throw new Error("The redirect URL does not match this sign-in's redirect URI");
 	}
+	if (url.searchParams.get("state") !== state) throw new Error("The redirect URL belongs to a different sign-in");
 	const error = url.searchParams.get("error");
 	if (error) throw new Error(url.searchParams.get("error_description") ?? error);
-	if (url.searchParams.get("state") !== state) throw new Error("The redirect URL belongs to a different sign-in");
 	const code = url.searchParams.get("code");
 	if (!code) throw new Error("The redirect URL does not contain an authorization code");
 	return { code, iss: url.searchParams.get("iss") ?? undefined };
@@ -393,13 +404,20 @@ async function waitForAuthorizationResponse(
 	const controller = new AbortController();
 	const promptSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
 	const fromBrowser = callback.waitForCallback(state, redirectUrl.pathname);
-	const fromUser = prompt.promptForRedirectUrl(promptSignal).then((input) => {
+	const fromUser = Promise.resolve().then(() => prompt.promptForRedirectUrl(promptSignal)).then((input) => {
 		if (!input?.trim()) throw new McpSignInCancelledError();
 		return responseFromRedirectUrl(input, state, redirectUrl);
 	});
+	let onAbort: () => void = () => {};
+	const cancelled = new Promise<never>((_resolve, reject) => {
+		onAbort = () => reject(new McpSignInCancelledError());
+		if (signal?.aborted) onAbort();
+		else signal?.addEventListener("abort", onAbort, { once: true });
+	});
 	try {
-		return await Promise.race([fromBrowser, fromUser]);
+		return await Promise.race([fromBrowser, fromUser, cancelled]);
 	} finally {
+		signal?.removeEventListener("abort", onAbort);
 		controller.abort();
 		fromBrowser.catch(() => undefined);
 		fromUser.catch(() => undefined);
@@ -413,13 +431,14 @@ async function listenForCallback(
 	required: boolean,
 ): Promise<OAuthCallbackServer> {
 	const options = {
+		deferSuccess: true,
 		host: settings.host,
 		redirectHost: settings.redirectHost,
 		path: settings.path,
 		extraPaths,
 		renderPage: (page: OAuthCallbackPage) =>
 			page.ok
-				? oauthSuccessHtml("Signed in to the MCP server. You may now close this page.")
+				? oauthSuccessHtml("Your credentials have been saved. Return to Pizza to use your MCP server. You may close this page.")
 				: oauthErrorHtml(page.message, page.details),
 	};
 	try {
@@ -440,8 +459,42 @@ export async function signInMcpServer(options: {
 }): Promise<void> {
 	const { serverUrl, store, settings, signal } = options;
 	if (signal?.aborted) throw new McpSignInCancelledError();
+	if (serverUrl === "https://gmail.googleapis.com/gmail/v1/users/me" && (!settings.clientId || !settings.clientSecret)) {
+		throw new Error("This Pizza build is missing its Google Desktop OAuth registration. The publisher must build with PIZZA_GOOGLE_DESKTOP_CLIENT_FILE pointing to the Desktop client JSON.");
+	}
+	if (new URL(serverUrl).hostname === "gmailmcp.googleapis.com" && (!settings.clientId || !settings.clientSecret)) {
+		throw new Error("Set up a Google OAuth client for Gmail in Pizza before signing in (oauth.clientId and oauth.clientSecret are required).");
+	}
+	if (new URL(serverUrl).origin === "https://api.x.com" && !settings.clientId) {
+		throw new Error("Set up your X app's OAuth 2.0 Client ID in Pizza before signing in. A Native app uses PKCE without a client secret; Web and Automated apps also require their client secret.");
+	}
 	const stored = await store.load();
 	const stepUp = options.challenge?.error === "insufficient_scope";
+	if (settings.deviceAuthorizationUrl && !settings.clientSecret) {
+		if (!settings.clientId || !settings.authorizationServerMetadata?.token_endpoint) {
+			throw new Error("Device sign-in requires a client ID and token endpoint");
+		}
+		try {
+			const tokens = await authorizeDevice({
+				clientId: settings.clientId,
+				deviceAuthorizationUrl: settings.deviceAuthorizationUrl,
+				tokenUrl: settings.authorizationServerMetadata.token_endpoint,
+				scope: mergeScopes(settings.scope, stepUp ? stepUpScope(stored?.tokens?.scope, options.challenge?.scope) : options.challenge?.scope),
+				fetch: timedFetch(), signal,
+				onPrompt: (prompt) => {
+					if (!options.prompt.showDeviceCode) throw new Error("This client cannot display a device verification code");
+					options.prompt.showDeviceCode(prompt);
+					options.prompt.showAuthorizationUrl(new URL(prompt.verificationUri));
+				},
+			});
+			const provider = createProvider(serverUrl, store, settings, FALLBACK_REDIRECT_URL, () => {});
+			await provider.saveTokens(tokens);
+			return;
+		} catch (error) {
+			if (signal?.aborted) throw new McpSignInCancelledError();
+			throw error;
+		}
+	}
 	const callbackOptions = callbackSettings(settings);
 	const registered = registeredRedirectUrls(stored?.clientInformation)[0];
 	const preferredPort =
@@ -474,11 +527,14 @@ export async function signInMcpServer(options: {
 			authorizationUrl = url;
 		});
 		const flow = {
+			authorizationResourceIndicator: settings.authorizationResourceIndicator,
+			authorizationParams: settings.authorizationParams,
 			serverUrl,
 			fetch: timedFetch(),
 			signal,
 			resourceMetadataUrl: options.challenge?.resourceMetadataUrl,
 			authorizationServerMetadataUrl: settings.authServerMetadataUrl,
+			authorizationServerMetadata: settings.authorizationServerMetadata,
 			scope: mergeScopes(
 				settings.scope,
 				stepUp ? stepUpScope(stored?.tokens?.scope, options.challenge?.scope) : options.challenge?.scope,
@@ -490,16 +546,25 @@ export async function signInMcpServer(options: {
 
 		const state = await provider.state();
 		const authorizationRedirectUrl = new URL(authorizationUrl.searchParams.get("redirect_uri") ?? redirectUrl);
-		options.prompt.showAuthorizationUrl(authorizationUrl);
-		const { code, iss } = await waitForAuthorizationResponse(
+		const response = waitForAuthorizationResponse(
 			callback,
 			state,
 			authorizationRedirectUrl,
 			options.prompt,
 			signal,
 		);
+		// Register the callback before opening the browser (an existing grant can redirect immediately).
+		try {
+			options.prompt.showAuthorizationUrl(authorizationUrl);
+		} catch (error) {
+			void response.catch(() => undefined);
+			throw error;
+		}
+		const { code, iss } = await response;
 		await authorizeMcp(provider, { ...flow, authorizationCode: code, iss });
+		callback.complete({ ok: true });
 	} catch (error) {
+		callback.complete({ ok: false, message: "Sign-in failed. Return to Pizza to try again.", details: error instanceof Error ? error.message : String(error) });
 		if (signal?.aborted) throw new McpSignInCancelledError();
 		throw error;
 	} finally {

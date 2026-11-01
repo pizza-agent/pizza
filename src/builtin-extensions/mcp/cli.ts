@@ -537,6 +537,7 @@ async function login(
 			settings: connection.oauthSettings(),
 			challenge: connection.challenge,
 			prompt: {
+				showDeviceCode: (prompt) => log(`Enter code ${prompt.userCode} at ${prompt.verificationUri} to connect ${name} to Pizza.\nCode expires at ${new Date(prompt.expiresAt).toLocaleTimeString()}.`),
 				showAuthorizationUrl: (authorizationUrl) => {
 					log(`Sign in to MCP server "${name}" in your browser:\n${authorizationUrl.href}`);
 					openUrl(authorizationUrl.href);
