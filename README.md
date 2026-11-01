@@ -79,7 +79,7 @@ Release builds must supply the **Desktop** registration JSON with `PIZZA_GOOGLE_
 
 Notion supports dynamic OAuth client registration. Install Notion from the MCP Marketplace and authorize your workspace in the browser; no separate developer app is needed. Pizza requests the standard `default` scope, validates the issuer on the callback, and stores refreshable credentials.
 
-X connects directly to `https://api.x.com/mcp` using Pizza's OAuth flow. Create an X developer app with OAuth 2.0 enabled and register `http://127.0.0.1:8766/callback`. In Pizza's X setup, a **Native App** needs only its OAuth 2.0 Client ID; **Web / Automated Apps** also require a client secret. Initial access uses `tweet.read users.read offline.access`, including token refresh. Actual tool access depends on the app's API enrollment and plan. Existing marketplace xurl entries can be converted through the X setup form; custom stdio configurations remain available. See [X's OAuth guide](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code).
+X connects directly to `https://api.x.com/mcp` with Pizza's registered **Native/Public** OAuth client. Install X and authorize your account in the browser; users do not create developer apps or enter Client IDs or secrets. Pizza uses PKCE, receives `http://127.0.0.1:8766/callback`, and requests `tweet.read users.read offline.access` for read access and automatic refresh. The publisher maintains the X app's callback registration, API enrollment, usage limits and billing. Existing custom OAuth clients remain supported, and legacy marketplace xurl entries can be converted through the advanced X setup form. See [X's OAuth guide](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code).
 
 ### Desktop
 

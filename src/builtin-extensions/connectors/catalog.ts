@@ -43,6 +43,8 @@ export const PIZZA_GMAIL_DESKTOP_CLIENT_ID = "509874026147-a4b12qhk6rsqma5vqo96q
 export const PIZZA_GMAIL_MCP_OAUTH_CALLBACK_URL = "http://127.0.0.1:8765/callback";
 export const PIZZA_GMAIL_MCP_SCOPE = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose";
 export const PIZZA_X_MCP_URL = "https://api.x.com/mcp";
+/** Pizza's Native/Public X application. This identifier is public; no client secret is distributed. */
+export const PIZZA_X_MCP_OAUTH_CLIENT_ID = "SkkxeTJzMUZYcmhLd2daa201Y3E6MTpjaQ";
 export const PIZZA_X_MCP_OAUTH_CALLBACK_URL = "http://127.0.0.1:8766/callback";
 export const PIZZA_X_MCP_SCOPE = "tweet.read users.read offline.access";
 
@@ -117,11 +119,11 @@ export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
 		name: "x",
 		type: "http",
 		docsUrl: "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code",
-		oauthSetup: "x",
 		description: "Search posts and explore profiles on X.",
 		config: {
 			url: PIZZA_X_MCP_URL,
 			oauth: {
+				clientId: PIZZA_X_MCP_OAUTH_CLIENT_ID,
 				// X rejects RFC 8707 on the browser endpoint; keep it on token requests.
 				authorizationResourceIndicator: false,
 				callbackUrl: PIZZA_X_MCP_OAUTH_CALLBACK_URL,

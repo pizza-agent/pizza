@@ -13,7 +13,10 @@ export function xMcpNeedsSetup(config: Record<string, unknown>): boolean {
 	if (config.url !== PIZZA_X_MCP_URL) return false;
 	if (record(config.headers) && Object.keys(config.headers).some((key) => key.toLowerCase() === "authorization")) return false;
 	const oauth = record(config.oauth) ? config.oauth : {};
-	return typeof oauth.clientId !== "string" || !oauth.clientId.trim();
+	// Older public HTTP installs inherit Pizza's client ID from the runtime defaults.
+	// An incomplete custom confidential client must not borrow the product ID.
+	return (typeof oauth.clientId !== "string" || !oauth.clientId.trim()) &&
+		typeof oauth.clientSecret === "string" && !!oauth.clientSecret.trim();
 }
 
 export function buildXMcpConfig(config: Record<string, unknown>, client: { clientId: string; clientSecret: string; callbackUrl: string }): Record<string, unknown> {

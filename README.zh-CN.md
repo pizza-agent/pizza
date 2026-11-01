@@ -80,7 +80,7 @@ GitHub 使用设备授权流程，无需用户配置 client ID 或 secret，也�
 
 Notion 支持动态注册 OAuth 客户端。在 MCP Marketplace 安装 Notion，打开浏览器授权工作区即可，无需另外创建开发者应用。Pizza 申请标准的 `default` 权限，验证回调中的签发者，并保存可刷新的凭据。
 
-X 通过 Pizza 自身的 OAuth 流程直连 `https://api.x.com/mcp`。在 X 开发者应用中启用 OAuth 2.0，注册 `http://127.0.0.1:8766/callback`。在 Pizza 的 X 配置中，**Native App** 只需填写 OAuth 2.0 Client ID；**Web / Automated App** 还需填写 client secret。初始权限为 `tweet.read users.read offline.access`，支持自动刷新 token。实际工具访问权限取决于应用的 API 注册状态和套餐。以前从市场安装的 xurl 条目可通过配置向导转换，其他自定义 stdio 配置仍可使用。详见 [X 官方 OAuth 指南](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)。
+X 使用 Pizza 已注册的 **Native/Public** OAuth 客户端直连 `https://api.x.com/mcp`。安装后直接在浏览器授权账号，用户无需创建开发者应用、填写 Client ID 或 secret。Pizza 使用 PKCE，自动接收 `http://127.0.0.1:8766/callback` 回调，申请 `tweet.read users.read offline.access`，支持读取和自动刷新。产品维护者负责 X 应用的回调注册、API 访问资格、用量限制与计费。已有自定义 OAuth 客户端继续可用；旧市场 xurl 配置可通过高级 X 设置转换。详见 [X 官方 OAuth 指南](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code)。
 
 ### 桌面应用
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMcpAuthProvider, signInMcpServer } from "../src/builtin-extensions/mcp/oauth.js";
 import { authorizeMcp, McpOAuthProvider, MemoryOAuthStateStore } from "../src/core/mcp/oauth/index.js";
-import { MCP_CONNECTOR_CATALOG } from "../src/builtin-extensions/connectors/catalog.js";
+import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_OAUTH_CLIENT_ID } from "../src/builtin-extensions/connectors/catalog.js";
 import { validateMcpServerConfig } from "../src/core/mcp/servers.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -57,6 +57,7 @@ describe("Notion and X OAuth interoperability", () => {
 
 	it.each([undefined, "fixture-secret"])("exchanges and rotates X tokens with the appropriate client authentication (secret=%s)", async (clientSecret) => {
 		const realFetch = globalThis.fetch;
+		const clientId = clientSecret ? "x-client" : PIZZA_X_MCP_OAUTH_CLIENT_ID;
 		const store = new MemoryOAuthStateStore();
 		let auth!: URL; let show!: () => void;
 		const shown = new Promise<void>((resolve) => { show = resolve; });
@@ -69,8 +70,8 @@ describe("Notion and X OAuth interoperability", () => {
 			if (url === metadata.token_endpoint) {
 				const body = init.body as URLSearchParams;
 				expect(body.get("resource")).toBe("https://api.x.com/mcp");
-				if (clientSecret) expect(new Headers(init.headers).get("authorization")).toBe(`Basic ${Buffer.from(`x-client:${clientSecret}`).toString("base64")}`);
-				else { expect(new Headers(init.headers).has("authorization")).toBe(false); expect(body.get("client_id")).toBe("x-client"); }
+				if (clientSecret) expect(new Headers(init.headers).get("authorization")).toBe(`Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`);
+				else { expect(new Headers(init.headers).has("authorization")).toBe(false); expect(body.get("client_id")).toBe(clientId); }
 				if (body.get("grant_type") === "refresh_token") {
 					refreshes++; expect(body.get("refresh_token")).toBe("x-refresh-original");
 					return Response.json({ access_token: "x-access-new", refresh_token: "x-refresh-rotated", token_type: "bearer", expires_in: 7200 });
@@ -80,7 +81,7 @@ describe("Notion and X OAuth interoperability", () => {
 			}
 			return new Response("", { status: 404 });
 		}));
-		const settings = { ...MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x")!.config.oauth, clientId: "x-client", clientSecret, scope: "tweet.read users.read offline.access", authServerMetadataUrl: new URL("https://api.x.com/.well-known/oauth-authorization-server"), callbackUrl: undefined };
+		const settings = { ...MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x")!.config.oauth, clientId, clientSecret, scope: "tweet.read users.read offline.access", authServerMetadataUrl: new URL("https://api.x.com/.well-known/oauth-authorization-server"), callbackUrl: undefined };
 		const login = signInMcpServer({ serverUrl: "https://api.x.com/mcp", store, settings, prompt: { showAuthorizationUrl: (url) => { auth = url; show(); }, promptForRedirectUrl: () => new Promise(() => {}) } });
 		await shown; expect(auth.origin).toBe("https://x.com");
 		expect(auth.searchParams.has("resource")).toBe(false);

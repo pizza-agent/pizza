@@ -97,7 +97,13 @@ function effectiveOAuth(entry: McpServerEntry): McpOAuthConfig | undefined {
 	const provider = entry.config.adapter === "gmail" && entry.config.url === PIZZA_GMAIL_API_MCP_URL ? "gmail" : entry.config.url === PIZZA_X_MCP_URL ? "x" : undefined;
 	if (!provider) return configured;
 	const defaults = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === provider)!.config.oauth as McpOAuthConfig;
-	return { ...defaults, ...configured, authorizationParams: { ...defaults.authorizationParams, ...configured?.authorizationParams } };
+	const merged = { ...defaults, ...configured, authorizationParams: { ...defaults.authorizationParams, ...configured?.authorizationParams } };
+	if (provider === "x") {
+		merged.clientId = configured?.clientSecret?.trim()
+			? configured.clientId
+			: configured?.clientId?.trim() || defaults.clientId;
+	}
+	return merged;
 }
 
 function expandHome(value: string): string {

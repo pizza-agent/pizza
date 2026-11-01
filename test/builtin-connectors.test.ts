@@ -59,9 +59,11 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(names.has("finance")).toBe(false);
 	});
 
-	it("connects X directly over HTTP and configures its own OAuth client before sign-in", () => {
+	it("connects X directly with Pizza's public Native client and no developer setup", () => {
 		const x = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x");
-		expect(x).toMatchObject({ type: "http", oauthSetup: "x", config: { url: "https://api.x.com/mcp", oauth: { scope: "tweet.read users.read offline.access", callbackUrl: "http://127.0.0.1:8766/callback" } } });
+		expect(x).toMatchObject({ type: "http", config: { url: "https://api.x.com/mcp", oauth: { clientId: "SkkxeTJzMUZYcmhLd2daa201Y3E6MTpjaQ", scope: "tweet.read users.read offline.access", callbackUrl: "http://127.0.0.1:8766/callback" } } });
+		expect(x?.oauthSetup).toBeUndefined();
+		expect((x?.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
 		expect(x?.config.command).toBeUndefined();
 		expect(x?.config.env).toBeUndefined();
 	});

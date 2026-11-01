@@ -542,8 +542,9 @@ export function McpTab() {
 		const oauth = config.oauth as Record<string, unknown> | undefined;
 		const entry = MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === (provider === "x" ? "x" : "gmail"))!;
 		const defaults = entry.config.oauth as Record<string, unknown>;
+		const hasCustomSecret = typeof oauth?.clientSecret === "string" && !!oauth.clientSecret.trim();
 		setOAuthSetup({ name: serverName, config, scope, provider,
-			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : "",
+			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
 			clientSecret: typeof oauth?.clientSecret === "string" ? oauth.clientSecret : "",
 			callbackUrl: typeof oauth?.callbackUrl === "string" ? oauth.callbackUrl : String(defaults.callbackUrl), busy: false, error: "" });
 	}
