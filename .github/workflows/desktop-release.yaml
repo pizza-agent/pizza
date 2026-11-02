@@ -26,6 +26,9 @@ jobs:
           - os: windows-2022
             label: windows-x64
     runs-on: ${{ matrix.os }}
+    env:
+      PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT: '1'
+      PIZZA_GOOGLE_DESKTOP_CLIENT_JSON: ${{ secrets.PIZZA_GOOGLE_DESKTOP_CLIENT_JSON }}
     steps:
       - uses: actions/checkout@v5
 

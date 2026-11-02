@@ -76,6 +76,8 @@ GitHub 使用设备授权流程，无需用户配置 client ID 或 secret，也�
 
 发布构建需要提供 **Desktop** 客户端 JSON：`PIZZA_GOOGLE_DESKTOP_CLIENT_FILE=/path/to/desktop-client.json npm run build`（桌面打包时同样传入该变量）。构建只把匹配的 `installed` 客户端登记参数放入运行时资源，并拒绝 Web 客户端文件。Google 在 token 交换时仍要求 Desktop 的 `client_secret` 字段；对于安装型应用，它属于公开登记参数，不是保密凭据，授权交换由 PKCE 保护。原始 JSON 放在源码目录外，用户 access token 和 refresh token 不会打包。详见 [Google 安装型应用说明](https://developers.google.com/identity/protocols/oauth2#installed)。
 
+正式发布流程从仓库 Secret `PIZZA_GOOGLE_DESKTOP_CLIENT_JSON` 注入登记信息，并设置 `PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT=1`；缺少登记资源会在打包前终止发布。
+
 ### 连接 Notion 和 X MCP
 
 Notion 支持动态注册 OAuth 客户端。在 MCP Marketplace 安装 Notion，打开浏览器授权工作区即可，无需另外创建开发者应用。Pizza 申请标准的 `default` 权限，验证回调中的签发者，并保存可刷新的凭据。

@@ -75,6 +75,8 @@ Tools cover mailbox identity, labels, paginated search, messages, threads, attac
 
 Release builds must supply the **Desktop** registration JSON with `PIZZA_GOOGLE_DESKTOP_CLIENT_FILE=/path/to/desktop-client.json npm run build` (or the corresponding desktop build). The build copies only the matching `installed` client registration into the runtime assets and rejects Web clients. Google still requires the Desktop `client_secret` field at token exchange; for installed applications it is a public registration value, not a confidential credential. PKCE protects each authorization exchange. Keep the original JSON outside the source tree. User access and refresh tokens are never packaged. See [Google's installed application guidance](https://developers.google.com/identity/protocols/oauth2#installed).
 
+Official release workflows inject `PIZZA_GOOGLE_DESKTOP_CLIENT_JSON` from repository secrets and set `PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT=1`; a missing registration fails the release before packaging.
+
 ### Connect Notion and X MCP
 
 Notion supports dynamic OAuth client registration. Install Notion from the MCP Marketplace and authorize your workspace in the browser; no separate developer app is needed. Pizza requests the standard `default` scope, validates the issuer on the callback, and stores refreshable credentials.
