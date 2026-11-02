@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MCP_LOGIN_RPC_TIMEOUT_MS } from "@tomsun28/pizza-protocol";
 import { Download, ExternalLink, Loader2, LogIn, LogOut, Pencil, Plus, Power, RotateCw, Search, Server, Trash2, Wrench } from "lucide-react";
 import { Badge, Button, Card, ErrorBanner, Field, Modal, MoreMenu, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { sendCommandAwait, subscribeExtensionUi, openExternal } from "@/lib/transport";
+import { sendCommandAwait, openExternal } from "@/lib/transport";
 import { confirmDialog } from "@/lib/confirm";
 import i18n from "@/i18n";
 import { McpToolParameters } from "@/components/McpToolParameters";
 import { MCP_MARKETPLACE_CATALOG, type McpCatalogEntry } from "@/lib/mcp-catalog";
-import { buildGoogleMcpConfig, googleMcpNeedsSetup, parseGoogleOAuthClient } from "@/lib/mcp-google-setup";
-import { buildXMcpConfig, isLegacyXConnector, xMcpNeedsSetup } from "@/lib/mcp-x-setup";
-import { needsSignIn, shouldAutoSignInAfterInstall, parseMcpDevicePrompt, canPasteMcpRedirect, type McpDevicePrompt } from "@/lib/mcp-signin";
+import { oauthSetupDefinition, requiredOAuthSetup } from "@/lib/mcp-oauth-setup";
+import { useMcpAuthSession } from "@/lib/use-mcp-auth-session";
+import { isLegacyXConnector } from "@/lib/mcp-x-setup";
+import { needsSignIn, shouldAutoSignInAfterInstall, canPasteMcpRedirect } from "@/lib/mcp-signin";
 
 interface McpTool {
 	name: string;
@@ -281,7 +281,7 @@ function DirectoryMcpCard({
 							<Badge tone="neutral">{t("plugins.mcp.builtin")}</Badge>
 						)}
 						<Badge tone="neutral">{entry.config.adapter === "gmail" ? t("plugins.mcp.localAdapter") : entry.type}</Badge>
-						{entry.oauthSetup && <Badge tone="neutral">{t(entry.oauthSetup === "x" ? "plugins.mcp.xSetupRequired" : "plugins.mcp.googleSetupRequired")}</Badge>}
+						{entry.oauthSetup && <Badge tone="neutral">{t(oauthSetupDefinition(entry.oauthSetup).text("SetupRequired"))}</Badge>}
 					</div>
 				</div>
 				{items.length > 0 && (
@@ -318,26 +318,11 @@ export function McpTab() {
 	const detailsRequest = useRef(0);
 	const formRef = useRef<HTMLFormElement>(null);
 	const [dialogAnchor, setDialogAnchor] = useState<HTMLElement | null>(null);
-	const [login, setLogin] = useState<{
-		name: string;
-		authUrl: string;
-		busy: boolean;
-		error: string;
-		device?: McpDevicePrompt;
-	} | null>(null);
-	const [loginAnswer, setLoginAnswer] = useState("");
-	const [loginSubmitting, setLoginSubmitting] = useState(false);
-	const loginActive = useRef(false);
-	const loginRequest = useRef(0);
-	useEffect(() => () => {
-		loginRequest.current++;
-		if (loginActive.current) void command(["server", "login-cancel"], 10000).catch(() => {});
-		loginActive.current = false;
-	}, []);
+
 	const [installingName, setInstallingName] = useState<string | null>(null);
 	const [installError, setInstallError] = useState("");
 	const [oauthSetup, setOAuthSetup] = useState<{
-		provider: "google" | "x";
+		provider: string;
 		name: string; config: Record<string, unknown>; scope: string;
 		clientId: string; clientSecret: string; callbackUrl: string; busy: boolean; error: string;
 	} | null>(null);
@@ -378,109 +363,18 @@ export function McpTab() {
 			setLoading(false);
 		}
 	}, []);
+	const {login, loginAnswer, setLoginAnswer, loginSubmitting, cancelLogin, submitLoginAnswer, beginSignIn} = useMcpAuthSession(command,refresh,setError);
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
 
-	async function cancelLogin() {
-		const request = ++loginRequest.current;
-		loginActive.current = false;
-		try {
-			await command(["server", "login-cancel"], 10000);
-		} catch {
-			/* best-effort */
-		}
-		if (request === loginRequest.current) {
-			setLogin(null);
-			setLoginAnswer("");
-			setLoginSubmitting(false);
-		}
-	}
-
-	async function submitLoginAnswer() {
-		const value = loginAnswer.trim();
-		if (!value || !login || !canPasteMcpRedirect(login)) return;
-		setLoginSubmitting(true);
-		setLogin((prev) => (prev ? { ...prev, error: "" } : prev));
-		try {
-			await command(["server", "login-answer", value], 15000);
-			setLoginAnswer("");
-		} catch (e) {
-			setLogin((prev) =>
-				prev
-					? { ...prev, error: e instanceof Error ? e.message : String(e), busy: true }
-					: prev,
-			);
-			setLoginSubmitting(false);
-		}
-	}
 
 	async function startSignIn(serverName: string, savedConfig?: Record<string, unknown>) {
-		if (loginActive.current) return;
 		const server = servers.find((server) => server.name === serverName);
 		const signinConfig = savedConfig ?? server?.config;
-		if (signinConfig && googleMcpNeedsSetup(signinConfig)) {
-			openOAuthSetup(serverName, signinConfig, server?.scope ?? "global", "google");
-			return;
-		}
-		if (signinConfig && xMcpNeedsSetup(signinConfig)) {
-			openOAuthSetup(serverName, signinConfig, server?.scope ?? "global", "x");
-			return;
-		}
-		const request = ++loginRequest.current;
-		loginActive.current = true;
-		setLoginAnswer("");
-		setLoginSubmitting(false);
-		setLogin({ name: serverName, authUrl: "", busy: true, error: "" });
-		setError("");
-		let unsub: (() => void) | undefined;
-		try {
-			unsub = await subscribeExtensionUi((req) => {
-				if (request !== loginRequest.current) return;
-				if (req.method !== "setStatus") return;
-				const key = String(req.statusKey ?? "");
-				if (key === `mcp-login-device:${serverName}` && typeof req.statusText === "string") {
-					const device = parseMcpDevicePrompt(req.statusText);
-					if (device) setLogin((prev) => prev?.name === serverName ? { ...prev, device } : prev);
-					return;
-				}
-				if (key !== `mcp-login:${serverName}`) return;
-				const url = typeof req.statusText === "string" ? req.statusText : "";
-				if (url) setLogin((prev) => (prev?.name === serverName ? { ...prev, authUrl: url } : prev));
-			});
-			if (request !== loginRequest.current) return;
-			await command(["server", "login", serverName], MCP_LOGIN_RPC_TIMEOUT_MS);
-			if (request !== loginRequest.current) return;
-			setLogin(null);
-			await refresh();
-		} catch (e) {
-			if (request !== loginRequest.current) return;
-			const cancelled =
-				e instanceof Error && "cancelled" in e && (e as Error & { cancelled?: boolean }).cancelled;
-			if (cancelled) {
-				setLogin(null);
-				return;
-			}
-			const message = e instanceof Error ? e.message : String(e);
-			const listed = await refresh();
-			if (request !== loginRequest.current) return;
-			// Older gateways may time out while the agent completes OAuth in the background.
-			if (/timeout|timed?\s*out/i.test(message) && listed.some((server) => server.name === serverName && server.state === "connected")) {
-				setLogin(null);
-				setError("");
-				return;
-			}
-			setLogin((prev) =>
-				prev ? { ...prev, busy: false, error: message } : prev,
-			);
-			setError(message);
-		} finally {
-			unsub?.();
-			if (request === loginRequest.current) {
-				loginActive.current = false;
-				setLoginSubmitting(false);
-			}
-		}
+		const setupProvider=signinConfig?requiredOAuthSetup(signinConfig):undefined;
+  if(signinConfig&&setupProvider){openOAuthSetup(serverName,signinConfig,server?.scope??"global",setupProvider);return;}
+		await beginSignIn(serverName);
 	}
 
 	useEffect(() => {
@@ -538,10 +432,9 @@ export function McpTab() {
 		}
 		if (autoSignInName) void startSignIn(autoSignInName);
 	}
-	function openOAuthSetup(serverName: string, config: Record<string, unknown>, scope: string, provider: "google" | "x") {
+	function openOAuthSetup(serverName: string, config: Record<string, unknown>, scope: string, provider: string) {
 		const oauth = config.oauth as Record<string, unknown> | undefined;
-		const entry = MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === (provider === "x" ? "x" : "gmail"))!;
-		const defaults = entry.config.oauth as Record<string, unknown>;
+		const defaults = oauthSetupDefinition(provider).defaults;
 		const hasCustomSecret = typeof oauth?.clientSecret === "string" && !!oauth.clientSecret.trim();
 		setOAuthSetup({ name: serverName, config, scope, provider,
 			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
@@ -553,7 +446,7 @@ export function McpTab() {
 		const setup = oauthSetup;
 		setOAuthSetup((prev) => prev ? { ...prev, busy: true, error: "" } : prev);
 		try {
-			const configured = setup.provider === "x" ? buildXMcpConfig(setup.config, setup) : buildGoogleMcpConfig(setup.config, setup);
+			const configured = oauthSetupDefinition(setup.provider).build(setup.config,setup);
 			await command(["server", "add", setup.name, ...(setup.scope === "project" ? ["--local"] : []), "--config", JSON.stringify(configured)]);
 			await refresh();
 			setOAuthSetup(null);
@@ -885,28 +778,28 @@ export function McpTab() {
 				</>
 			)}
 			{oauthSetup && (
-				<Modal open title={t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupTitle" : "plugins.mcp.googleSetupTitle")} onClose={() => { if (!oauthSetup.busy) setOAuthSetup(null); }} size="md" backdrop={false} anchor={dialogAnchor}
-					footer={<><Button tone="neutral" variant="ghost" disabled={oauthSetup.busy} onClick={() => setOAuthSetup(null)}>{t("plugins.mcp.cancel")}</Button><Button loading={oauthSetup.busy} disabled={!oauthSetup.clientId.trim() || (oauthSetup.provider === "google" && !oauthSetup.clientSecret.trim())} onClick={() => void saveOAuthSetup()}>{t("plugins.mcp.googleSetupConnect")}</Button></>}>
+				<Modal open title={t(oauthSetupDefinition(oauthSetup.provider).text("SetupTitle"))} onClose={() => { if (!oauthSetup.busy) setOAuthSetup(null); }} size="md" backdrop={false} anchor={dialogAnchor}
+					footer={<><Button tone="neutral" variant="ghost" disabled={oauthSetup.busy} onClick={() => setOAuthSetup(null)}>{t("plugins.mcp.cancel")}</Button><Button loading={oauthSetup.busy} disabled={!oauthSetup.clientId.trim() || (oauthSetupDefinition(oauthSetup.provider).secretRequired && !oauthSetup.clientSecret.trim())} onClick={() => void saveOAuthSetup()}>{t("plugins.mcp.googleSetupConnect")}</Button></>}>
 					<div className="space-y-4">
-						<p className="text-sm text-muted">{t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupIntro" : "plugins.mcp.googleSetupIntro")}</p>
+						<p className="text-sm text-muted">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupIntro"))}</p>
 						<ol className="list-decimal space-y-2 pl-5 text-sm text-muted">
-							<li>{t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupApp" : "plugins.mcp.googleSetupApis")}</li>
-								<li>{t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupClient" : "plugins.mcp.googleSetupClient")}</li>
-								<li>{t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupAccess" : "plugins.mcp.googleSetupTestUsers")}</li>
+							<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupApp"))}</li>
+								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupClient"))}</li>
+								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupAccess"))}</li>
 							</ol>
-						<a className="text-sm text-link underline" href={MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === (oauthSetup.provider === "x" ? "x" : "gmail"))!.docsUrl} target="_blank" rel="noreferrer">{t(oauthSetup.provider === "x" ? "plugins.mcp.xSetupDocs" : "plugins.mcp.googleSetupDocs")}</a>
-						{oauthSetup.provider === "google" && <Field label={t("plugins.mcp.googleClientImport")}>
+						<a className="text-sm text-link underline" href={oauthSetupDefinition(oauthSetup.provider).docsUrl} target="_blank" rel="noreferrer">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupDocs"))}</a>
+						{oauthSetupDefinition(oauthSetup.provider).importClient && <Field label={t("plugins.mcp.googleClientImport")}>
 							<input type="file" accept=".json,application/json" disabled={oauthSetup.busy} className="w-full text-xs" onChange={async (event) => {
 								const file = event.target.files?.[0]; if (!file) return;
 								try {
-									const client = parseGoogleOAuthClient(await file.text());
+									const client = oauthSetupDefinition(oauthSetup.provider).importClient!(await file.text());
 									setOAuthSetup((prev) => prev ? { ...prev, clientId: client.clientId, clientSecret: client.clientSecret, callbackUrl: client.callbackUrl ?? prev.callbackUrl, error: "" } : prev);
 								} catch (error) { setOAuthSetup((prev) => prev ? { ...prev, error: error instanceof Error ? error.message : String(error) } : prev); }
 							}} />
 						</Field>}
 						<Field label="Client ID"><input value={oauthSetup.clientId} disabled={oauthSetup.busy} autoComplete="off" onChange={(event) => setOAuthSetup((prev) => prev ? { ...prev, clientId: event.target.value } : prev)} className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs" /></Field>
-						<Field label={oauthSetup.provider === "x" ? t("plugins.mcp.xClientSecret") : "Client secret"}><input type="password" value={oauthSetup.clientSecret} disabled={oauthSetup.busy} autoComplete="new-password" onChange={(event) => setOAuthSetup((prev) => prev ? { ...prev, clientSecret: event.target.value } : prev)} className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs" /></Field>
-						<Field label={t("plugins.mcp.googleCallbackUrl")}><input value={oauthSetup.callbackUrl} disabled={oauthSetup.busy} onChange={(event) => setOAuthSetup((prev) => prev ? { ...prev, callbackUrl: event.target.value } : prev)} className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs" /><p className="mt-1 text-xs text-muted">{t(oauthSetup.provider === "x" ? "plugins.mcp.xCallbackHint" : "plugins.mcp.googleCallbackHint")}</p></Field>
+						<Field label={oauthSetupDefinition(oauthSetup.provider).secretLabel ? t(oauthSetupDefinition(oauthSetup.provider).secretLabel!) : "Client secret"}><input type="password" value={oauthSetup.clientSecret} disabled={oauthSetup.busy} autoComplete="new-password" onChange={(event) => setOAuthSetup((prev) => prev ? { ...prev, clientSecret: event.target.value } : prev)} className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs" /></Field>
+						<Field label={t("plugins.mcp.googleCallbackUrl")}><input value={oauthSetup.callbackUrl} disabled={oauthSetup.busy} onChange={(event) => setOAuthSetup((prev) => prev ? { ...prev, callbackUrl: event.target.value } : prev)} className="h-9 w-full rounded-lg border border-border bg-surface px-3 font-mono text-xs" /><p className="mt-1 text-xs text-muted">{t(oauthSetupDefinition(oauthSetup.provider).text("CallbackHint"))}</p></Field>
 						{oauthSetup.error && <ErrorBanner message={oauthSetup.error} />}
 					</div>
 				</Modal>

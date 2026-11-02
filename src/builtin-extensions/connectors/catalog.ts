@@ -22,7 +22,7 @@ export interface McpConnectorCatalogEntry {
 	/** Optional docs / homepage. */
 	docsUrl?: string;
 	/** Providers whose OAuth client must be configured before first sign-in. */
-	oauthSetup?: "google" | "x";
+	oauthSetup?: string;
 }
 
 /**
@@ -64,7 +64,7 @@ export const PIZZA_GITHUB_OAUTH_AS_METADATA = {
 };
 
 /** Official connectors shown in the MCP marketplace (not pre-installed). */
-export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
+const catalog: readonly McpConnectorCatalogEntry[] = [
 	{
 		name: "notion",
 		type: "http",
@@ -73,7 +73,6 @@ export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
 		config: {
 			url: "https://mcp.notion.com/mcp",
 			oauth: { clientName: "Pizza", scope: "default" },
-			description: "Search your workspace, read pages, and create or update Notion content.",
 		},
 	},
 	{
@@ -91,8 +90,6 @@ export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
 				callbackUrl: PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL,
 				authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA,
 			},
-			description:
-				"Explore repositories, manage issues, and work with pull requests and code reviews.",
 		},
 	},
 	{
@@ -111,8 +108,6 @@ export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
 				authorizationParams: { access_type: "offline", prompt: "consent" },
 				authCheck: { tool: "list_labels" },
 			},
-			description:
-				"Search emails, read conversations, and prepare drafts and replies.",
 		},
 	},
 	{
@@ -130,7 +125,8 @@ export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
 				scope: PIZZA_X_MCP_SCOPE,
 				authServerMetadataUrl: "https://api.x.com/.well-known/oauth-authorization-server",
 			},
-			description: "Search posts and explore profiles on X.",
 		},
 	},
 ];
+
+export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = catalog.map(entry => ({...entry,config:{...entry.config,description:entry.description}}));

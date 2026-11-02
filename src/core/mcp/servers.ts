@@ -154,8 +154,8 @@ export function isLoopbackRedirectUri(value: string): boolean {
 
 export interface McpHttpServerConfig extends McpServerConfigBase {
 	type?: "http" | "streamable-http";
-	/** Execute the bundled Gmail MCP adapter locally against the stable Gmail REST API. */
-	adapter?: "gmail";
+	/** Local adapter identifier; the owning connector validates its resource and creates the transport. */
+	adapter?: string;
 	url: string;
 	/** Values may reference environment variables (`${NAME}`) or commands (`!cmd`). */
 	headers?: Record<string, string>;
@@ -315,7 +315,7 @@ export function validateMcpServerConfig(name: string, raw: unknown): McpServerCo
 	if (type === "sse") return `server "${name}": legacy SSE transport is not supported; use the streamable HTTP URL`;
 
 	if (typeof value.url === "string" && (type === undefined || type === "http" || type === "streamable-http")) {
-		if (value.adapter !== undefined && (value.adapter !== "gmail" || value.url !== "https://gmail.googleapis.com/gmail/v1/users/me")) return `server "${name}": the gmail adapter requires https://gmail.googleapis.com/gmail/v1/users/me`;
+		if (value.adapter !== undefined && (typeof value.adapter !== "string" || !/^[a-z][a-z0-9_.-]{0,79}$/.test(value.adapter))) return `server "${name}": adapter must be a valid identifier`;
 		if (!URL.canParse(value.url) || !/^https?:$/.test(new URL(value.url).protocol)) {
 			return `server "${name}": url must be an http or https URL`;
 		}

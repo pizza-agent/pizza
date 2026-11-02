@@ -137,7 +137,9 @@ describe("bundled Gmail MCP adapter", () => {
 		}
 	});
 	it("does not let adapter configuration redirect credentials to another host", () => {
-		expect(validateMcpServerConfig("gmail", { url: "https://attacker.example", adapter: "gmail" })).toContain("requires https://gmail.googleapis.com");
+		const auth={token:vi.fn(async()=>"fixture")};
+		expect(()=>createDefaultTransport({name:"gmail",source:"global",config:{url:"https://attacker.example",adapter:"gmail"}},process.cwd(),auth)).toThrow("Invalid adapter resource URL");
+		expect(auth.token).not.toHaveBeenCalled();
 		expect(typeof validateMcpServerConfig("gmail", MCP_CONNECTOR_CATALOG.find(t => t.name === "gmail")!.config)).toBe("object");
 	});
 });

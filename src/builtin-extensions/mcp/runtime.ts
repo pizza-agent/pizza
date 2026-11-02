@@ -1,12 +1,9 @@
+import { resolveConnectorOAuth, createConnectorTransport, connectorClientSecret } from "../connectors/registry.js";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { VERSION } from "../../config.js";
-import { MCP_CONNECTOR_CATALOG, PIZZA_GMAIL_API_MCP_URL, PIZZA_GMAIL_MCP_URL, PIZZA_X_MCP_URL, PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID, PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL, PIZZA_GITHUB_OAUTH_AS_METADATA } from "../connectors/catalog.js";
-import { GmailApiTransport } from "../connectors/gmail.js";
-import { packagedGoogleDesktopClientSecret } from "../connectors/google-desktop-client.js";
-import type { McpOAuthConfig } from "../../core/mcp/servers.js";
 import { resolveConfigValueOrThrow, resolveHeadersOrThrow } from "../../core/config/resolve-config-value.js";
 import {
 	type AuthProvider,
@@ -89,22 +86,6 @@ function usesOAuth(entry: McpServerEntry): boolean {
 	return !Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === "authorization");
 }
 
-/** Apply the current provider auth defaults to older HTTP connector installs. */
-function effectiveOAuth(entry: McpServerEntry): McpOAuthConfig | undefined {
-	if (!("url" in entry.config)) return undefined;
-	const configured = entry.config.oauth;
-	if (entry.config.url === PIZZA_GMAIL_MCP_URL) return { authServerMetadataUrl: "https://accounts.google.com/.well-known/openid-configuration", authorizationParams: { access_type: "offline", prompt: "consent" }, authCheck: { tool: "list_labels" }, ...configured };
-	const provider = entry.config.adapter === "gmail" && entry.config.url === PIZZA_GMAIL_API_MCP_URL ? "gmail" : entry.config.url === PIZZA_X_MCP_URL ? "x" : undefined;
-	if (!provider) return configured;
-	const defaults = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === provider)!.config.oauth as McpOAuthConfig;
-	const merged = { ...defaults, ...configured, authorizationParams: { ...defaults.authorizationParams, ...configured?.authorizationParams } };
-	if (provider === "x") {
-		merged.clientId = configured?.clientSecret?.trim()
-			? configured.clientId
-			: configured?.clientId?.trim() || defaults.clientId;
-	}
-	return merged;
-}
 
 function expandHome(value: string): string {
 	if (value === "~") return homedir();
@@ -121,12 +102,8 @@ export function createDefaultTransport(
 ): McpTransport {
 	const { config, name } = entry;
 	if ("url" in config) {
-		if (config.adapter === "gmail") {
-			if (config.url !== PIZZA_GMAIL_API_MCP_URL) throw new Error("Invalid Gmail adapter resource URL");
-			const headers = resolveHeadersOrThrow(config.headers, `MCP server "${name}"`);
-			const bearer = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === "authorization")?.[1];
-			return new GmailApiTransport(authProvider ?? (bearer?.startsWith("Bearer ") ? { token: async () => bearer.slice(7) } : undefined));
-		}
+		const local = createConnectorTransport(entry, authProvider);
+		if (local) return local;
 		return new StreamableHttpTransport({
 			url: config.url,
 			headers: resolveHeadersOrThrow(config.headers, `MCP server "${name}"`),
@@ -228,27 +205,24 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 	}
 
 	oauthSettings(): McpOAuthSettings {
-		const oauth = effectiveOAuth(this.entry);
+		const oauth = resolveConnectorOAuth(this.entry);
 		if (!oauth) return {};
-		// Upgrade installs made before Pizza's public GitHub client used Device Flow.
-		const productGitHub = oauth.clientId === PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID &&
-			new URL(this.oauthUrl ?? "http://localhost").origin === "https://api.githubcopilot.com";
 		return {
 			authorizationResourceIndicator: oauth.authorizationResourceIndicator,
 			authorizationParams: oauth.authorizationParams,
 			clientId: oauth.clientId,
-			deviceAuthorizationUrl: oauth.deviceAuthorizationUrl ?? (productGitHub ? PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL : undefined),
+			deviceAuthorizationUrl: oauth.deviceAuthorizationUrl,
 			clientSecret:
 				oauth.clientSecret === undefined
-					? ("url" in this.entry.config && this.entry.config.adapter === "gmail" ? packagedGoogleDesktopClientSecret(oauth.clientId) : undefined)
+					? connectorClientSecret(this.entry, oauth.clientId)
 					: resolveConfigValueOrThrow(oauth.clientSecret, `MCP server "${this.entry.name}" oauth.clientSecret`),
 			callbackPort: oauth.callbackPort,
 			callbackUrl: oauth.callbackUrl,
-			scope: oauth.scope ?? (productGitHub ? "repo read:user" : undefined),
+			scope: oauth.scope,
 			clientName: oauth.clientName,
 			clientRegistration: oauth.clientRegistration,
 			authServerMetadataUrl: oauth.authServerMetadataUrl ? new URL(oauth.authServerMetadataUrl) : undefined,
-			authorizationServerMetadata: oauth.authorizationServerMetadata ?? (productGitHub ? PIZZA_GITHUB_OAUTH_AS_METADATA : undefined),
+			authorizationServerMetadata: oauth.authorizationServerMetadata,
 		};
 	}
 
@@ -391,7 +365,7 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 			const stdio = transport instanceof StdioTransport ? transport : undefined;
 			client.onClose(() => this.handleClientClose(client, stdio));
 			const tools = client.serverCapabilities?.tools ? await client.listTools() : [];
-			const authCheck = effectiveOAuth(this.entry)?.authCheck;
+			const authCheck = resolveConnectorOAuth(this.entry)?.authCheck;
 			if (authCheck) {
 				const tool = tools.find((tool) => tool.name === authCheck.tool);
 				if (!tool || tool.annotations?.readOnlyHint === false) throw new Error(`OAuth check tool "${authCheck.tool}" must be available and read-only`);
