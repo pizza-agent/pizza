@@ -32,7 +32,7 @@ export function useInteractions(workspace: string | undefined | null, sessionId:
 			if (
 				!disposed &&
 				(!event._cwd || samePath(String(event._cwd), workspace)) &&
-				["INTERACTION_REQUESTED", "INTERACTION_ANSWERED"].includes(String(event.type))
+				["INTERACTION_REQUESTED", "INTERACTION_ANSWERED", "USER_MESSAGE"].includes(String(event.type))
 			)
 				update();
 		}).then((fn) => {

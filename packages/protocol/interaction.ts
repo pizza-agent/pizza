@@ -50,4 +50,6 @@ export interface InteractionRecord {
 	status: "pending" | "answered" | "skipped" | "expired";
 	capabilities: InteractionCapability[];
 	answer?: InteractionAnswer;
+	/** An accepted answer may still be waiting for its agent turn. */
+	delivery?: "pending" | "delivered";
 }

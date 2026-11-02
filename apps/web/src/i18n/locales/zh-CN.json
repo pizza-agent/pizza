@@ -1112,6 +1112,8 @@
     "floatHint": "拖动移动 · 双击收回应用 · 右键更多"
   },
   "interaction": {
+		"deliveryPending": "回答已保存，等待继续处理。",
+		"retryDelivery": "继续处理",
 		"authCode": "设备验证码",
 		"openAuth": "打开授权页面",
     "submit": "继续",

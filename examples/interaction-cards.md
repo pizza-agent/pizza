@@ -73,7 +73,7 @@ authentication is separate (`_agentcli server login <name>`).
 `INTERACTION_REQUESTED` and `INTERACTION_ANSWERED` events persist cards and answers
 in the current thread. Reconnection restores them; foreign-thread answers, expired
 requests, invalid options, and conflicting repeated submissions are rejected.
-Identical retries return the saved result without another agent turn. One pending
+Identical retries return the saved answer. A durable outbox retries undelivered answers; a persisted USER_MESSAGE is the receipt, so retries after acceptance do not start another turn. Busy agents receive the answer when idle, and delivery never switches the active chat. One pending
 card is allowed per thread. Expiry defaults to 24 hours (`expiresInMinutes` is configurable).
 
 - `{"type":"interaction_list"}` returns records in the active thread.
@@ -93,9 +93,12 @@ The main agent always enables initiative and receives a per-turn policy containi
 the current allowance. There is no UI or command to toggle it; `_interact initiative`
 is read-only. Older saved off preferences are ignored.
 
-Unsolicited cards must set `initiative: true` and allow skipping. The backend
-rejects these cards outside the main runtime, within 24 hours
-of the previous proactive card across main-agent conversations. Suggestion history is kept in
+Main-agent cards are classified as proactive by default and must allow skipping.
+The backend ignores model-supplied `initiative:false` exemptions. Trusted SDK callers
+can mark an explicitly requested form with `facade.prompt(text, undefined, undefined,
+{source:"interactive", userRequestedForm:true})`; interaction-response continuations
+also have this trusted origin. Other main-agent cards are rejected within 24 hours
+of the previous proactive card across its conversations. Suggestion history is kept in
 the main event store and survives restart. Plain conversational behavior still
 relies on the model following its system instructions.
 
@@ -104,3 +107,17 @@ existing main scheduler with `--max-runs 1`, pinned to the originating chat; it
 must confirm creation before promising a reminder. Users manage these tasks with
 the existing schedule controls or `_cron pause/delete`. Users can skip a suggestion or cancel a particular follow-up. There is no periodic scan of
 connected accounts; checks run only after a user agrees to one.
+
+
+## Extension boundaries
+
+Programmatic callers must pass a prompt source (`scheduler`, `agent`, or
+`interaction`); only `interactive`/`rpc` input can answer a pending card. Interaction
+read models incrementally apply new events. OAuth provider policies and local
+transport factories live in `connectors/registry.ts`; provider configuration UI
+uses `mcp-oauth-setup.ts`, and login state belongs to `useMcpAuthSession` rather
+than the marketplace view. Its subscription is bound to the initiating workspace.
+
+Publisher workflows read `PIZZA_GOOGLE_DESKTOP_CLIENT_JSON` from repository secrets
+and require the registration asset. Local builds may use
+`PIZZA_GOOGLE_DESKTOP_CLIENT_FILE`; ordinary development builds can omit it.

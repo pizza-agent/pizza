@@ -262,7 +262,7 @@ describe("runRpcModeWithFacade", () => {
 				createContext: () => ({ sessionManager: { eventStore: store } }),
 			},
 		});
-		const prompt = vi.spyOn(facade, "prompt").mockResolvedValue(undefined as never);
+		const prompt = vi.spyOn(facade, "prompt").mockImplementation(async text => {store.append({type:"USER_MESSAGE",actor_id:"user",thread_id:threadId,payload:{content:text}});});
 		void runRpcModeWithFacade(facade);
 		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 		rpcIo.lineHandler!(JSON.stringify({ id: "list", type: "interaction_list" }));
@@ -293,15 +293,26 @@ describe("runRpcModeWithFacade", () => {
 			await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id, success: true })));
 		}
 		expect(prompt).toHaveBeenCalledTimes(1);
-		expect(prompt).toHaveBeenCalledWith(expect.stringContaining('"name":"Tom"'));
+		expect(prompt).toHaveBeenCalledWith(expect.stringContaining('"name":"Tom"'),undefined,undefined,{source:"interaction",threadId});
         const next = createInteraction(store, threadId, "next-card", { title: "Next?", actions: [{ id: "go", label: "Go" }] });
         vi.spyOn(facade, "isRunning", "get").mockReturnValue(true);
         const followUp = vi.spyOn(facade, "followUp").mockImplementation(() => {});
         rpcIo.lineHandler!(JSON.stringify({ id: "during-turn", type: "interaction_respond", requestId: next.id, answer: { kind: "skip" } }));
         await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "during-turn", success: true })));
-        expect(followUp).toHaveBeenCalledOnce();
+        expect(followUp).not.toHaveBeenCalled();
         expect(prompt).toHaveBeenCalledOnce();
     });
+
+ it("rejects interaction delivery if the active thread changes during a durability barrier",async()=>{
+  const facade=createFacade();const threadId=facade.runtime.getProjection().getDescriptor().thread_id;
+  let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve;});
+  const flush=vi.fn(()=>barrier);Object.defineProperty(facade.runtime.store,"flush",{value:flush});
+  const result=facade.prompt("answer",undefined,undefined,{source:"interaction",threadId});
+  const failed=expect(result).rejects.toThrow("target thread");
+  await vi.waitFor(()=>expect(flush).toHaveBeenCalled());
+  facade.runtime.sessionManager!.createThread("Other");release();await failed;
+  expect(facade.runtime.store.query({types:["USER_MESSAGE"]})).toHaveLength(0);
+ });
 
 	it("emits command responses and typed events over JSONL", async () => {
 		const facade = createFacade();

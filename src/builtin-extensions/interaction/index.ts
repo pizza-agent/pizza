@@ -98,7 +98,7 @@ export const createInteractionExtension: ExtensionFactory = (pizza) => {
 	// Natural-language answers remain ordinary user messages; only mark the pending card resolved.
 	pizza.on("input", (event, ctx) => {
 		if (!ctx.sessionManager?.eventStore || !ctx.sessionManager.projection) return;
-		if (event.source === "extension" || event.text.startsWith("/")) return;
+		if (!["interactive", "rpc"].includes(event.source) || event.text.startsWith("/")) return;
 		const { store, threadId } = scope(ctx);
 		const pending = listInteractions(store, threadId).filter((r) => r.status === "pending");
 		if (pending.length === 1 && event.text.trim())

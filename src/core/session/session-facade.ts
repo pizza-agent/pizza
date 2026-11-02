@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import type { Model } from "@earendil-works/pi-ai/compat";
 import type { EventBase, ImageContent, FileAttachment } from "../event-store/types.js";
 import type { SubscribeOptions } from "../event-store/store.js";
-import type { ExtensionRunner, ResolvedCommand } from "../extensions/index.js";
+import type { ExtensionRunner, ResolvedCommand, InputSource } from "../extensions/index.js";
 import { expandPromptTemplate } from "../context/prompt-templates.js";
 import { stripFrontmatter } from "../../utils/frontmatter.js";
 import type { ModelRegistry } from "../models/model-registry.js";
@@ -21,8 +21,18 @@ import { isPersistableThinkingLevel } from "../config/settings-manager.js";
 import type { ModelConfig, ToolDefinition } from "../runtime/llm-types.js";
 import type { RuntimeCompactOptions } from "../runtime/runtime.js";
 import { EventSourcedRuntime } from "../runtime/runtime.js";
+import { setInteractionOrigin } from "../interaction/initiative.js";
 
 export interface MainAgentRoots { mainDir: string; memoryDir: string }
+
+/** Metadata supplied by trusted callers, outside model-generated tool arguments. */
+export interface SessionPromptOptions {
+	source?: InputSource;
+	/** Refuse delivery when the active conversation changes across an await. */
+	threadId?: string;
+	/** The caller has an explicit request for a form; ordinary prompts remain rate-limited. */
+	userRequestedForm?: boolean;
+}
 
 export interface SessionFacadeConfig {
 	mainAgent?: MainAgentRoots;
@@ -85,19 +95,34 @@ export class SessionFacade {
 	 *   2. the `input` extension event may transform or swallow the input
 	 *   3. `/skill:<name>` and prompt templates expand to their file content
 	 */
-	async prompt(text: string, images?: ImageContent[], files?: FileAttachment[]): Promise<void> {
+	async prompt(
+		text: string,
+		images?: ImageContent[],
+		files?: FileAttachment[],
+		options?: SessionPromptOptions,
+	): Promise<void> {
+		if (options?.threadId && this.runtime.getProjection().getDescriptor().thread_id !== options.threadId) {
+			throw Error("Interaction target thread is not active");
+		}
 		if (await this.executeExtensionCommand(text)) return;
 
 		let currentText = text;
 		let currentImages = images;
 		const runner = this.extensionRunner;
+		const interactionStore = runner?.createContext().sessionManager.eventStore;
+		if (interactionStore) {
+			setInteractionOrigin(
+				interactionStore, this.runtime.getProjection().getDescriptor().thread_id,
+				options?.userRequestedForm === true || options?.source === "interaction",
+			);
+		}
 		if (runner?.hasHandlers("input")) {
 			// The event-store and pi-ai ImageContent types describe the same
 			// blocks but differ in the mime field name — cast at the boundary.
 			const inputResult = await runner.emitInput(
 				currentText,
 				currentImages as unknown as import("@earendil-works/pi-ai/compat").ImageContent[] | undefined,
-				"interactive",
+				options?.source ?? "interactive",
 			);
 			if (inputResult.action === "handled") return;
 			if (inputResult.action === "transform") {
@@ -106,7 +131,7 @@ export class SessionFacade {
 			}
 		}
 
-		return this.runtime.prompt(this.expandSlashText(currentText), currentImages, files);
+		return this.runtime.prompt(this.expandSlashText(currentText), currentImages, files, options?.threadId);
 	}
 
 	steer(text: string, images?: ImageContent[], files?: FileAttachment[]): void {
@@ -389,6 +414,12 @@ export class SessionFacade {
 		} finally {
 			clearTimeout(timer);
 		}
+	}
+
+	/** Register resources created after the facade (RPC delivery, transports, etc.). */
+	addDisposer(dispose: () => void): void {
+		if (this.disposed) dispose();
+		else this.disposers.push(dispose);
 	}
 
 	dispose(): void {

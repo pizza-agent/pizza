@@ -1,3 +1,4 @@
+import { InteractionDelivery } from "../../src/core/interaction/delivery.js";
 import { initiativeState } from "../../src/core/interaction/initiative.js";
 /**
  * RPC mode: Headless operation with JSON stdin/stdout protocol.
@@ -13,7 +14,7 @@ import { initiativeState } from "../../src/core/interaction/initiative.js";
  */
 
 import { loadMainProfile, readMainDocument, writeMainDocument, listMainJournals } from "../../src/core/agent/main-profile.js";
-import { listInteractions, answerInteraction, interactionReplyMessage } from "../../src/core/interaction/store.js";
+import { listInteractions, answerInteraction } from "../../src/core/interaction/store.js";
 import { petService } from "../../src/core/pet/service.js";
 import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -782,7 +783,7 @@ export async function runRpcModeWithFacade(
 					}
 				});
 				try {
-					await facade.prompt(task.prompt);
+					await facade.prompt(task.prompt, undefined, undefined, { source: "scheduler" });
 					promptSessionId = sessionManager?.getActiveSessionId();
 				} finally {
 					unsub();
@@ -1049,6 +1050,7 @@ export async function runRpcModeWithFacade(
 
 	let detachInput = () => {};
 
+	let interactionDelivery: InteractionDelivery | undefined;
 	async function shutdown(exitCode = 0): Promise<never> {
 		if (shuttingDown) {
 			process.exit(exitCode);
@@ -1071,6 +1073,7 @@ export async function runRpcModeWithFacade(
 			cleanup();
 		}
 		unsubscribe?.();
+		interactionDelivery?.dispose();
 		scheduler.dispose();
 		setNativeBridge(undefined);
 		await facade.disposeAsync();
@@ -1164,24 +1167,13 @@ export async function runRpcModeWithFacade(
 				if (!store || !facade.extensionRunner?.getAllRegisteredBuiltinCommands().some((c) => c.name === "_interact")) {
 					throw new Error("Interaction capability is unavailable");
 				}
-				if (command.type === "interaction_list")
+				if (command.type === "interaction_list") {
+					interactionDelivery?.resume();
 					return success(id, "interaction_list", listInteractions(store, threadId));
-				const result = answerInteraction(store, threadId, command.requestId, command.answer);
-				await store.flush?.();
-				if (!result.duplicate) {
-					const message = interactionReplyMessage(result.record);
-					if (facade.isRunning) facade.followUp(message);
-					else
-						void facade.prompt(message).catch((cause) =>
-							output({
-								type: "extension_ui_request",
-								id: crypto.randomUUID(),
-								method: "notify",
-								message: String(cause),
-								notifyType: "error",
-							}),
-						);
 				}
+				const result = answerInteraction(store, threadId, command.requestId, command.answer, {deliveryRequired:true});
+				await store.flush?.();
+				interactionDelivery?.resume();
 				return success(id, "interaction_respond", result);
 			}
 			case "main_document_read":
@@ -2128,6 +2120,15 @@ export async function runRpcModeWithFacade(
 		}
 	};
 
+	// Resume durable answers after restart, after a busy turn, or when their chat becomes active.
+	const interactionStore = facade.extensionRunner?.createContext().sessionManager.eventStore;
+	interactionDelivery = interactionStore
+		? new InteractionDelivery(interactionStore, facade, cause => output({
+			type: "extension_ui_request", id: crypto.randomUUID(), method: "notify",
+			message: String(cause), notifyType: "error",
+		}))
+		: undefined;
+	interactionDelivery?.resume();
 	const unsubscribeEvents = facade.subscribe((event) => output(event));
 	const unsubscribePet = petService.subscribe((snapshot) => output({ type: "pet_state", ...snapshot }));
 	unsubscribe = () => { unsubscribeEvents(); unsubscribePet(); };

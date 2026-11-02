@@ -1112,6 +1112,8 @@
     "floatHint": "Drag to move · Double-click to return to the app · Right-click for more"
   },
   "interaction": {
+		"deliveryPending": "Answer saved; waiting to continue.",
+		"retryDelivery": "Continue",
 		"authCode": "Device code",
 		"openAuth": "Open sign-in page",
     "submit": "Continue",

@@ -32,7 +32,7 @@ export function InteractionCard({
 	const answer = record.answer,
 		shown = answer?.kind === "submit" ? answer.values : values;
 	const send = async (answer: InteractionAnswer) => {
-		if (sending.current || !pending) return;
+		if (sending.current || (!pending && record.delivery !== "pending")) return;
 		sending.current = true;
 		setBusy(true);
 		setError("");
@@ -198,6 +198,14 @@ export function InteractionCard({
 						</div>
 					</details>
 				</>
+			)}
+			{record.delivery === "pending" && record.answer && (
+				<div className="mt-3 flex items-center gap-3 text-xs text-muted">
+					<span>{t("interaction.deliveryPending")}</span>
+					<Button size="sm" tone="neutral" disabled={busy} onClick={() => void send(record.answer!)}>
+						{t("interaction.retryDelivery")}
+					</Button>
+				</div>
 			)}
 			{error && (
 				<p role="alert" className="mt-3 text-xs text-danger">

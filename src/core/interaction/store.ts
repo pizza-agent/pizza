@@ -1,4 +1,5 @@
-import { assertInitiativeAllowed } from "./initiative.js";
+import { interactionProjection } from "./projection.js";
+import { assertInitiativeAllowed, isProactiveCard } from "./initiative.js";
 import { isDeepStrictEqual } from "node:util";
 import type { InteractionAnswer, InteractionCard, InteractionRecord } from "../../../packages/protocol/interaction.js";
 import type { EventStore } from "../event-store/store.js";
@@ -6,35 +7,18 @@ import { interactionCardSchema, validateInteractionAnswer } from "./schema.js";
 import { listInteractionCapabilities } from "./capabilities.js";
 
 export function listInteractions(store: EventStore, threadId: string, now = Date.now()): InteractionRecord[] {
-	const events = store.query({ types: ["INTERACTION_REQUESTED", "INTERACTION_ANSWERED"], thread_id: threadId });
-	const records = new Map<string, InteractionRecord>();
-	for (const event of events) {
-		if (event.type === "INTERACTION_REQUESTED") {
-			const p = event.payload as {
-				card: InteractionCard;
-				toolCallId: string;
-				expiresAt: number;
-				capabilities: InteractionRecord["capabilities"];
-			};
-			records.set(event.event_id, {
-				id: event.event_id,
-				toolCallId: p.toolCallId,
-				card: p.card,
-				createdAt: event.timestamp,
-				expiresAt: p.expiresAt,
-				capabilities: p.capabilities ?? [],
-				status: p.expiresAt <= now ? "expired" : "pending",
-			});
-		} else {
-			const p = event.payload as { requestId: string; answer: InteractionAnswer };
-			const record = records.get(p.requestId);
-			if (record) {
-				record.answer = p.answer;
-				record.status = p.answer.kind === "skip" ? "skipped" : "answered";
-			}
-		}
-	}
-	return [...records.values()];
+	const projection = interactionProjection(store);
+	return [...projection.records.values()]
+		.filter((entry) => entry.threadId === threadId)
+		.map(({ record }) =>
+			structuredClone({
+				...record,
+				...(projection.pendingDelivery.has(record.id)
+					? { delivery: projection.delivered.has(record.id) ? ("delivered" as const) : ("pending" as const) }
+					: {}),
+				status: record.status === "pending" && record.expiresAt <= now ? "expired" : record.status,
+			}),
+		);
 }
 export function createInteraction(
 	store: EventStore,
@@ -43,6 +27,7 @@ export function createInteraction(
 	input: unknown,
 ): InteractionRecord {
 	const card = interactionCardSchema.parse(input);
+	if (isProactiveCard(store, threadId)) card.initiative = true;
 	const records = listInteractions(store, threadId);
 	const existing = records.find((r) => r.toolCallId === toolCallId);
 	if (existing) return existing;
@@ -73,6 +58,7 @@ export function answerInteraction(
 	threadId: string,
 	requestId: string,
 	input: unknown,
+	options?: { deliveryRequired?: boolean },
 ): { record: InteractionRecord; duplicate: boolean } {
 	const record = listInteractions(store, threadId).find((r) => r.id === requestId);
 	if (!record) throw Error("Interaction is not in this conversation");
@@ -87,9 +73,9 @@ export function answerInteraction(
 		actor_id: "user",
 		thread_id: threadId,
 		caused_by: requestId,
-		payload: { requestId, answer },
+		payload: { requestId, answer, ...(options?.deliveryRequired ? { deliveryRequired: true } : {}) },
 	});
-	return { record: { ...record, status: answer.kind === "skip" ? "skipped" : "answered", answer }, duplicate: false };
+	return { record: listInteractions(store, threadId).find((r) => r.id === requestId)!, duplicate: false };
 }
 export function interactionReplyMessage(record: InteractionRecord): string {
 	const answer = record.answer;

@@ -325,7 +325,7 @@ export interface InteractionRequestedEvent extends EventBase {
 }
 export interface InteractionAnsweredEvent extends EventBase {
 	type: "INTERACTION_ANSWERED";
-	payload: { requestId: string; answer: InteractionAnswer };
+	payload: { requestId: string; answer: InteractionAnswer; deliveryRequired?: boolean };
 }
 
 /**

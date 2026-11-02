@@ -1137,7 +1137,7 @@ export function Conversation({
 		}
 	}, [activeMatchId]);
 
-	if (items.length === 0 && !interactions.some(record => record.status === "pending")) {
+	if (items.length === 0 && !interactions.some(record => record.status === "pending" || record.delivery === "pending")) {
 		return <div className="flex min-h-[calc(100vh-200px)] flex-col items-center justify-center gap-4 text-center text-muted" />;
 	}
 
@@ -1192,7 +1192,7 @@ export function Conversation({
 					);
 				})}
 				{onInteractionResponse && interactions
-					.filter(record => record.status === "pending" && !visibleItems.some(item => item.id === record.toolCallId))
+					.filter(record => (record.status === "pending" || record.delivery === "pending") && !visibleItems.some(item => item.id === record.toolCallId))
 					.map(record => <InteractionCard key={record.id} record={record} onRespond={onInteractionResponse} />)}
 				{!atBottom && (
 					<div className="pointer-events-none sticky bottom-4 z-10 -mb-9 flex justify-center">
