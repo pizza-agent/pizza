@@ -212,14 +212,14 @@ export type GatewayResponse =
 export function isGatewayRequest(value: unknown): value is GatewayRequest {
 	if (typeof value !== "object" || value === null) return false;
 	const type = (value as { type?: unknown }).type;
-	return type === "tell" || type === "ping" || type === "status" || type === "shutdown" || type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op";
+	return type === "tell" || type === "ping" || type === "status" || type === "shutdown" || type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op" || type === "stop_workspace";
 }
 
 /** Is the value a valid {@link GatewayResponse}? Structural check. */
 export function isGatewayResponse(value: unknown): value is GatewayResponse {
 	if (typeof value !== "object" || value === null) return false;
 	const type = (value as { type?: unknown }).type;
-	return type === "tell_result" || type === "pong" || type === "status_result" || type === "shutdown_ok" || type === "error" || type === "attach_ok" || type === "rpc" || type === "list_result" || type === "channel_op_result";
+	return type === "tell_result" || type === "pong" || type === "status_result" || type === "shutdown_ok" || type === "error" || type === "attach_ok" || type === "rpc" || type === "list_result" || type === "channel_op_result" || type === "workspace_stop_result";
 }
 
 /** Default tell timeout (ms) when the client omits one. */
@@ -323,7 +323,11 @@ export interface GatewayChannelOpRequest extends GatewayMessageBase {
 }
 
 /** Any channel-originated request. */
+export interface GatewayWorkspaceStopRequest extends GatewayMessageBase { type: "stop_workspace"; id: string; workspace: string; }
+export interface GatewayWorkspaceStopResult extends GatewayMessageBase { type: "workspace_stop_result"; id: string; ok: boolean; error?: string; }
+
 export type GatewayChannelRequest =
+	| GatewayWorkspaceStopRequest
 	| GatewayAttachRequest
 	| GatewayDetachRequest
 	| GatewayRpcRequest
@@ -369,6 +373,7 @@ export interface GatewayChannelOpResult extends GatewayMessageBase {
 
 /** Any gateway-originated message on a channel connection (broadened beyond tell-only). */
 export type GatewayChannelResponse =
+	| GatewayWorkspaceStopResult
 	| GatewayAttachOk
 	| GatewayRpcDelivery
 	| GatewayListResult

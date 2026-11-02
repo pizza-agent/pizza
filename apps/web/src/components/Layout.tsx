@@ -99,7 +99,7 @@ export default function Layout({
 	onSelectWorkspace?: (cwd: string) => void;
 	onNewWorkspace?: () => void;
 	onNewRemoteWorkspace?: () => void;
-	onDeleteWorkspace?: (workspaceId: string) => void;
+	onDeleteWorkspace?: (workspaceId: string, phase?: "before" | "after" | "failed") => void;
 	streamingCwds?: Set<string>;
 }) {
 	const { t } = useTranslation();
@@ -176,10 +176,12 @@ export default function Layout({
 		});
 		if (!ok) return;
 		try {
+			onDeleteWorkspace?.(ws.workspace_id, "before");
 			await deleteWorkspace(ws.workspace_id);
 			clearComposerDraft(ws.cwd);
 			onDeleteWorkspace?.(ws.workspace_id);
 		} catch (e) {
+			onDeleteWorkspace?.(ws.workspace_id, "failed");
 			console.error("[workspace] delete error:", e);
 			void alertDialog({ title: t("common.error"), message: t("layout.deleteWorkspaceFailed", { error: e instanceof Error ? e.message : String(e) }), danger: true });
 		}

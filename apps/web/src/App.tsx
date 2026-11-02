@@ -337,9 +337,26 @@ function AppInner() {
 		}
 	}, [navigate, refreshWorkspaces, startWithWorkspace]);
 
-	const handleDeleteWorkspace = useCallback((workspaceId: string) => {
-		setWorkspaces((prev) => prev.filter((ws) => ws.workspace_id !== workspaceId));
-	}, []);
+	const handleDeleteWorkspace = useCallback((workspaceId: string, phase: "before" | "after" | "failed" = "after") => {
+		const removed = workspaces.find(ws => ws.workspace_id === workspaceId);
+		const active = removed && samePath(workspace, removed.cwd);
+		if (phase === "before") {
+			if (active) {
+				workspaceSwitchRef.current = true;
+				if (restartTimerRef.current) {
+					clearTimeout(restartTimerRef.current);
+					restartTimerRef.current = null;
+				}
+			}
+			return;
+		}
+		if (phase === "failed") {
+			if (active) workspaceSwitchRef.current = false;
+			return;
+		}
+		setWorkspaces(prev => prev.filter(ws => ws.workspace_id !== workspaceId));
+		if (active) void handleSelectWorkspace(MAIN_CHAT_CWD);
+	}, [workspaces, workspace, handleSelectWorkspace]);
 
 	const handleRecoverMainAgent = useCallback(async () => {
 		setRecoveringMainAgent(true);

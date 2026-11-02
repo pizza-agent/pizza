@@ -308,7 +308,7 @@ impl GatewayChannel {
 					.unwrap()
 					.push(ChannelMessage::ListResult { workspaces });
 			}
-			"channel_op_result" => {
+			"channel_op_result" | "workspace_stop_result" => {
 				// Channel-management replies are id-routed like rpc responses,
 				// except the id sits at the envelope's top level (not in a frame).
 				let id = parsed
@@ -438,6 +438,15 @@ impl GatewayChannel {
 	/// await the matching `channel_op_result`. Returns the `data` payload on
 	/// `ok`, or the gateway's error string otherwise.
 	pub fn channel_op(&self, request: Value) -> Result<Value, String> {
+		self.control_op("channel_op", request)
+	}
+
+	pub fn stop_workspace(&self, workspace: &str) -> Result<(), String> {
+		self.control_op("stop_workspace", json!({"workspace": workspace}))
+			.map(|_| ())
+	}
+
+	fn control_op(&self, kind: &str, request: Value) -> Result<Value, String> {
 		let mut obj = request
 			.as_object()
 			.cloned()
@@ -447,7 +456,7 @@ impl GatewayChannel {
 			.and_then(|i| i.as_str())
 			.map(|s| s.to_string())
 			.unwrap_or_else(|| format!("cop_{}", uuid::Uuid::new_v4()));
-		obj.insert("type".to_string(), Value::String("channel_op".to_string()));
+		obj.insert("type".to_string(), Value::String(kind.to_string()));
 		obj.insert("id".to_string(), Value::String(id.clone()));
 		let slot: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
 		self.pending
@@ -1237,6 +1246,22 @@ mod tests {
 		);
 		assert!(slot.lock().unwrap().is_some());
 		assert!(inbox.lock().unwrap().is_empty());
+
+		// Workspace stop acknowledgements use the same id-routed control path.
+		*slot.lock().unwrap() = None;
+		GatewayChannel::dispatch(
+			&json!({"type":"workspace_stop_result","id":"req_1","ok":true}),
+			&pending,
+			&inbox,
+		);
+		assert_eq!(
+			slot.lock()
+				.unwrap()
+				.as_ref()
+				.and_then(|v| v.get("ok"))
+				.and_then(Value::as_bool),
+			Some(true)
+		);
 
 		// An event (no matching id) → inbox.
 		GatewayChannel::dispatch(

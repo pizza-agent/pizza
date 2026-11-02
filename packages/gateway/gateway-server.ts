@@ -417,7 +417,9 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	}
 
 	/** Find or spawn the RpcClient for `cwd`. */
+	const stoppedWorkspaces = new Set<string>();
 	async function getOrCreateAgent(cwd: string, opts?: { interactive?: boolean }): Promise<PoolEntry> {
+		if (stoppedWorkspaces.has(cwd)) throw new Error("Workspace was removed; explicitly open it to reconnect");
 		const existing = pool.get(cwd);
 		if (existing) return existing;
 		const inFlight = spawning.get(cwd);
@@ -992,6 +994,7 @@ function nextMessageId(): string {
 					return;
 				}
 				try {
+					stoppedWorkspaces.delete(cwd);
 					// A desktop window is attaching: the human behind it can
 					// answer approval dialogs — the agent must be interactive.
 					// Headless attaches (bot channels) only watch events: they keep
@@ -1016,6 +1019,19 @@ function nextMessageId(): string {
 				write({ type: "attach_ok", workspace: cwd });
 				return;
 			}
+			case "stop_workspace": {
+				const cwd = resolveDestination(request.workspace);
+				if (!cwd) {
+					write({ type: "workspace_stop_result", id: request.id, ok: false, error: "Unknown workspace" });
+					return;
+				}
+				stoppedWorkspaces.add(cwd);
+				await spawning.get(cwd)?.catch(() => {});
+				await teardownAgent(cwd, "workspace removed");
+				write({ type: "workspace_stop_result", id: request.id, ok: true });
+				return;
+			}
+
 			case "detach": {
 				const cwd = resolveDestination(request.workspace);
 				if (!cwd) return;
@@ -1160,7 +1176,7 @@ function nextMessageId(): string {
 			}
 
 			// Channel protocol: attach / detach / rpc / list.
-			if (type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op") {
+			if (type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op" || type === "stop_workspace") {
 				void handleChannelRequest(parsed as GatewayChannelRequest, write, subscribedCwds).catch((error: unknown) => {
 					write({ type: "error", message: error instanceof Error ? error.message : String(error) });
 				});

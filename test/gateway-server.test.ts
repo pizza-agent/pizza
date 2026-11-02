@@ -285,9 +285,10 @@ describe("gateway server", () => {
 		mkdirSync(projectDir, { recursive: true });
 
 		const spawnedCwds: string[] = [];
+		const stoppedCwds: string[] = [];
 		const fakeAgent = (cwd: string): AgentConnection => ({
 			async start() {},
-			async stop() {},
+			async stop() { stoppedCwds.push(cwd); },
 			onEvent: () => () => {},
 			onExit: () => () => {},
 			async sendCommand(command: RpcCommand): Promise<RpcResponse> {
@@ -327,5 +328,12 @@ describe("gateway server", () => {
 
 		// All three tells must have reused ONE agent.
 		expect(spawnedCwds).toHaveLength(1);
+  const stopped=JSON.parse(await sendAndWait(socketPath,{type:"stop_workspace",id:"stop",workspace:projectDir}));
+  expect(stopped).toMatchObject({type:"workspace_stop_result",ok:true});expect(stoppedCwds).toHaveLength(1);
+  const stale=JSON.parse(await sendAndWait(socketPath,{type:"rpc",workspace:projectDir,frame:{type:"get_state",id:"stale"}}));
+  expect(stale.frame.success).toBe(false);expect(spawnedCwds).toHaveLength(1);
+  const reopened=JSON.parse(await sendAndWait(socketPath,{type:"attach",workspace:projectDir}));
+  expect(reopened.type).toBe("attach_ok");expect(spawnedCwds).toHaveLength(2);
+
 	});
 });
