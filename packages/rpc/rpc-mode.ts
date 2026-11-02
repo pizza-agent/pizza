@@ -1,3 +1,4 @@
+import { initiativeState } from "../../src/core/interaction/initiative.js";
 /**
  * RPC mode: Headless operation with JSON stdin/stdout protocol.
  *
@@ -12,6 +13,7 @@
  */
 
 import { loadMainProfile, readMainDocument, writeMainDocument, listMainJournals } from "../../src/core/agent/main-profile.js";
+import { listInteractions, answerInteraction, interactionReplyMessage } from "../../src/core/interaction/store.js";
 import { petService } from "../../src/core/pet/service.js";
 import * as crypto from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -595,7 +597,11 @@ function getFacadeSessionState(facade: SessionFacade, ptyPort?: number): RpcSess
 	const tokenUsage = { totalInput, totalOutput, totalCacheRead, totalCacheWrite, totalCost };
 
 	return {
-		capabilities: { mcpManagement: true, mainProfile: Boolean(facade.mainAgent) },
+		capabilities: {
+			mcpManagement: true,
+			mainProfile: Boolean(facade.mainAgent),
+			interactions: Boolean(facade.extensionRunner?.getAllRegisteredBuiltinCommands().some(c => c.name === "_interact")),
+		},
 		isMainAgent: Boolean(facade.mainAgent),
 		model: resolvedModel,
 		thinkingLevel: (facade.thinkingLevel ?? "off") as RpcSessionState["thinkingLevel"],
@@ -667,7 +673,7 @@ export async function runRpcModeWithFacade(
 	// that here. The desktop Tauri bridge also passes --main when spawning
 	// the sidecar for the main agent.
 	const descriptor = facade.getProjection().getDescriptor();
-	const isMain = process.argv.includes("--main");
+	const isMain = Boolean(facade.mainAgent);
 	const schedulerScope: "main" | "workspace" = isMain ? "main" : "workspace";
 	const schedulerWorkspaceId = isMain ? undefined : descriptor.workspace_id;
 
@@ -1104,7 +1110,9 @@ export async function runRpcModeWithFacade(
 				if (facade.isRunning) {
 					return error(id, "prompt", "agent is already processing a prompt; use steer or follow_up to queue");
 				}
-				void facade.prompt(command.message, toEventImages(command.images), toEventFiles(command.files)).catch((e: unknown) => {
+				void facade
+					.prompt(command.message, toEventImages(command.images), toEventFiles(command.files))
+					.catch((e: unknown) => {
 					output(error(id, "prompt", e instanceof Error ? e.message : String(e)));
 				});
 				return success(id, "prompt");
@@ -1135,12 +1143,61 @@ export async function runRpcModeWithFacade(
 
 			case "main_profile":
 				return success(id, "main_profile", await loadMainProfile(facade.mainAgent));
+			case "main_initiative": {
+				if (!facade.mainAgent) throw Error("Main agent only");
+				const store = facade.extensionRunner?.createContext().sessionManager.eventStore;
+				if (!store) throw Error("Main initiative unavailable");
+				if ("enabled" in command) throw Error("Initiative is always enabled; this endpoint is read-only");
+				return {
+					id,
+					type: "response",
+					command: "main_initiative",
+					success: true,
+					data: initiativeState(store),
+				};
+			}
+			case "interaction_list":
+			case "interaction_respond": {
+				const ctx = facade.extensionRunner?.createContext();
+				const store = ctx?.sessionManager.eventStore;
+				const threadId = facade.runtime.getProjection().getDescriptor().thread_id;
+				if (!store || !facade.extensionRunner?.getAllRegisteredBuiltinCommands().some((c) => c.name === "_interact")) {
+					throw new Error("Interaction capability is unavailable");
+				}
+				if (command.type === "interaction_list")
+					return success(id, "interaction_list", listInteractions(store, threadId));
+				const result = answerInteraction(store, threadId, command.requestId, command.answer);
+				await store.flush?.();
+				if (!result.duplicate) {
+					const message = interactionReplyMessage(result.record);
+					if (facade.isRunning) facade.followUp(message);
+					else
+						void facade.prompt(message).catch((cause) =>
+							output({
+								type: "extension_ui_request",
+								id: crypto.randomUUID(),
+								method: "notify",
+								message: String(cause),
+								notifyType: "error",
+							}),
+						);
+				}
+				return success(id, "interaction_respond", result);
+			}
 			case "main_document_read":
 				return success(id, "main_document_read", await readMainDocument(facade.mainAgent, command.sourceId));
 			case "main_document_write":
-				return success(id, "main_document_write", await writeMainDocument(facade.mainAgent, command.sourceId, command.content, command.expectedRevision));
+				return success(
+					id,
+					"main_document_write",
+					await writeMainDocument(facade.mainAgent, command.sourceId, command.content, command.expectedRevision),
+				);
 			case "main_journal_list":
-				return success(id, "main_journal_list", await listMainJournals(facade.mainAgent, command.before, command.limit));
+				return success(
+					id,
+					"main_journal_list",
+					await listMainJournals(facade.mainAgent, command.before, command.limit),
+				);
 
 			case "pet_get":
 				return success(id, "pet_get", petService.catalog());
@@ -1265,7 +1322,10 @@ export async function runRpcModeWithFacade(
 					return error(id, "switch_session", "Projection session manager is not available");
 				}
 				await waitForSessionStructureIdle();
-				const desc = sessionManager.switchToExistingSession(resolveSessionId(facade, command.sessionPath), command.reason);
+				const desc = sessionManager.switchToExistingSession(
+					resolveSessionId(facade, command.sessionPath),
+					command.reason,
+				);
 				facade.runtime.refreshSystemPromptForCurrentSession();
 				return success(id, "switch_session", { cancelled: false, sessionId: desc.session_id });
 			}
@@ -1278,7 +1338,8 @@ export async function runRpcModeWithFacade(
 				}
 				facade.runtime.fork(command.entryId);
 				return success(id, "fork", {
-					text: event.type === "USER_MESSAGE" ? extractMessageText((event.payload as { content?: unknown }).content) : "",
+					text:
+						event.type === "USER_MESSAGE" ? extractMessageText((event.payload as { content?: unknown }).content) : "",
 					cancelled: false,
 				});
 			}
@@ -1464,7 +1525,11 @@ export async function runRpcModeWithFacade(
 				const { createVoicePipeline } = await import("../channels/voice.js");
 				const pipeline = createVoicePipeline(getAgentDir());
 				if (!pipeline.enabled) {
-					return error(id, "transcribe_audio", "voice transcription not configured (set voice.provider in settings.json)");
+					return error(
+						id,
+						"transcribe_audio",
+						"voice transcription not configured (set voice.provider in settings.json)",
+					);
 				}
 				const audio = Buffer.from(command.audioB64, "base64");
 				if (audio.length === 0) return error(id, "transcribe_audio", "empty audio payload");
@@ -1525,14 +1590,18 @@ export async function runRpcModeWithFacade(
 			}
 			case "get_approval_policy": {
 				const raw = facade.settingsManager.getSafeModeSetting();
-				const policy = raw === true ? "on" as const : raw === false ? "off" as const : "auto" as const;
+				const policy = raw === true ? ("on" as const) : raw === false ? ("off" as const) : ("auto" as const);
 				return success(id, "get_approval_policy", { approvalPolicy: policy });
 			}
 			case "get_approval_gates": {
 				return success(id, "get_approval_gates", { gates: facade.settingsManager.getApprovalSettings() });
 			}
 			case "set_approval_gates": {
-				const gates = (command as unknown as { gates: { writes?: boolean; edits?: boolean; shellModerate?: boolean; unknown?: boolean } }).gates;
+				const gates = (
+					command as unknown as {
+						gates: { writes?: boolean; edits?: boolean; shellModerate?: boolean; unknown?: boolean };
+					}
+				).gates;
 				facade.settingsManager.setApprovalGates(gates);
 				facade.runtime.setApprovalGates(gates);
 				return success(id, "set_approval_gates", { gates: facade.settingsManager.getApprovalSettings() });
@@ -1635,13 +1704,23 @@ export async function runRpcModeWithFacade(
 		case "mcp_command": {
 			const runner = facade.extensionRunner;
 			const builtin = runner?.getAllRegisteredBuiltinCommands().find((item) => item.name === "_agentcli");
-			if (!runner || !builtin) return error(id, "mcp_command", "MCP extension is disabled. Enable it in Extensions first.");
+				if (!runner || !builtin)
+					return error(id, "mcp_command", "MCP extension is disabled. Enable it in Extensions first.");
 			if (!Array.isArray(command.args) || command.args.some((arg) => typeof arg !== "string")) {
 				return error(id, "mcp_command", "Expected an array of command arguments");
 			}
 			try {
-				const result = await builtin.execute(crypto.randomUUID(), builtin.parseArguments(command.args), undefined, undefined, runner.createContext());
-				const text = result.content.filter((item) => item.type === "text").map((item) => item.text).join("\n");
+					const result = await builtin.execute(
+						crypto.randomUUID(),
+						builtin.parseArguments(command.args),
+						undefined,
+						undefined,
+						runner.createContext(),
+					);
+					const text = result.content
+						.filter((item) => item.type === "text")
+						.map((item) => item.text)
+						.join("\n");
 				return success(id, "mcp_command", { text });
 			} catch (cause) {
 				return error(id, "mcp_command", cause instanceof Error ? cause.message : String(cause));
@@ -1763,11 +1842,7 @@ export async function runRpcModeWithFacade(
 		}
 
 		case "get_extension_permissions": {
-			return success(
-				id,
-				"get_extension_permissions",
-				await getExtensionPermissions(facade, command.extensionId),
-			);
+				return success(id, "get_extension_permissions", await getExtensionPermissions(facade, command.extensionId));
 		}
 
 		case "recheck_extension_permissions": {
@@ -1779,11 +1854,7 @@ export async function runRpcModeWithFacade(
 		}
 
 		case "open_extension_permission_settings": {
-			const result = await openExtensionPermissionSettings(
-				facade,
-				command.extensionId,
-				command.permissionKind,
-			);
+				const result = await openExtensionPermissionSettings(facade, command.extensionId, command.permissionKind);
 			return success(id, "open_extension_permission_settings", {
 				extensionId: command.extensionId,
 				ok: result.ok,
@@ -1818,8 +1889,7 @@ export async function runRpcModeWithFacade(
 				// findInitialModel's priority order.
 				const defaultProvider = facade.settingsManager.getDefaultProvider();
 				const defaultModelId = facade.settingsManager.getDefaultModel();
-				let next =
-					defaultProvider && defaultModelId ? registry.find(defaultProvider, defaultModelId) : undefined;
+					let next = defaultProvider && defaultModelId ? registry.find(defaultProvider, defaultModelId) : undefined;
 				if (next && !registry.hasConfiguredAuth(next)) next = undefined;
 				if (!next && available.length > 0) next = available[0];
 				if (next) {
@@ -1850,7 +1920,11 @@ export async function runRpcModeWithFacade(
 				}
 				if (t.scope === "workspace") {
 					if (!workspaceIdMatches(t.workspaceId, schedulerWorkspaceId)) {
-						return error(id, "schedule_create", `Workspace mismatch: sidecar is ${schedulerWorkspaceId}, task is ${t.workspaceId}`);
+						return error(
+							id,
+							"schedule_create",
+							`Workspace mismatch: sidecar is ${schedulerWorkspaceId}, task is ${t.workspaceId}`,
+						);
 					}
 				}
 				const policy = facade.settingsManager.getSchedulerPolicy();
@@ -1863,9 +1937,8 @@ export async function runRpcModeWithFacade(
 					sourceText: t.sourceText,
 					startAt: t.startAt,
 					endAt: t.endAt,
-					sessionTarget: fillPinnedSessionTarget(
-						t.sessionTarget ?? policy.defaultSessionTarget,
-						() => facade.runtime.sessionManager?.getActiveSessionId(),
+					sessionTarget: fillPinnedSessionTarget(t.sessionTarget ?? policy.defaultSessionTarget, () =>
+						facade.runtime.sessionManager?.getActiveSessionId(),
 					),
 					concurrencyPolicy: t.concurrencyPolicy ?? policy.concurrency,
 					timeoutMinutes: t.timeoutMinutes ?? policy.timeoutMinutes,
@@ -1883,10 +1956,10 @@ export async function runRpcModeWithFacade(
 						return error(id, "schedule_update", `Workspace mismatch`);
 					}
 				}
-				const r = scheduler.update(command.taskId, fillPinnedSessionTargetPatch(
-					command.patch,
-					() => facade.runtime.sessionManager?.getActiveSessionId(),
-				));
+				const r = scheduler.update(
+					command.taskId,
+					fillPinnedSessionTargetPatch(command.patch, () => facade.runtime.sessionManager?.getActiveSessionId()),
+				);
 				if (!r.ok) return error(id, "schedule_update", r.error);
 				return success(id, "schedule_update", { task: r.task });
 			}

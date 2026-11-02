@@ -409,6 +409,50 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 		expect(waitForAllServers).toHaveBeenCalledOnce();
 	});
 
+ it("discovers and installs catalog connectors without auto-login or overwriting an existing configuration", async () => {
+		const addServer = vi.fn(async () => ({ path: "mcp.json", replaced: false }));
+		const signIn = vi.fn();
+		let installed = false;
+		const command = createAgentCliBuiltinCommand({
+			getServers: () =>
+				installed
+					? [
+							{
+								entry: {
+									name: "notion",
+									source: "mcp.json",
+									config: { url: "https://custom.example/mcp", enabled: false },
+								},
+								ready: Promise.resolve(),
+							},
+						]
+					: [],
+			getConfigErrors: () => [],
+			waitForServer: async () => undefined,
+			waitForAllServers: async () => {},
+			addServer,
+			removeServer: async () => ({ path: "mcp.json", removed: false }),
+			signIn,
+		});
+		const run = (args: string[]) =>
+			command.execute("marketplace", command.parseArguments(args), undefined, undefined, {
+				cwd: "/workspace",
+			} as never);
+		expect(JSON.parse(getTextOutput(await run(["server", "catalog"]))).data).toContainEqual(
+			expect.objectContaining({ name: "notion", description: expect.any(String) }),
+		);
+		await run(["server", "install", "notion"]);
+		expect(addServer).toHaveBeenCalledOnce();
+		expect(addServer).toHaveBeenCalledWith("notion", expect.objectContaining({ url: "https://mcp.notion.com/mcp" }), {
+			cwd: "/workspace",
+		});
+		installed = true;
+		await run(["server", "install", "notion"]);
+		expect(addServer).toHaveBeenCalledOnce();
+		expect(signIn).not.toHaveBeenCalled();
+		expect(JSON.parse(getTextOutput(await run(["server", "install", "unknown"]))).ok).toBe(false);
+ });
+
 	it("publishes device verification codes to the client and clears them after login", async () => {
 		const setStatus = vi.fn();
 		const prompt = { userCode: "PZZA-TEST", verificationUri: "https://github.com/login/device", expiresAt: Date.now() + 900000 };

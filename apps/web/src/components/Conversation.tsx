@@ -1,3 +1,5 @@
+import { InteractionCard } from "./InteractionCard";
+import { interactionResponseDisplay, type InteractionRecord, type InteractionAnswer } from "@/lib/interactions";
 import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
@@ -684,9 +686,9 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 						))}
 					</div>
 				)}
-				{item.text && (
+				{interactionResponseDisplay(item.text) && (
 					<div className="select-text whitespace-pre-wrap break-words text-sm leading-relaxed">
-						{highlight ? highlightText(item.text, highlight, highlightActive) : item.text}
+						{highlight ? highlightText(interactionResponseDisplay(item.text), highlight, highlightActive) : interactionResponseDisplay(item.text)}
 					</div>
 				)}
 			</div>
@@ -696,7 +698,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 					{t("conversation.queued")}
 				</span>
 			) : (
-				item.text && (
+				interactionResponseDisplay(item.text) && (
 					<div
 						className={cn(
 							"mt-1 flex items-center gap-1 transition-opacity",
@@ -705,7 +707,7 @@ const UserBubble = memo(function UserBubble({ item, highlight, highlightActive }
 					>
 						<button
 							type="button"
-							onClick={() => copy(item.text)}
+							onClick={() => copy(interactionResponseDisplay(item.text))}
 							className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-fg"
 							title={t("common.copy")}
 						>
@@ -915,11 +917,15 @@ const FOLLOW_BOTTOM_THRESHOLD_PX = 160;
 
 export function Conversation({
 	items,
+	interactions = [],
+	onInteractionResponse,
 	onResolveApproval,
 	searchQuery,
 	activeMatchId,
 }: {
 	items: TimelineItem[];
+	interactions?: InteractionRecord[];
+	onInteractionResponse?: (record: InteractionRecord, answer: InteractionAnswer) => Promise<void>;
 	sidecarReady: boolean;
 	sidecarExitCode: number | null;
 	onResolveApproval?: (intentEventId: string, toolCallId: string, approved: boolean) => void;
@@ -1093,7 +1099,7 @@ export function Conversation({
 		}
 		prevLenRef.current = items.length;
 		prevLastIdRef.current = lastItem?.id ?? "";
-	}, [items, renderCount, firstItemId]);
+	}, [items, renderCount, firstItemId, interactions]);
 
 	// Refs to each rendered item wrapper, keyed by item id. Used to scroll the
 	// active search match into view.
@@ -1131,7 +1137,7 @@ export function Conversation({
 		}
 	}, [activeMatchId]);
 
-	if (items.length === 0) {
+	if (items.length === 0 && !interactions.some(record => record.status === "pending")) {
 		return <div className="flex min-h-[calc(100vh-200px)] flex-col items-center justify-center gap-4 text-center text-muted" />;
 	}
 
@@ -1162,7 +1168,10 @@ export function Conversation({
 					} else if (item.role === "system") {
 						content = <SystemNotice item={item} />;
 					} else if (item.role === "tool") {
-						content = <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
+						const interaction = interactions.find(record => record.toolCallId === item.id);
+						content = interaction && onInteractionResponse
+							? <InteractionCard record={interaction} onRespond={onInteractionResponse} />
+							: <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
 					} else if (!item.streaming && !item.text && !item.thinking && !(item.images && item.images.length > 0)) {
 						// Skip empty assistant bubbles (turns that produced only tool calls).
 						return null;
@@ -1182,6 +1191,9 @@ export function Conversation({
 						</div>
 					);
 				})}
+				{onInteractionResponse && interactions
+					.filter(record => record.status === "pending" && !visibleItems.some(item => item.id === record.toolCallId))
+					.map(record => <InteractionCard key={record.id} record={record} onRespond={onInteractionResponse} />)}
 				{!atBottom && (
 					<div className="pointer-events-none sticky bottom-4 z-10 -mb-9 flex justify-center">
 						<button

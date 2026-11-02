@@ -1110,5 +1110,16 @@
     "hint": "拖动移动 · 双击打开助理档案 · 右键更多",
     "desktopHint": "拖动移动 · 拖出应用即可悬浮 · 双击打开助理档案 · 右键更多",
     "floatHint": "拖动移动 · 双击收回应用 · 右键更多"
+  },
+  "interaction": {
+		"authCode": "设备验证码",
+		"openAuth": "打开授权页面",
+    "submit": "继续",
+    "skip": "以后再说",
+    "sayInstead": "或者直接告诉我",
+    "required": "请填写：{{label}}",
+    "answered": "已回答",
+    "skipped": "已跳过",
+    "expired": "已过期"
   }
 }

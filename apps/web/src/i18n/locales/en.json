@@ -1110,5 +1110,16 @@
     "hint": "Drag to move · Double-click for agent profile · Right-click for more",
     "desktopHint": "Drag to move · Drag outside the app to float · Double-click for agent profile · Right-click for more",
     "floatHint": "Drag to move · Double-click to return to the app · Right-click for more"
+  },
+  "interaction": {
+		"authCode": "Device code",
+		"openAuth": "Open sign-in page",
+    "submit": "Continue",
+    "skip": "Later",
+    "sayInstead": "Or tell me in your own words",
+    "required": "Please complete: {{label}}",
+    "answered": "Answered",
+    "skipped": "Skipped",
+    "expired": "Expired"
   }
 }

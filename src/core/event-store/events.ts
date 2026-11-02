@@ -4,6 +4,7 @@
  * Typed payloads for each EventType defined in types.ts.
  */
 
+import type { InteractionAnswer, InteractionCard, InteractionCapability } from "../../../packages/protocol/interaction.js";
 import type { EventBase } from "./types.js";
 
 // ============================================================================
@@ -315,6 +316,16 @@ export interface CustomMessageEvent extends EventBase {
 		data: unknown;
 		display?: boolean | string;
 	};
+}
+
+/** Durable conversation cards, shared by GUI, terminal and headless clients. */
+export interface InteractionRequestedEvent extends EventBase {
+	type: "INTERACTION_REQUESTED";
+	payload: { card: InteractionCard; toolCallId: string; expiresAt: number; capabilities: InteractionCapability[] };
+}
+export interface InteractionAnsweredEvent extends EventBase {
+	type: "INTERACTION_ANSWERED";
+	payload: { requestId: string; answer: InteractionAnswer };
 }
 
 /**
@@ -729,6 +740,8 @@ export type TypedEvent =
 	| FileMutationAppliedEvent
 	| CommandExecutedEvent
 	| BashExecutionEvent
+	| InteractionRequestedEvent
+	| InteractionAnsweredEvent
 	| CustomMessageEvent
 	| BranchSummaryEvent
 	| SessionCreatedEvent

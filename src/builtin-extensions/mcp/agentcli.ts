@@ -19,6 +19,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { MCP_CONNECTOR_CATALOG } from "../connectors/catalog.js";
 import { join, resolve } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
@@ -623,6 +624,8 @@ Usage:
   _agentcli <server> resources [--cursor <c>]   List MCP resources offered by <server>
   _agentcli <server> templates [--cursor <c>]   List MCP resource templates offered by <server>
   _agentcli <server> resource <uri>             Read an MCP resource from <server>
+  _agentcli server catalog                               Discover marketplace connectors
+  _agentcli server install <name>                        Install a marketplace connector (no automatic login)
   _agentcli server list [--wait] [--output json|text]    List configured servers
   _agentcli server tools <server> [--refresh]   List a server's tools
   _agentcli server login <server>               Sign in to an OAuth MCP server
@@ -731,6 +734,8 @@ async function handleServerSubcommand(
 		const names = host.getServers().map((s) => s.entry.name);
 		return [
 			"Usage:",
+			"  _agentcli server catalog",
+			"  _agentcli server install <name>",
 			"  _agentcli server list [--wait] [--output json|text]",
 			"  _agentcli server tools <server> [--refresh] [--output json|text]",
 			"  _agentcli server login <server>",
@@ -747,6 +752,19 @@ async function handleServerSubcommand(
 	}
 
 	const rest = tokens.slice(1);
+	if (sub === "catalog") {
+		return JSON.stringify({ ok: true, data: MCP_CONNECTOR_CATALOG.map(({ name, description }) => ({ name, description })) });
+	}
+	if (sub === "install") {
+		const entry = MCP_CONNECTOR_CATALOG.find(entry => entry.name === rest[0]);
+		if (!entry) throw agentCliErrors.notFound("Unknown marketplace connector", "Use _agentcli server catalog");
+		if (host.getServers().some(server => server.entry.name === entry.name)) {
+			return JSON.stringify({ ok: true, data: { name: entry.name, installed: true } });
+		}
+		const validated = validateMcpServerConfig(entry.name, entry.config);
+		if (typeof validated === "string") throw agentCliErrors.invalidArgument(validated);
+		return JSON.stringify({ ok: true, data: await host.addServer(entry.name, validated, { cwd: ctx.cwd }) });
+	}
 
 	if (sub === "list") {
 		// Discovery must not wait behind unrelated slow or unreachable servers.
@@ -1053,7 +1071,7 @@ async function handleServerSubcommand(
 
 	throw agentCliErrors.notFound(
 		`unknown server subcommand "${sub}"`,
-		"Available: list, tools, login, login-answer, login-cancel, logout, enable, disable, add, remove",
+		"Available: catalog, install, list, tools, login, login-answer, login-cancel, logout, enable, disable, add, remove",
 	);
 }
 

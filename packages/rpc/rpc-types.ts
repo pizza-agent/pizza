@@ -29,6 +29,7 @@ export {
 } from "../protocol/index.js";
 
 import type {
+	InteractionRecord,
 	MainAgentProfile, MainAgentDocument, MainJournalPage, RpcPetCatalog,
 	RpcSessionState as ProtocolSessionState,
 	RpcHistoryTreeResult,
@@ -79,6 +80,9 @@ export type RpcResponse =
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
 	| { id?: string; type: "response"; command: "main_profile"; success: true; data: MainAgentProfile }
+	| { id?: string; type: "response"; command: "interaction_list"; success: true; data: InteractionRecord[] }
+	| { id?: string; type: "response"; command: "main_initiative"; success: true; data: {available:boolean;enabled:boolean;canSuggest:boolean;lastSuggestionAt?:number} }
+	| { id?: string; type: "response"; command: "interaction_respond"; success: true; data: { record: InteractionRecord; duplicate: boolean } }
 	| { id?: string; type: "response"; command: "main_document_read"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_document_write"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_journal_list"; success: true; data: MainJournalPage }

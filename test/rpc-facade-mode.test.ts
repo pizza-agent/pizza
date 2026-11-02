@@ -1,3 +1,4 @@
+import { createInteraction } from "../src/core/interaction/store.js";
 import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -181,7 +182,7 @@ describe("runRpcModeWithFacade", () => {
 		rpcIo.lineHandler!(JSON.stringify({ id: "capabilities", type: "get_state" }));
 		rpcIo.lineHandler!(JSON.stringify({ id: "unsupported", type: "unknown_future_command" }));
 		await vi.waitFor(() => {
-			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "capabilities", data: expect.objectContaining({ capabilities: { mcpManagement: true, mainProfile: false } }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "capabilities", data: expect.objectContaining({ capabilities: { mcpManagement: true, mainProfile: false, interactions: false } }) }));
 			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "unsupported", success: false, error: "Unknown command: unknown_future_command" }));
 		});
 	});
@@ -201,7 +202,7 @@ describe("runRpcModeWithFacade", () => {
 		rpcIo.lineHandler!(JSON.stringify({ id: "document", type: "main_document_read", sourceId: "SOUL.md" }));
 		await vi.waitFor(() => {
 			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "profile", success: true, data: expect.objectContaining({ soul: expect.objectContaining({ name: "Atlas", initialized: true }) }) }));
-			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "main-state", data: expect.objectContaining({ isMainAgent: true, capabilities: { mcpManagement: true, mainProfile: true } }) }));
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "main-state", data: expect.objectContaining({ isMainAgent: true, capabilities: { mcpManagement: true, mainProfile: true, interactions: false } }) }));
 			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "document", success: true, data: expect.objectContaining({ sourceId: "SOUL.md" }) }));
 		});
 	});
@@ -245,6 +246,62 @@ describe("runRpcModeWithFacade", () => {
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-invalid", success: false })));
 		expect(execute).toHaveBeenCalledTimes(1);
 	});
+
+ it("lists and answers dynamic cards through RPC, dispatching exactly one follow-up", async () => {
+		const facade = createFacade();
+		const store = facade.runtime.store;
+		const threadId = facade.runtime.getProjection().getDescriptor().thread_id;
+		const record = createInteraction(store, threadId, "interaction-call", {
+			title: "Your name?",
+			fields: [{ id: "name", type: "text", label: "Name", required: true }],
+		});
+		Object.defineProperty(facade, "extensionRunner", {
+			value: {
+				setUIContext: () => {},
+				getAllRegisteredBuiltinCommands: () => [{ name: "_interact" }],
+				createContext: () => ({ sessionManager: { eventStore: store } }),
+			},
+		});
+		const prompt = vi.spyOn(facade, "prompt").mockResolvedValue(undefined as never);
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		rpcIo.lineHandler!(JSON.stringify({ id: "list", type: "interaction_list" }));
+		await vi.waitFor(() =>
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "list", success: true, data: [record] })),
+		);
+		rpcIo.lineHandler!(
+			JSON.stringify({
+				id: "invalid",
+				type: "interaction_respond",
+				requestId: record.id,
+				answer: { kind: "submit", values: {} },
+			}),
+		);
+		await vi.waitFor(() =>
+			expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "invalid", success: false })),
+		);
+		expect(prompt).not.toHaveBeenCalled();
+		for (const id of ["answer", "retry"]) {
+			rpcIo.lineHandler!(
+				JSON.stringify({
+					id,
+					type: "interaction_respond",
+					requestId: record.id,
+					answer: { kind: "submit", values: { name: "Tom" } },
+				}),
+			);
+			await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id, success: true })));
+		}
+		expect(prompt).toHaveBeenCalledTimes(1);
+		expect(prompt).toHaveBeenCalledWith(expect.stringContaining('"name":"Tom"'));
+        const next = createInteraction(store, threadId, "next-card", { title: "Next?", actions: [{ id: "go", label: "Go" }] });
+        vi.spyOn(facade, "isRunning", "get").mockReturnValue(true);
+        const followUp = vi.spyOn(facade, "followUp").mockImplementation(() => {});
+        rpcIo.lineHandler!(JSON.stringify({ id: "during-turn", type: "interaction_respond", requestId: next.id, answer: { kind: "skip" } }));
+        await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "during-turn", success: true })));
+        expect(followUp).toHaveBeenCalledOnce();
+        expect(prompt).toHaveBeenCalledOnce();
+    });
 
 	it("emits command responses and typed events over JSONL", async () => {
 		const facade = createFacade();

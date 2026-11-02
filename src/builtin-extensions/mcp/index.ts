@@ -19,6 +19,8 @@
  */
 
 import { join, resolve } from "node:path";
+import { MCP_CONNECTOR_CATALOG } from "../connectors/catalog.js";
+import { registerInteractionCapabilities } from "../../core/interaction/capabilities.js";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
 import type {
@@ -1086,7 +1088,26 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		// Lifecycle hooks
 		// ---------------------------------------------------------------------------------------
 
+		let unregisterCapabilities: (() => void) | undefined;
 		pizza.on("session_start", (_event, ctx) => {
+			unregisterCapabilities?.();
+			if (ctx.sessionManager?.eventStore) {
+				unregisterCapabilities = registerInteractionCapabilities(ctx.sessionManager.eventStore, "mcp", () => {
+					const entries = new Map(MCP_CONNECTOR_CATALOG.map(entry => [entry.name, {
+						name: entry.name, description: entry.description, installed: false, state: "available",
+					}]));
+					for (const server of servers) entries.set(server.entry.name, {
+						name: server.entry.name,
+						description: server.entry.config.description ?? server.entry.name,
+						installed: true,
+						state: server.entry.config.enabled === false ? "disabled" : server.connection?.state ?? "connecting",
+					});
+					return [...entries.values()].map(entry => ({
+						id: `mcp:${entry.name}`, label: entry.name, description: entry.description, status: entry.state,
+						instructions: `Discover _agentcli server --help. ${entry.installed ? "This connector is installed." : `Install with _agentcli server install ${JSON.stringify(entry.name)}.`} Use _agentcli server list to check its latest state. If disabled, enable it only as requested. If sign-in is required, run _agentcli server login ${JSON.stringify(entry.name)}. Report the verified connection result, never tokens. Selecting this capability requests connection only, not permission for unrelated writes.`,
+					}));
+				});
+			}
 			sessionCwd = ctx.cwd;
 			modelRegistry = ctx.modelRegistry;
 
@@ -1187,6 +1208,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		});
 
 		pizza.on("session_shutdown", async () => {
+			unregisterCapabilities?.();
 			session.abort();
 			const closing = connections();
 			servers = [];

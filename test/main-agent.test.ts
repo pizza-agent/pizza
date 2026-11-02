@@ -155,7 +155,7 @@ describe("main-agent", () => {
 	});
 
 	describe("getMainAgentGuidelines", () => {
-		test("includes a strong soul-init invitation when soul is uninitialized", () => {
+		test("offers optional dynamic introduction without blocking the user when soul is uninitialized", () => {
 			const guidelines = getMainAgentGuidelines(join(tempDir, "mem"), {
 				soulPath: join(tempDir, "main", "SOUL.md"),
 				soulUninitialized: true,
@@ -164,8 +164,10 @@ describe("main-agent", () => {
 			const invitation = guidelines.find((g) => g.includes("NOT YET DEFINED"));
 			expect(invitation).toBeDefined();
 			expect(invitation).toContain("SOUL.md");
-			expect(invitation).toContain("MUST");
-			expect(invitation).toContain("FIRST response");
+			expect(invitation).toContain("optional");
+			expect(invitation).toContain("_interact");
+			expect(invitation).toContain("do not interrupt");
+			expect(invitation).not.toContain("FIRST response");
 		});
 
 		test("does NOT include the proactive invitation when soul is already personalized", () => {
