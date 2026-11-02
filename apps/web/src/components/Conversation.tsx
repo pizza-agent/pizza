@@ -1,3 +1,4 @@
+import { interactionResponseId } from "@/lib/interaction-presentation";
 import { InteractionCard } from "./InteractionCard";
 import { interactionResponseDisplay, type InteractionRecord, type InteractionAnswer } from "@/lib/interactions";
 import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
@@ -1160,6 +1161,12 @@ export function Conversation({
 					const isActive = item.id === activeMatchId;
 					let content: React.ReactNode;
 					if (item.role === "user") {
+						const responseId = interactionResponseId(item.text);
+						const card = responseId ? interactions.find((record) => record.id === responseId) : undefined;
+						if (
+							card && !item.agentMessage && onInteractionResponse &&
+							(card.delivery === "pending" || visibleItems.some((row) => row.role === "tool" && row.id === card.toolCallId))
+						) return null;
 						content = item.agentMessage ? (
 							<AgentMessageCard item={item} highlight={searchQuery} highlightActive={isActive} />
 						) : (

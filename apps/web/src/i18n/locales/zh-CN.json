@@ -1112,6 +1112,9 @@
     "floatHint": "拖动移动 · 双击收回应用 · 右键更多"
   },
   "interaction": {
+		"other": "其它",
+		"customPlaceholder": "说说你的想法…",
+		"submitting": "正在提交…",
 		"deliveryPending": "回答已保存，等待继续处理。",
 		"retryDelivery": "继续处理",
 		"authCode": "设备验证码",

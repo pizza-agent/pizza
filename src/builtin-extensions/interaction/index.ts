@@ -12,6 +12,7 @@ _interact list — inspect cards in this conversation.
 _interact show <<'JSON'
 {"title":"Your question","fields":[{"id":"answer","type":"text","label":"Question","required":false}],"allowSkip":true}
 JSON
+The GUI presents single-select questions and action-only cards as one-click choice rows and supplies an Other/free-text entry automatically; do not add a generic Other option yourself. Completed cards show only the selected answer.
 Cards support text/select/multi fields (options are {id,label,description?}) and actions ({id,label,capabilityId?}). Questions, labels and choices are supplied at runtime; no predefined onboarding flow exists. Maximum 6 fields and 8 actions. Cards are persisted in conversation history. In the GUI creation returns immediately: wait for a user reply before continuing dependent work; never retry or answer a card yourself. Users may answer in chat or skip. An action only selects an intent; it does not silently execute tools. Discover capability IDs before referencing them. Do not ask for passwords, tokens or client secrets. Do not put shell scripts, HTML or arbitrary links in cards.`;
 function scope(ctx: ExtensionContext) {
 	const store = ctx.sessionManager.eventStore,

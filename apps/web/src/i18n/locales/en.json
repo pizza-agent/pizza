@@ -1112,6 +1112,9 @@
     "floatHint": "Drag to move · Double-click to return to the app · Right-click for more"
   },
   "interaction": {
+		"other": "Other",
+		"customPlaceholder": "Tell me what you have in mind…",
+		"submitting": "Submitting…",
 		"deliveryPending": "Answer saved; waiting to continue.",
 		"retryDelivery": "Continue",
 		"authCode": "Device code",
