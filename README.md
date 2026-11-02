@@ -59,30 +59,6 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 ## Quick Start
 
-### Connect GitHub MCP
-
-Install GitHub from **Settings → Plugins → MCPs → MCP Marketplace**. Pizza starts sign-in and displays a device verification code. Choose your GitHub account, enter the code, and authorize Pizza in the browser. Pizza saves credentials, reconnects, and loads the tools automatically. The installed entry supports viewing tools, signing in again, and signing out. Cancelling or failing sign-in keeps the entry available for retry.
-
-GitHub uses Device Flow, so users do not configure a client ID or secret or need a loopback callback. The Pizza OAuth App maintainer must enable **Device Flow** in GitHub's app settings. Existing installs using Pizza's client ID automatically use this flow. Clients configured with `oauth.clientSecret` keep authorization code + PKCE. Other MCP callback pages use Pizza branding and only report success after tokens have been exchanged and saved.
-
-In a terminal, run `pizza mcp login github --timeout 900` and follow the device-code prompt. Credentials are stored in `mcp-auth.json` in Pizza's agent configuration directory; `pizza mcp logout github` clears the local credentials.
-
-### Connect Gmail MCP
-
-Install Gmail from the MCP Marketplace and sign in with Google. Pizza uses its registered Desktop OAuth client with PKCE, an automatic loopback callback and refreshable credentials. No per-user Google Cloud project, Web client secret or Gmail MCP Developer Preview enrollment is needed. The bundled MCP adapter runs inside Pizza and calls the stable Gmail API directly.
-
-Tools cover mailbox identity, labels, paginated search, messages, threads, attachments and draft creation/editing. Replies are saved as threaded drafts for review in Gmail. Connection is verified with a read-only labels request. The product maintainer must enable Gmail API, configure the consent screen/test users, and complete Google's verification for public distribution of the requested restricted scopes. Advanced manually configured Google-hosted preview MCPs retain their own OAuth setup.
-
-Release builds must supply the **Desktop** registration JSON with `PIZZA_GOOGLE_DESKTOP_CLIENT_FILE=/path/to/desktop-client.json npm run build` (or the corresponding desktop build). The build copies only the matching `installed` client registration into the runtime assets and rejects Web clients. Google still requires the Desktop `client_secret` field at token exchange; for installed applications it is a public registration value, not a confidential credential. PKCE protects each authorization exchange. Keep the original JSON outside the source tree. User access and refresh tokens are never packaged. See [Google's installed application guidance](https://developers.google.com/identity/protocols/oauth2#installed).
-
-Official release workflows inject `PIZZA_GOOGLE_DESKTOP_CLIENT_JSON` from repository secrets and set `PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT=1`; a missing registration fails the release before packaging.
-
-### Connect Notion and X MCP
-
-Notion supports dynamic OAuth client registration. Install Notion from the MCP Marketplace and authorize your workspace in the browser; no separate developer app is needed. Pizza requests the standard `default` scope, validates the issuer on the callback, and stores refreshable credentials.
-
-X connects directly to `https://api.x.com/mcp` with Pizza's registered **Native/Public** OAuth client. Install X and authorize your account in the browser; users do not create developer apps or enter Client IDs or secrets. Pizza uses PKCE, receives `http://127.0.0.1:8766/callback`, and requests `tweet.read users.read offline.access` for read access and automatic refresh. The publisher maintains the X app's callback registration, API enrollment, usage limits and billing. Existing custom OAuth clients remain supported, and legacy marketplace xurl entries can be converted through the advanced X setup form. See [X's OAuth guide](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code).
-
 ### Desktop
 
 Download the installer for your platform (macOS / Linux / Windows) from [GitHub Releases](https://github.com/pizza-agent/pizza/releases), install and launch.
