@@ -609,6 +609,30 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 		});
 	});
 
+	it("refreshes a cleared server list when `-h` help is rendered outside execute()", () => {
+		// Regression: the underscore pipeline serves `-h` via command.help
+		// without calling execute(), so refreshConfig(ctx) never ran. A session
+		// cleared by session_shutdown then showed "No MCP servers configured"
+		// even though mcp.json lists servers.
+		let servers: Array<{ entry: McpServerEntry }> = [];
+		const refreshConfigForHelp = vi.fn(() => {
+			servers = [{ entry: { name: "demo", source: "mcp.json", config: { command: "demo-server" } } }];
+		});
+		const command = createAgentCliBuiltinCommand({
+			getServers: () => servers,
+			getConfigErrors: () => [],
+			refreshConfigForHelp,
+			waitForServer: async () => undefined,
+			waitForAllServers: async () => {},
+			addServer: async () => ({ path: "mcp.json", replaced: false }),
+			removeServer: async () => ({ path: "mcp.json", removed: false }),
+		});
+		const text = command.help;
+		expect(refreshConfigForHelp).toHaveBeenCalledOnce();
+		expect(text).toContain("demo");
+		expect(text).not.toContain("No MCP servers configured yet");
+	});
+
 	it("inspects server tools and tool help/schema via `_agentcli demo -h` and `_agentcli demo echo -h`", async () => {
 		const { cliTool } = await setupDemoHost();
 

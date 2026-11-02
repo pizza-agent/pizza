@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { splitShellWords, splitShellWordsWithMeta, hasShellControlSyntax, splitShellSegments } from "../src/core/exec/shell-words.js";
+import { firstPureCommandSegment, splitShellWords, splitShellWordsWithMeta, hasShellControlSyntax, splitShellSegments } from "../src/core/exec/shell-words.js";
 
 describe("splitShellWords — unquoted splitting", () => {
 	it("splits on runs of whitespace", () => {
@@ -257,5 +257,36 @@ describe("splitShellSegments", () => {
 		const segments = splitShellSegments("echo 'a\\' && _read f");
 		expect(segments).toHaveLength(2);
 		expect(segments[1].trim()).toBe("_read f");
+	});
+});
+
+describe("firstPureCommandSegment", () => {
+	it("returns the prefix before the first unquoted operator", () => {
+		expect(firstPureCommandSegment("_agentcli -h | head")).toBe("_agentcli -h");
+		expect(firstPureCommandSegment("_skill list && echo done")).toBe("_skill list");
+		expect(firstPureCommandSegment("_read f; rm x")).toBe("_read f");
+		expect(firstPureCommandSegment("_write out.txt <<EOF\nbody")).toBe("_write out.txt");
+		expect(firstPureCommandSegment("_tell send > log")).toBe("_tell send");
+	});
+
+	it("returns the whole command when no operator is present", () => {
+		expect(firstPureCommandSegment("  _agentcli server list  ")).toBe("_agentcli server list");
+		expect(firstPureCommandSegment("echo 'a | b'")).toBe("echo 'a | b'");
+	});
+
+	it("returns empty when the operator leads the line", () => {
+		expect(firstPureCommandSegment("> out")).toBe("");
+		expect(firstPureCommandSegment("| head")).toBe("");
+	});
+
+	it("does not stop on background &", () => {
+		// A single & is background syntax, but it is still a shell control
+		// char for built-ins, so the suggestion is the prefix before it.
+		expect(firstPureCommandSegment("_echotest ping & wait")).toBe("_echotest ping");
+	});
+
+	it("ignores operators inside quotes and escapes", () => {
+		expect(firstPureCommandSegment("_write f 'a|b' | cat")).toBe("_write f 'a|b'");
+		expect(firstPureCommandSegment("echo a\\|b | cat")).toBe("echo a\\|b");
 	});
 });

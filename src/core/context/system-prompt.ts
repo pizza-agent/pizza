@@ -34,6 +34,21 @@ function formatSkillsHint(skills: Skill[]): string {
 }
 
 /**
+ * Resolve the Node.js version the agent can actually invoke: `node` on the
+ * user's PATH. Falls back to Pizza's own runtime version when no `node`
+ * binary exists (e.g. inside the Bun-compiled desktop app), labeling it so
+ * the model does not confuse the embedded runtime with a usable toolchain.
+ */
+function detectNodeVersion(): string {
+	try {
+		const out = execSync("node --version", { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+		return out || process.version;
+	} catch {
+		return `${process.version} (pizza runtime; no node on PATH)`;
+	}
+}
+
+/**
  * Check if the current directory is a git repository
  */
 function isGitRepository(cwd: string): boolean {
@@ -63,7 +78,7 @@ function buildEnvironmentSection(cwd: string, eventStorePath?: string, isMainAge
 		shell = process.env.SHELL || "unknown";
 	}
 	const osVersion = os.release();
-	const nodeVersion = process.version;
+	const nodeVersion = detectNodeVersion();
 
 	return `
 ## Environment
