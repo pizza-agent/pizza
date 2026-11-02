@@ -23,7 +23,8 @@ beforeEach(() => {
 afterEach(async () => {
 	vi.unstubAllGlobals();
 	setGlobalDispatcher(previousDispatcher);
-	await directDispatcher.close();
+	// Cancel any remaining fixture sockets instead of waiting for platform TCP timeouts.
+	await directDispatcher.destroy();
 });
 
 describe("MCP OAuth client workflow", () => {
@@ -138,7 +139,9 @@ describe("MCP OAuth client workflow", () => {
 		const callback = new URL(authorization.searchParams.get("redirect_uri")!);
 		callback.searchParams.set("state", "wrong-state");
 		callback.searchParams.set("code", "fixture-code");
-		expect((await realFetch(callback)).status).toBe(400);
+		const rejectedCallback = await realFetch(callback);
+		expect(rejectedCallback.status).toBe(400);
+		await rejectedCallback.text();
 		callback.searchParams.set("state", authorization.searchParams.get("state")!);
 		let callbackReturned = false;
 		const response = realFetch(callback).then((value) => { callbackReturned = true; return value; });

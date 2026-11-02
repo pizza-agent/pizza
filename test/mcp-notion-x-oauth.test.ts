@@ -17,7 +17,8 @@ beforeEach(() => {
 afterEach(async () => {
 	vi.unstubAllGlobals();
 	setGlobalDispatcher(previousDispatcher);
-	await directDispatcher.close();
+	// Cancel any remaining fixture sockets instead of waiting for platform TCP timeouts.
+	await directDispatcher.destroy();
 });
 
 describe("Notion and X OAuth interoperability", () => {
@@ -52,10 +53,13 @@ describe("Notion and X OAuth interoperability", () => {
 		expect(auth.searchParams.get("resource")).toBe("https://mcp.notion.com");
 		const callback = new URL(auth.searchParams.get("redirect_uri")!);
 		callback.searchParams.set("code", "notion-code"); callback.searchParams.set("state", "wrong-state");
-		expect((await realFetch(callback)).status).toBe(400);
+		const rejectedCallback = await realFetch(callback);
+		expect(rejectedCallback.status).toBe(400);
+		await rejectedCallback.text();
 		callback.searchParams.set("state", auth.searchParams.get("state")!);
 		if (iss) callback.searchParams.set("iss", iss);
 		const response = await realFetch(callback);
+		await response.text();
 		const error = await outcome;
 		expect(register).toHaveBeenCalledTimes(1);
 		if (iss === metadata.issuer) {
@@ -101,7 +105,9 @@ describe("Notion and X OAuth interoperability", () => {
 		expect(auth.searchParams.get("scope")).toBe("tweet.read users.read offline.access");
 		const callback = new URL(auth.searchParams.get("redirect_uri")!);
 		callback.searchParams.set("state", auth.searchParams.get("state")!); callback.searchParams.set("code", "x-code");
-		expect((await realFetch(callback)).status).toBe(200); await login;
+		const acceptedCallback = await realFetch(callback);
+		expect(acceptedCallback.status).toBe(200);
+		await acceptedCallback.text(); await login;
 		store.save({ ...store.load()!, tokensExpireAt: Date.now() - 1 });
 		const provider = createMcpAuthProvider({ serverUrl: "https://api.x.com/mcp", store: { load: () => store.load(), save: (state) => store.save(state), withRefreshLock: (fn) => fn() }, settings: () => settings, onChallenge: () => {} });
 		expect(await provider.token()).toBe("x-access-new");

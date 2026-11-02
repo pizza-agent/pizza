@@ -25,7 +25,8 @@ beforeEach(() => {
 afterEach(async () => {
 	vi.unstubAllGlobals();
 	setGlobalDispatcher(previousDispatcher);
-	await directDispatcher.close();
+	// Cancel any remaining fixture sockets instead of waiting for platform TCP timeouts.
+	await directDispatcher.destroy();
 });
 
 describe("Gmail MCP authorization", () => {
@@ -119,7 +120,9 @@ describe("Gmail MCP authorization", () => {
 		const callback = new URL(auth.searchParams.get("redirect_uri")!);
 		callback.searchParams.set("code", "google-code");
 		callback.searchParams.set("state", auth.searchParams.get("state")!);
-		expect((await realFetch(callback)).status).toBe(200);
+		const acceptedCallback = await realFetch(callback);
+		expect(acceptedCallback.status).toBe(200);
+		await acceptedCallback.text();
 		await login;
 		expect(store.load()?.tokens?.refresh_token).toBe("google-refresh-token");
 	});
