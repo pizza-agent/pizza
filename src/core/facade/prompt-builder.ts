@@ -28,6 +28,7 @@ export interface PromptBuilderDeps {
 	mainDir: string;
 	memoryDir: string | undefined;
 	isMainAgent: boolean;
+	mainInitiativePrompt?: () => string;
 	resourceLoader: ResourceLoader;
 	sessionManager: ProjectionSessionManager;
 	toolOptions: { read: { autoResizeImages: boolean }; cli: BashToolOptions };
@@ -92,7 +93,7 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 				? isSoulUninitialized(soulFile.content, APP_NAME)
 				: false;
 			if (soulUninitialized && soulPath) {
-				mainAgentBanner = `IMPORTANT — ACTION REQUIRED BEFORE ANSWERING:\nYour soul file (${soulPath}) is a placeholder. Your identity, values, and voice are all marked [NOT YET DEFINED]. Before you answer the user's question, you MUST first ask them to define who you are: what name should you go by, what role should you play, what tone should you use, what values should you hold? Tell the user they can describe it in conversation (and you will write it to the soul file) or edit the file directly. This is mandatory — do not skip it. After the user has defined your soul, never repeat this request.`;
+				mainAgentBanner = `Your identity at ${soulPath} is not yet defined. Help with the current task first. Offer a small optional introduction only when appropriate; never require onboarding before answering.`;
 			}
 			for (const guideline of getMainAgentGuidelines(memoryDir, { soulPath, soulUninitialized })) {
 				promptGuidelines.push(guideline);
@@ -125,6 +126,7 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 			prompt += `\n${breadcrumb}`;
 		}
 
+		if (isMainAgent && deps.mainInitiativePrompt) prompt += deps.mainInitiativePrompt();
 		return prompt;
 	};
 }

@@ -8,6 +8,9 @@
  * src/modes/rpc/rpc-types.ts with proper type parameters filled in.
  */
 
+export type { InteractionCard, InteractionField, InteractionAction, InteractionOption, InteractionAnswer, InteractionRecord, InteractionCapability } from "./interaction.js";
+import type { InteractionAnswer, InteractionRecord } from "./interaction.js";
+
 // ============================================================================
 // Scheduled task primitives
 // ============================================================================
@@ -299,6 +302,9 @@ export type RpcCommand =
 	// State
 	| { id?: string; type: "get_state" }
 	| { id?: string; type: "main_profile" }
+	| { id?: string; type: "interaction_list" }
+	| { id?: string; type: "main_initiative" }
+	| { id?: string; type: "interaction_respond"; requestId: string; answer: InteractionAnswer }
 	| { id?: string; type: "main_document_read"; sourceId: string }
 	| { id?: string; type: "main_document_write"; sourceId: string; content: string; expectedRevision: string }
 	| { id?: string; type: "main_journal_list"; before?: string; limit?: number }
@@ -699,7 +705,7 @@ export interface RpcPetStateEvent extends RpcPetSnapshot {
 
 export interface RpcSessionState {
 	/** Backend features used to reject incompatible desktop/backend combinations early. */
-	capabilities?: { mcpManagement?: boolean; mainProfile?: boolean };
+	capabilities?: { mcpManagement?: boolean; mainProfile?: boolean; interactions?: boolean };
 	/** Explicit backend identity; paths are not an authorization signal. */
 	isMainAgent?: boolean;
 	model?: ModelInfo;
@@ -832,6 +838,9 @@ export type RpcResponse =
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
 	| { id?: string; type: "response"; command: "main_profile"; success: true; data: MainAgentProfile }
+	| { id?: string; type: "response"; command: "interaction_list"; success: true; data: InteractionRecord[] }
+	| { id?: string; type: "response"; command: "main_initiative"; success: true; data: {enabled:boolean;canSuggest:boolean;lastSuggestionAt?:number} }
+	| { id?: string; type: "response"; command: "interaction_respond"; success: true; data: { record: InteractionRecord; duplicate: boolean } }
 	| { id?: string; type: "response"; command: "main_document_read"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_document_write"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_journal_list"; success: true; data: MainJournalPage }
@@ -1079,4 +1088,7 @@ export const PROTOCOL_VERSION = 1;
 /** Compaction is a full model call. Outer transports allow time to report its terminal event. */
 export const COMPACTION_TIMEOUT_MS = 300_000;
 export const COMPACTION_RPC_TIMEOUT_MS = COMPACTION_TIMEOUT_MS + 10_000;
+
+/** GitHub Device Flow allows 15 minutes for the user, plus time to exchange tokens and reconnect. */
+export const MCP_LOGIN_RPC_TIMEOUT_MS = 17 * 60_000;
 export const COMPACTION_UI_TIMEOUT_MS = COMPACTION_TIMEOUT_MS + 40_000;

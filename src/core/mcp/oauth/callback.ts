@@ -24,6 +24,8 @@ export interface OAuthCallbackServerOptions {
 	timeoutMs?: number;
 	/** Render the browser page as HTML. Default: a plain-text message. */
 	renderPage?: (page: OAuthCallbackPage) => string;
+	/** Hold the successful callback response until the client exchanges and saves tokens. */
+	deferSuccess?: boolean;
 }
 
 function plainText(page: OAuthCallbackPage): string {
@@ -37,6 +39,8 @@ export class OAuthCallbackServer {
 	private paths: string[];
 	private timeoutMs: number;
 	private renderPage: ((page: OAuthCallbackPage) => string) | undefined;
+	private deferSuccess = false;
+	private responses = new Set<ServerResponse>();
 	private pending = new Map<
 		string,
 		{
@@ -83,6 +87,7 @@ export class OAuthCallbackServer {
 			options.timeoutMs ?? 5 * 60_000,
 			options.renderPage,
 		);
+		instance.deferSuccess = options.deferSuccess ?? false;
 		return instance;
 	}
 
@@ -97,7 +102,13 @@ export class OAuthCallbackServer {
 		});
 	}
 
+	complete(page: OAuthCallbackPage): void {
+		for (const response of this.responses) this.reply(response, page.ok ? 200 : 400, page);
+		this.responses.clear();
+	}
+
 	async close(): Promise<void> {
+		this.complete({ ok: false, message: "Sign-in cancelled. Return to Pizza to try again." });
 		for (const pending of this.pending.values()) {
 			clearTimeout(pending.timer);
 			pending.reject(new Error("OAuth callback server closed"));
@@ -154,7 +165,11 @@ export class OAuthCallbackServer {
 			return;
 		}
 		const iss = url.searchParams.get("iss");
+		if (this.deferSuccess) {
+			this.responses.add(response);
+			response.once("close", () => this.responses.delete(response));
+		}
 		pending.resolve({ code, state, ...(iss ? { iss } : {}) });
-		this.reply(response, 200, { ok: true });
+		if (!this.deferSuccess) this.reply(response, 200, { ok: true });
 	}
 }

@@ -198,7 +198,9 @@ export class EventSourcedRuntime {
 	/**
 				payload: { content: text, images, files },
 	 */
-	async prompt(text: string, images?: ImageContent[], files?: FileAttachment[]): Promise<void> {
+	async prompt(
+		text: string, images?: ImageContent[], files?: FileAttachment[], expectedThreadId?: string,
+	): Promise<void> {
 		if (this._isProcessing) {
 			throw new Error(
 				"EventSourcedRuntime is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
@@ -219,6 +221,9 @@ export class EventSourcedRuntime {
 			// still be running; the new turn must not race it — both rewrite the
 			// same context boundary.
 			await this._idleCompaction?.catch(() => {});
+			if (expectedThreadId && this.getProjection().getDescriptor().thread_id !== expectedThreadId) {
+				throw Error("Interaction target thread is not active");
+			}
 			this.sessionManager?.ensureActiveSessionWritable("prompt from historical session");
 			this.refreshSystemPromptForCurrentSession();
 			// Lazy-create the reactor and start it. Reactor lives only as long as the prompt cycle.
@@ -275,6 +280,9 @@ export class EventSourcedRuntime {
 			let promptThreadId: string | undefined;
 			const settledPromise = this._waitUntilSettled(() => promptThreadId);
 
+			if (expectedThreadId && this.getProjection().getDescriptor().thread_id !== expectedThreadId) {
+				throw Error("Interaction target thread is not active");
+			}
 			// Append the user message — the reactor will pick it up
 			const userMessage = this.store.append({
 				actor_id: "user",

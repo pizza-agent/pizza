@@ -273,13 +273,13 @@ export function getMainAgentGuidelines(
 
 	if (options?.soulUninitialized && options?.soulPath) {
 		guidelines.push(
-			`IMPORTANT: Your soul file (${options.soulPath}) is a placeholder — your identity, values, and voice are all marked [NOT YET DEFINED]. You MUST proactively invite the user to define who you are. In your FIRST response to the user, before addressing their question, ask them to describe what kind of agent they want: a name, a role, a tone, values they want you to hold. Tell them they can either describe it in conversation (and you will write it to the soul file) or edit the file directly. This is required — do not skip it. After the user has defined your soul, never repeat this invitation.`,
+			`Your soul file (${options.soulPath}) still contains [NOT YET DEFINED]. Offer a short, optional introduction when it fits the conversation; do not interrupt the user's task or require onboarding before helping. Read existing identity and user-profile memories first and ask only for information that is actually missing. If _interact is available, discover its help and use one small, skippable dynamic card with questions suited to this user. Do not use a fixed sequence, repeat answered questions, or insist on a name. Let the user answer in chat or decline. Discover _interact capabilities before suggesting account connections; offer them when relevant to the user's needs, never connect automatically.`,
 		);
 	}
 
 	if (options?.soulPath) {
 		guidelines.push(
-			`When the user asks you to remember a preference, update your personality, or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. When the user describes what they want, write it into the soul file immediately — do not just acknowledge, actually update the file.`,
+			`When the user asks you to remember a preference, save user facts and preferences in the appropriate user memory file. When they ask to update your personality or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. Persist explicit identity changes to the soul and user preferences to user memory; do not mix the two or treat unanswered cards as facts.`,
 		);
 	}
 

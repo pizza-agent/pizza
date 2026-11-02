@@ -1,3 +1,4 @@
+import { resolveConnectorOAuth, createConnectorTransport, connectorClientSecret } from "../connectors/registry.js";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -85,6 +86,7 @@ function usesOAuth(entry: McpServerEntry): boolean {
 	return !Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === "authorization");
 }
 
+
 function expandHome(value: string): string {
 	if (value === "~") return homedir();
 	if (value.startsWith("~/") || (process.platform === "win32" && value.startsWith("~\\"))) {
@@ -100,6 +102,8 @@ export function createDefaultTransport(
 ): McpTransport {
 	const { config, name } = entry;
 	if ("url" in config) {
+		const local = createConnectorTransport(entry, authProvider);
+		if (local) return local;
 		return new StreamableHttpTransport({
 			url: config.url,
 			headers: resolveHeadersOrThrow(config.headers, `MCP server "${name}"`),
@@ -201,13 +205,16 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 	}
 
 	oauthSettings(): McpOAuthSettings {
-		const oauth = "url" in this.entry.config ? this.entry.config.oauth : undefined;
+		const oauth = resolveConnectorOAuth(this.entry);
 		if (!oauth) return {};
 		return {
+			authorizationResourceIndicator: oauth.authorizationResourceIndicator,
+			authorizationParams: oauth.authorizationParams,
 			clientId: oauth.clientId,
+			deviceAuthorizationUrl: oauth.deviceAuthorizationUrl,
 			clientSecret:
 				oauth.clientSecret === undefined
-					? undefined
+					? connectorClientSecret(this.entry, oauth.clientId)
 					: resolveConfigValueOrThrow(oauth.clientSecret, `MCP server "${this.entry.name}" oauth.clientSecret`),
 			callbackPort: oauth.callbackPort,
 			callbackUrl: oauth.callbackUrl,
@@ -215,6 +222,7 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 			clientName: oauth.clientName,
 			clientRegistration: oauth.clientRegistration,
 			authServerMetadataUrl: oauth.authServerMetadataUrl ? new URL(oauth.authServerMetadataUrl) : undefined,
+			authorizationServerMetadata: oauth.authorizationServerMetadata,
 		};
 	}
 
@@ -357,6 +365,16 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 			const stdio = transport instanceof StdioTransport ? transport : undefined;
 			client.onClose(() => this.handleClientClose(client, stdio));
 			const tools = client.serverCapabilities?.tools ? await client.listTools() : [];
+			const authCheck = resolveConnectorOAuth(this.entry)?.authCheck;
+			if (authCheck) {
+				const tool = tools.find((tool) => tool.name === authCheck.tool);
+				if (!tool || tool.annotations?.readOnlyHint === false) throw new Error(`OAuth check tool "${authCheck.tool}" must be available and read-only`);
+				const result = await client.callTool(authCheck.tool, authCheck.arguments ?? {});
+				if (result.isError) {
+					const details = result.content.filter((item) => item.type === "text").map((item) => item.text).join("\n").trim().slice(0, 2000);
+					throw new Error(`The MCP server rejected the authorization check.${details ? ` ${details}` : " Verify the Google Cloud APIs, OAuth client AI-agent setting, and granted scopes."}`);
+				}
+			}
 			if (this.closed) throw new Error("shut down while connecting");
 			if (client.connectionState !== "connected") throw new Error("connection closed during setup");
 			this.client = client;

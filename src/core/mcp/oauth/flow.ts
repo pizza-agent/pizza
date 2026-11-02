@@ -1,4 +1,5 @@
 import type { AuthProvider, McpFetch, UnauthorizedContext } from "../auth-provider.js";
+import { validateAuthorizationParams } from "./authorization-params.js";
 import { isObject } from "../protocol/jsonrpc.js";
 import {
 	discoverAuthorizationServerMetadata,
@@ -57,6 +58,9 @@ export interface OAuthClientProvider {
 }
 
 export interface OAuthFlowOptions {
+	/** Compatibility option for providers that reject resource on their authorization endpoint. Tokens and resource discovery remain bound. */
+	authorizationResourceIndicator?: boolean;
+	authorizationParams?: Record<string, string>;
 	serverUrl: string | URL;
 	authorizationCode?: string;
 	/** `iss` parameter of the authorization response that delivered `authorizationCode` (RFC 9207). */
@@ -64,6 +68,8 @@ export interface OAuthFlowOptions {
 	scope?: string;
 	resourceMetadataUrl?: URL;
 	authorizationServerMetadataUrl?: URL;
+	/** Inline AS metadata; trusted as configured and preferred over discovery / URL fetch. */
+	authorizationServerMetadata?: AuthorizationServerMetadata;
 	fetch?: McpFetch;
 	signal?: AbortSignal;
 	skipIssuerValidation?: boolean;
@@ -152,6 +158,7 @@ export async function startAuthorization(
 		scope?: string;
 		state?: string;
 		resource?: string;
+		authorizationParams?: Record<string, string>;
 	},
 ): Promise<{ authorizationUrl: URL; codeVerifier: string }> {
 	const metadata = options.metadata;
@@ -172,6 +179,9 @@ export async function startAuthorization(
 	if (options.scope) url.searchParams.set("scope", options.scope);
 	if (options.scope?.split(/\s+/).includes("offline_access")) url.searchParams.set("prompt", "consent");
 	if (options.resource) url.searchParams.set("resource", options.resource);
+	const paramsError = validateAuthorizationParams(options.authorizationParams);
+	if (paramsError) throw new Error(paramsError);
+	for (const [name, value] of Object.entries(options.authorizationParams ?? {})) url.searchParams.set(name, value);
 	return { authorizationUrl: url, codeVerifier: verifier };
 }
 
@@ -230,7 +240,11 @@ export async function registerClient(
 ): Promise<OAuthClientInformationFull> {
 	const endpoint = options.metadata?.registration_endpoint;
 	if (options.metadata && !endpoint)
-		throw new Error("Authorization server does not support dynamic client registration");
+		throw new Error(
+			"Authorization server does not support dynamic client registration. " +
+			"Set oauth.clientId (and optional oauth.clientSecret) for this MCP server, " +
+			"or configure a static token / PAT instead."
+		);
 	const response = await (options.fetch ?? globalThis.fetch)(
 		new URL(endpoint ?? new URL("/register", authorizationServerUrl)),
 		{
@@ -289,27 +303,36 @@ export function stepUpScope(granted: string | undefined, challenged: string | un
 
 async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions): Promise<OAuthFlowResult> {
 	const metadataUrl = options.authorizationServerMetadataUrl && secureEndpoint(options.authorizationServerMetadataUrl);
-	const cached = metadataUrl ? undefined : await provider.discoveryState?.();
-	const discovered = cached?.authorizationServerUrl
-		? {
-				authorizationServerUrl: cached.authorizationServerUrl,
-				authorizationServerMetadata:
-					cached.authorizationServerMetadata ??
-					(await discoverAuthorizationServerMetadata(cached.authorizationServerUrl, {
-						fetch: options.fetch,
-						skipIssuerValidation: options.skipIssuerValidation,
-						signal: options.signal,
-					})),
-				resourceMetadata: cached.resourceMetadata,
-			}
-		: await discoverOAuthServerInfo(options.serverUrl, {
+	const inlineMetadata = options.authorizationServerMetadata;
+	const cached = metadataUrl || inlineMetadata ? undefined : await provider.discoveryState?.();
+	const discovered = inlineMetadata
+		? await discoverOAuthServerInfo(options.serverUrl, {
 				resourceMetadataUrl: options.resourceMetadataUrl,
-				authorizationServerMetadataUrl: metadataUrl,
+				authorizationServerMetadata: inlineMetadata,
 				fetch: options.fetch,
 				skipIssuerValidation: options.skipIssuerValidation,
 				signal: options.signal,
-			});
-	if (!metadataUrl) {
+			})
+		: cached?.authorizationServerUrl
+			? {
+					authorizationServerUrl: cached.authorizationServerUrl,
+					authorizationServerMetadata:
+						cached.authorizationServerMetadata ??
+						(await discoverAuthorizationServerMetadata(cached.authorizationServerUrl, {
+							fetch: options.fetch,
+							skipIssuerValidation: options.skipIssuerValidation,
+							signal: options.signal,
+						})),
+					resourceMetadata: cached.resourceMetadata,
+				}
+			: await discoverOAuthServerInfo(options.serverUrl, {
+					resourceMetadataUrl: options.resourceMetadataUrl,
+					authorizationServerMetadataUrl: metadataUrl,
+					fetch: options.fetch,
+					skipIssuerValidation: options.skipIssuerValidation,
+					signal: options.signal,
+				});
+	if (!metadataUrl && !inlineMetadata) {
 		await provider.saveDiscoveryState?.({
 			...discovered,
 			...(options.resourceMetadataUrl ? { resourceMetadataUrl: options.resourceMetadataUrl.href } : {}),
@@ -377,12 +400,13 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 	}
 	const state = await provider.state?.();
 	const authorization = await startAuthorization(discovered.authorizationServerUrl, {
+		authorizationParams: options.authorizationParams,
 		metadata,
 		clientInformation: client,
 		redirectUrl,
 		scope,
 		state,
-		resource,
+		resource: options.authorizationResourceIndicator === false ? undefined : resource,
 	});
 	await provider.saveCodeVerifier(authorization.codeVerifier);
 	await provider.redirectToAuthorization(authorization.authorizationUrl);

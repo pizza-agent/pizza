@@ -22,6 +22,7 @@ export default defineConfig({
     // Preserve symlinks to avoid issues with monorepo package resolution
     preserveSymlinks: true,
     alias: [
+      { find: "@pizza/mcp-connector-catalog", replacement: fileURLToPath(new URL('./src/builtin-extensions/connectors/catalog.ts', import.meta.url)) },
       { find: /^@tauri-apps\/api$/, replacement: `${stubDir}/tauri-api/index.js` },
       { find: /^@tauri-apps\/api\/(.+)$/, replacement: `${stubDir}/tauri-api/$1.js` },
       { find: /^@tauri-apps\/plugin-shell$/, replacement: `${stubDir}/plugin-shell/index.js` },

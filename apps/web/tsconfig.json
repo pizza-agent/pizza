@@ -14,7 +14,8 @@
 		"allowImportingTsExtensions": true,
 		"paths": {
 			"@/*": ["./src/*"],
-			"@tomsun28/pizza-protocol": ["../../packages/protocol/index.ts"]
+			"@tomsun28/pizza-protocol": ["../../packages/protocol/index.ts"],
+			"@pizza/mcp-connector-catalog": ["../../src/builtin-extensions/connectors/catalog.ts"]
 		}
 	},
 	"include": ["src"]

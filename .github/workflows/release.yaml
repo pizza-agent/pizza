@@ -13,6 +13,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    env:
+      PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT: '1'
+      PIZZA_GOOGLE_DESKTOP_CLIENT_JSON: ${{ secrets.PIZZA_GOOGLE_DESKTOP_CLIENT_JSON }}
     steps:
       - uses: actions/checkout@v5
       - name: Use Node.js 22

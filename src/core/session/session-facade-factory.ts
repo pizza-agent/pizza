@@ -1,3 +1,4 @@
+import { enableMainInitiative, initiativePrompt } from "../interaction/initiative.js";
 /**
  * SessionFacade factory.
  *
@@ -271,6 +272,7 @@ export async function createSessionFacade(
 		cwd,
 		sessionManager,
 	});
+	if (isMainAgent) enableMainInitiative(store);
 	const extensionsResult = resourceLoader.getExtensions();
 	const extensionRunner = new ExtensionRunner(
 		extensionsResult.extensions,
@@ -339,6 +341,7 @@ export async function createSessionFacade(
 	};
 
 	const buildPrompt = createPromptBuilder({
+		mainInitiativePrompt: isMainAgent ? () => initiativePrompt(store) : undefined,
 		cwd,
 		eventStorePath,
 		agentDir,

@@ -143,6 +143,8 @@ export async function discoverOAuthServerInfo(
 		resourceMetadataUrl?: URL;
 		/** Metadata document to use instead of discovery. It is trusted as configured, so its issuer is not checked. */
 		authorizationServerMetadataUrl?: URL;
+		/** Inline metadata; trusted as configured (takes precedence over URL fetch / discovery). */
+		authorizationServerMetadata?: AuthorizationServerMetadata;
 		fetch?: McpFetch;
 		skipIssuerValidation?: boolean;
 		signal?: AbortSignal;
@@ -157,6 +159,10 @@ export async function discoverOAuthServerInfo(
 		});
 	} catch (error) {
 		if (error instanceof TypeError) throw error;
+	}
+	if (options.authorizationServerMetadata) {
+		const metadata = options.authorizationServerMetadata;
+		return { authorizationServerUrl: metadata.issuer, authorizationServerMetadata: metadata, resourceMetadata };
 	}
 	if (options.authorizationServerMetadataUrl) {
 		const url = options.authorizationServerMetadataUrl;

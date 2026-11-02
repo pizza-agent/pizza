@@ -1,3 +1,4 @@
+import { useInteractions } from "@/lib/interactions";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -326,6 +327,7 @@ export default function AgentView({
 	switchEpoch?: number;
 	onRefreshState?: () => void;
 }) {
+	const interactions = useInteractions(workspace, state?.sessionId, sidecarReady && !!state?.capabilities?.interactions);
 	const { sidebarCollapsed, isMainAgent = false } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
 	const { t } = useTranslation();
 	const [items, setItems] = useState<TimelineItem[]>([]);
@@ -1474,6 +1476,8 @@ export default function AgentView({
 				) : (
 				<Conversation
 					items={items}
+					interactions={interactions.records}
+					onInteractionResponse={interactions.respond}
 					sidecarReady={sidecarReady}
 					sidecarExitCode={sidecarExitCode}
 					onResolveApproval={handleResolveApproval}

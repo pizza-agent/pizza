@@ -115,10 +115,22 @@ pub struct GatewayChannel {
 	closer: Arc<dyn Fn() + Send + Sync>,
 }
 
+/// Interactive OAuth needs the same 17-minute budget as the web and Node RPC clients.
 /// Long model calls need room beyond the agent's own five-minute deadline.
 pub(crate) fn rpc_timeout(frame: &Value) -> std::time::Duration {
 	std::time::Duration::from_secs(match frame.get("type").and_then(Value::as_str) {
 		Some("compact") => 320,
+		Some("mcp_command")
+			if frame
+				.get("args")
+				.and_then(Value::as_array)
+				.is_some_and(|args| {
+					args.first().and_then(Value::as_str) == Some("server")
+						&& args.get(1).and_then(Value::as_str) == Some("login")
+				}) =>
+		{
+			17 * 60
+		}
 		_ => 60,
 	})
 }
@@ -296,7 +308,7 @@ impl GatewayChannel {
 					.unwrap()
 					.push(ChannelMessage::ListResult { workspaces });
 			}
-			"channel_op_result" => {
+			"channel_op_result" | "workspace_stop_result" => {
 				// Channel-management replies are id-routed like rpc responses,
 				// except the id sits at the envelope's top level (not in a frame).
 				let id = parsed
@@ -426,6 +438,15 @@ impl GatewayChannel {
 	/// await the matching `channel_op_result`. Returns the `data` payload on
 	/// `ok`, or the gateway's error string otherwise.
 	pub fn channel_op(&self, request: Value) -> Result<Value, String> {
+		self.control_op("channel_op", request)
+	}
+
+	pub fn stop_workspace(&self, workspace: &str) -> Result<(), String> {
+		self.control_op("stop_workspace", json!({"workspace": workspace}))
+			.map(|_| ())
+	}
+
+	fn control_op(&self, kind: &str, request: Value) -> Result<Value, String> {
 		let mut obj = request
 			.as_object()
 			.cloned()
@@ -435,7 +456,7 @@ impl GatewayChannel {
 			.and_then(|i| i.as_str())
 			.map(|s| s.to_string())
 			.unwrap_or_else(|| format!("cop_{}", uuid::Uuid::new_v4()));
-		obj.insert("type".to_string(), Value::String("channel_op".to_string()));
+		obj.insert("type".to_string(), Value::String(kind.to_string()));
 		obj.insert("id".to_string(), Value::String(id.clone()));
 		let slot: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
 		self.pending
@@ -1187,6 +1208,27 @@ mod tests {
 	}
 
 	#[test]
+	fn oauth_deadline_allows_interactive_login_without_slowing_other_mcp_commands() {
+		assert_eq!(
+			rpc_timeout(&json!({"type":"mcp_command","args":["server","login","gmail"]})),
+			std::time::Duration::from_secs(17 * 60)
+		);
+		for args in [
+			json!(["server", "list"]),
+			json!(["server", "login-answer", "url"]),
+			json!(["server", "login-cancel"]),
+			json!(["gmail", "get_profile"]),
+			json!([]),
+			json!(null),
+		] {
+			assert_eq!(
+				rpc_timeout(&json!({"type":"mcp_command","args":args})),
+				std::time::Duration::from_secs(60)
+			);
+		}
+	}
+
+	#[test]
 	fn dispatch_routes_response_by_id_and_events_to_inbox() {
 		let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
 		let inbox: Arc<Mutex<Vec<ChannelMessage>>> = Arc::new(Mutex::new(Vec::new()));
@@ -1204,6 +1246,22 @@ mod tests {
 		);
 		assert!(slot.lock().unwrap().is_some());
 		assert!(inbox.lock().unwrap().is_empty());
+
+		// Workspace stop acknowledgements use the same id-routed control path.
+		*slot.lock().unwrap() = None;
+		GatewayChannel::dispatch(
+			&json!({"type":"workspace_stop_result","id":"req_1","ok":true}),
+			&pending,
+			&inbox,
+		);
+		assert_eq!(
+			slot.lock()
+				.unwrap()
+				.as_ref()
+				.and_then(|v| v.get("ok"))
+				.and_then(Value::as_bool),
+			Some(true)
+		);
 
 		// An event (no matching id) → inbox.
 		GatewayChannel::dispatch(

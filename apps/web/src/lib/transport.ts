@@ -81,10 +81,15 @@ export interface RpcResponse<T = unknown> {
  * "active" pointer that only flips mid-init — see init_sidecar_via_gateway).
  */
 let rpcWorkspace: string | null = null;
+const workspaceListeners = new Set<() => void>();
+export function subscribeRpcWorkspace(listener: () => void): () => void { workspaceListeners.add(listener); return () => { workspaceListeners.delete(listener); }; }
+export function getRpcWorkspace(): string | null { return rpcWorkspace; }
 
 /** Snapshot the expected source workspace for outgoing rpc commands. */
 export function setRpcWorkspace(cwd: string | null): void {
+	if (rpcWorkspace === cwd) return;
 	rpcWorkspace = cwd;
+	for (const listener of workspaceListeners) listener();
 }
 
 export async function sendCommandAwait<T = unknown>(

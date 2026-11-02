@@ -1,6 +1,6 @@
 {
 	"name": "@tomsun28/pizza",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Pizza - Pizza is an event-driven agent, without while true. Every conversation, tool call, and file edit is an event in an immutable log. Your UI, the LLM context, and the session tree are all projections of that log.",
 	"type": "module",
 	"pizzaConfig": {
@@ -42,7 +42,7 @@
 		"generate-providers": "node scripts/generate-providers.mjs",
 		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
 		"start": "node dist/src/cli.js",
-		"build": "tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets",
+		"build": "tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets && node scripts/prepare-google-desktop-oauth.mjs",
 		"build:release": "npm run build && npm run vendor-tools",
 		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets",
 		"build:remote-server": "node scripts/build-remote-server.mjs",

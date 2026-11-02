@@ -15,8 +15,10 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { respondExtensionUi, subscribeExtensionUi } from "@/lib/transport";
+import { respondExtensionUi, subscribeExtensionUi, openExternal } from "@/lib/transport";
 import { prefillComposer } from "@/lib/composer-prefill";
+import { useTranslation } from "react-i18next";
+import { parseMcpDevicePrompt } from "@/lib/mcp-signin";
 import { Button, Modal } from "@/components/ui";
 
 type RawRequest = Record<string, unknown> & { _cwd?: string };
@@ -43,6 +45,7 @@ let toastCounter = 0;
 const PET_WIDGET_KEY = "pet-widget";
 
 export function ExtensionUiHost({ workspace }: { workspace: string }) {
+	const { t } = useTranslation();
 	const [dialog, setDialog] = useState<PendingDialog | null>(null);
 	const queueRef = useRef<PendingDialog[]>([]);
 	const [widgets, setWidgets] = useState<Map<string, { lines: string[]; below: boolean }>>(new Map());
@@ -277,7 +280,42 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 					))}
 					{statusEntries.length > 0 && (
 						<div className="flex flex-wrap gap-3 text-xs text-muted">
-							{statusEntries.map(([, s], i) => <span key={i}>{s}</span>)}
+							{statusEntries.map(([key, text]) => {
+								if (key.startsWith("mcp-login-device:")) {
+									const device = parseMcpDevicePrompt(text);
+									return device ? (
+										<div
+											key={key}
+											className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2"
+											aria-label={t("interaction.authCode")}
+										>
+											<span>
+												{key.slice("mcp-login-device:".length)} · {t("interaction.authCode")}
+											</span>
+											<code className="select-all text-base font-semibold tracking-widest text-fg">
+												{device.userCode}
+											</code>
+											<Button size="sm" onClick={() => void openExternal(device.verificationUri)}>
+												{t("interaction.openAuth")}
+											</Button>
+										</div>
+									) : null;
+								}
+								if (key.startsWith("mcp-login:")) {
+									try {
+										const url = new URL(text);
+										if (url.protocol !== "https:") return null;
+									} catch {
+										return null;
+									}
+									return (
+										<Button key={key} size="sm" tone="neutral" onClick={() => void openExternal(text)}>
+											{key.slice("mcp-login:".length)} · {t("interaction.openAuth")}
+										</Button>
+									);
+								}
+								return <span key={key}>{text}</span>;
+							})}
 						</div>
 					)}
 				</div>
@@ -292,7 +330,7 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 					size="sm"
 					footer={
 						<>
-							{(dialogKind === "confirm") && (
+							{dialogKind === "confirm" && (
 								<>
 									<Button tone="neutral" variant="outline" size="sm" onClick={cancelDialog}>
 										Cancel

@@ -32,6 +32,7 @@ import {
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
+import { createInteractionExtension, INTERACTION_EXTENSION_ID } from "./interaction/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -98,6 +99,12 @@ export interface BuiltinExtension {
  * conflict precedence (earlier wins for diagnostics; both are kept).
  */
 export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
+	{
+		id: INTERACTION_EXTENSION_ID,
+		name: "interaction",
+		description: "Dynamic conversation cards for questions, choices and registered capabilities.",
+		factory: createInteractionExtension,
+	},
 	{
 		id: AGENT_BROWSER_EXTENSION_ID,
 		name: "agent-browser",

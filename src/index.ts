@@ -2,7 +2,9 @@
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
-export { SessionFacade, type SessionFacadeConfig, type SessionFacadeEventListener } from "./core/session/session-facade.js";
+export { registerInteractionCapabilities, listInteractionCapabilities } from "./core/interaction/capabilities.js";
+export type { InteractionCard, InteractionAnswer, InteractionRecord, InteractionCapability } from "../packages/protocol/interaction.js";
+export { SessionFacade, type SessionFacadeConfig, type SessionPromptOptions, type SessionFacadeEventListener } from "./core/session/session-facade.js";
 export {
 	createSessionFacade,
 	type CreateSessionFacadeOptions,

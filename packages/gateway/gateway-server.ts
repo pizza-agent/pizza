@@ -24,7 +24,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { RpcClient } from "../rpc/rpc-client.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
-import { ChannelSupervisor } from "./channel-supervisor.js";
+import { adapterProxyEnv, ChannelSupervisor } from "./channel-supervisor.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
 import { prefetchLoginShellPath } from "../../src/utils/login-shell-path.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
@@ -364,7 +364,12 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		// so those agents must install the waiting approval handler instead.
 		// Passing PIZZA_HEADLESS here blanket was a bug: the desktop user's own
 		// main-agent conversation auto-rejected every gated tool call.
-		return interactive ? { PIZZA_AGENT_DIR: agentDir } : { PIZZA_AGENT_DIR: agentDir, PIZZA_HEADLESS: "1" };
+		// Forward the resolved proxy (+ NO_PROXY bypasses) so MCP HTTP clients
+		// in the agent match channel adapters.
+		const proxyEnv = adapterProxyEnv(agentDir);
+		return interactive
+			? { ...proxyEnv, PIZZA_AGENT_DIR: agentDir }
+			: { ...proxyEnv, PIZZA_AGENT_DIR: agentDir, PIZZA_HEADLESS: "1" };
 	}
 
 	/** In-flight spawns keyed by cwd — dedupes concurrent getOrCreateAgent
@@ -412,7 +417,9 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	}
 
 	/** Find or spawn the RpcClient for `cwd`. */
+	const stoppedWorkspaces = new Set<string>();
 	async function getOrCreateAgent(cwd: string, opts?: { interactive?: boolean }): Promise<PoolEntry> {
+		if (stoppedWorkspaces.has(cwd)) throw new Error("Workspace was removed; explicitly open it to reconnect");
 		const existing = pool.get(cwd);
 		if (existing) return existing;
 		const inFlight = spawning.get(cwd);
@@ -987,6 +994,7 @@ function nextMessageId(): string {
 					return;
 				}
 				try {
+					stoppedWorkspaces.delete(cwd);
 					// A desktop window is attaching: the human behind it can
 					// answer approval dialogs — the agent must be interactive.
 					// Headless attaches (bot channels) only watch events: they keep
@@ -1011,6 +1019,19 @@ function nextMessageId(): string {
 				write({ type: "attach_ok", workspace: cwd });
 				return;
 			}
+			case "stop_workspace": {
+				const cwd = resolveDestination(request.workspace);
+				if (!cwd) {
+					write({ type: "workspace_stop_result", id: request.id, ok: false, error: "Unknown workspace" });
+					return;
+				}
+				stoppedWorkspaces.add(cwd);
+				await spawning.get(cwd)?.catch(() => {});
+				await teardownAgent(cwd, "workspace removed");
+				write({ type: "workspace_stop_result", id: request.id, ok: true });
+				return;
+			}
+
 			case "detach": {
 				const cwd = resolveDestination(request.workspace);
 				if (!cwd) return;
@@ -1155,7 +1176,7 @@ function nextMessageId(): string {
 			}
 
 			// Channel protocol: attach / detach / rpc / list.
-			if (type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op") {
+			if (type === "attach" || type === "detach" || type === "rpc" || type === "list" || type === "channel_op" || type === "stop_workspace") {
 				void handleChannelRequest(parsed as GatewayChannelRequest, write, subscribedCwds).catch((error: unknown) => {
 					write({ type: "error", message: error instanceof Error ? error.message : String(error) });
 				});

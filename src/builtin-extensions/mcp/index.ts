@@ -19,6 +19,8 @@
  */
 
 import { join, resolve } from "node:path";
+import { MCP_CONNECTOR_CATALOG } from "../connectors/catalog.js";
+import { registerInteractionCapabilities } from "../../core/interaction/capabilities.js";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
 import type {
@@ -52,6 +54,7 @@ export const MCP_EXTENSION_ID = "mcp";
 export type { McpTransportFactory } from "./runtime.js";
 export {
 	addMcpServerConfig,
+	mergeMcpServerConfigPreservingOAuthCredentials,
 	getMcpToolExposure,
 	type LoadedMcpConfig,
 	loadMcpConfig,
@@ -536,6 +539,19 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 
 		// Other workspaces and external editors can change the shared config. Reconcile
 		// on discovery without waiting for network connections or restarting healthy ones.
+		const sameLiveServer = (server: McpServer, candidate: McpServer): boolean => {
+			if (JSON.stringify(server.entry) === JSON.stringify(candidate.entry)) return true;
+			// Extension builtins keep enable/exposure patches in memory only ("for this session").
+			// refreshConfig must not replace them with a fresh registration copy or disable is undone.
+			return (
+				server.entry.scope === "extension" &&
+				candidate.entry.scope === "extension" &&
+				server.entry.name === candidate.entry.name &&
+				server.registeredConfig !== undefined &&
+				server.registeredConfig === JSON.stringify(candidate.entry.config)
+			);
+		};
+
 		const refreshConfig = (ctx: ExtensionContext) => {
 			const loaded = (options.loadConfig ?? defaultLoadConfig)(ctx);
 			configErrors = loaded.errors;
@@ -546,7 +562,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			const desired = [...loaded.servers.map((entry) => ({ entry })), ...registered.servers];
 			const previous = servers;
 			const next = desired.map((candidate) => previous.find((server) =>
-				JSON.stringify(server.entry) === JSON.stringify(candidate.entry),
+				sameLiveServer(server, candidate),
 			) ?? candidate);
 			if (next.length === previous.length && next.every((server, index) => server === previous[index])) return;
 			const closing = new Map<string, Promise<void>>();
@@ -566,6 +582,21 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			emitChange();
 		};
 
+		type PendingMcpLogin = {
+			name: string;
+			abort: AbortController;
+			resolveRedirect?: (url: string | undefined) => void;
+		};
+		let pendingLogin: PendingMcpLogin | null = null;
+
+		const cancelPendingLogin = () => {
+			const pending = pendingLogin;
+			if (!pending) return;
+			pendingLogin = null;
+			pending.resolveRedirect?.(undefined);
+			pending.abort.abort();
+		};
+
 		const agentCliHost: AgentCliHost = {
 			refreshConfig,
 			getServers: () => servers,
@@ -581,6 +612,95 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			async waitForAllServers(signal?: AbortSignal) {
 				const waiting = servers.filter((s) => isEnabled(s) && s.ready);
 				if (waiting.length > 0) await waitForServers(waiting, signal);
+			},
+			async signIn(name, options) {
+				const server = findServer(name);
+				if (!server) return { ok: false, error: `No MCP server named "${name}".` };
+				if (!server.connection?.oauthUrl) {
+					return {
+						ok: false,
+						error: `MCP server "${name}" does not use OAuth. Only HTTP servers without an Authorization header do.`,
+					};
+				}
+				cancelPendingLogin();
+				const abort = new AbortController();
+				const pending: PendingMcpLogin = { name, abort };
+				pendingLogin = pending;
+				const external = options?.signal;
+				const onExternalAbort = () => abort.abort();
+				if (external) {
+					if (external.aborted) abort.abort();
+					else external.addEventListener("abort", onExternalAbort, { once: true });
+				}
+				try {
+					const failure = await signIn(
+						server,
+						{
+							showAuthorizationUrl: (url) => {
+								options?.onAuthUrl?.(url.href);
+								openUrl(url.href);
+							},
+							showDeviceCode: (prompt) => options?.onDeviceCode?.(prompt),
+							promptForRedirectUrl: (sig) =>
+								new Promise<string | undefined>((resolve) => {
+									const finish = (value: string | undefined) => {
+										if (pending.resolveRedirect !== finish) return;
+										pending.resolveRedirect = undefined;
+										sig.removeEventListener("abort", onAbort);
+										resolve(value);
+									};
+									const onAbort = () => finish(undefined);
+									pending.resolveRedirect = finish;
+									if (sig.aborted) {
+										onAbort();
+										return;
+									}
+									sig.addEventListener("abort", onAbort, { once: true });
+								}),
+						},
+						abort.signal,
+					);
+					if (failure) {
+						return {
+							ok: false,
+							error: failure,
+							...(failure === "Sign-in cancelled." ? { cancelled: true } : {}),
+						};
+					}
+					return { ok: true, tools: server.connection?.tools.length ?? 0 };
+				} finally {
+					if (external) external.removeEventListener("abort", onExternalAbort);
+					if (pendingLogin === pending) pendingLogin = null;
+				}
+			},
+			answerRedirect(url) {
+				const pending = pendingLogin;
+				if (!pending?.resolveRedirect) return false;
+				pending.resolveRedirect(url);
+				return true;
+			},
+			cancelSignIn() {
+				cancelPendingLogin();
+			},
+			async setEnabled(name: string, enabled: boolean) {
+				const server = findServer(name);
+				if (!server) throw new Error(`No MCP server named "${name}".`);
+				const failed = await setEnabled(server, enabled);
+				if (failed) throw new Error(failed);
+				emitChange();
+				return { name, enabled };
+			},
+			async signOut(name: string) {
+				const server = findServer(name);
+				if (!server) throw new Error(`No MCP server named "${name}".`);
+				if (!server.connection?.oauthUrl) {
+					throw new Error(
+						`MCP server "${name}" does not use OAuth. Only HTTP servers without an Authorization header do.`,
+					);
+				}
+				const removed = await signOut(server);
+				emitChange();
+				return { name, removed };
 			},
 			async addServer(name: string, config: McpServerConfig, opts: { local?: boolean; cwd: string }) {
 				const path = opts.local
@@ -785,6 +905,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			return signIn(
 				server,
 				{
+					showDeviceCode: (prompt) => status(`Enter code ${prompt.userCode} at ${prompt.verificationUri}. Waiting for authorization…`),
 					showAuthorizationUrl: (url) => {
 						authorizationUrl = url.href;
 						openUrl(url.href);
@@ -942,6 +1063,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 				});
 			} else {
 				failure = await signIn(server, {
+					showDeviceCode: (prompt) => ctx.ui.notify(`Enter code ${prompt.userCode} at ${prompt.verificationUri} to connect ${name} to Pizza.`, "info"),
 					showAuthorizationUrl: (url) => {
 						ctx.ui.notify(`Sign in to MCP server "${name}" in your browser:\n${url.href}`, "info");
 						openUrl(url.href);
@@ -966,7 +1088,26 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		// Lifecycle hooks
 		// ---------------------------------------------------------------------------------------
 
+		let unregisterCapabilities: (() => void) | undefined;
 		pizza.on("session_start", (_event, ctx) => {
+			unregisterCapabilities?.();
+			if (ctx.sessionManager?.eventStore) {
+				unregisterCapabilities = registerInteractionCapabilities(ctx.sessionManager.eventStore, "mcp", () => {
+					const entries = new Map(MCP_CONNECTOR_CATALOG.map(entry => [entry.name, {
+						name: entry.name, description: entry.description, installed: false, state: "available",
+					}]));
+					for (const server of servers) entries.set(server.entry.name, {
+						name: server.entry.name,
+						description: server.entry.config.description ?? server.entry.name,
+						installed: true,
+						state: server.entry.config.enabled === false ? "disabled" : server.connection?.state ?? "connecting",
+					});
+					return [...entries.values()].map(entry => ({
+						id: `mcp:${entry.name}`, label: entry.name, description: entry.description, status: entry.state,
+						instructions: `Discover _agentcli server --help. ${entry.installed ? "This connector is installed." : `Install with _agentcli server install ${JSON.stringify(entry.name)}.`} Use _agentcli server list to check its latest state. If disabled, enable it only as requested. If sign-in is required, run _agentcli server login ${JSON.stringify(entry.name)}. Report the verified connection result, never tokens. Selecting this capability requests connection only, not permission for unrelated writes.`,
+					}));
+				});
+			}
 			sessionCwd = ctx.cwd;
 			modelRegistry = ctx.modelRegistry;
 
@@ -1067,6 +1208,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 		});
 
 		pizza.on("session_shutdown", async () => {
+			unregisterCapabilities?.();
 			session.abort();
 			const closing = connections();
 			servers = [];

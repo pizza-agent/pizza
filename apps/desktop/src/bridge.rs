@@ -3065,6 +3065,9 @@ async fn init_sidecar_via_gateway(
 					let mut channels = lock_ok(&state.channels);
 					if channels.get(&channel_key).is_some_and(|c| !c.is_alive()) {
 						channels.remove(&channel_key);
+					} else {
+						// Removed intentionally or already replaced: do not reconnect a deleted workspace.
+						break;
 					}
 				}
 				// Notify the frontend exactly like a sidecar exit would, so its
@@ -3529,9 +3532,32 @@ pub async fn delete_workspace(
 		None
 	};
 
-	// Kill sidecar if running.
+	// Stop the pooled gateway agent before removing its files. Killing legacy
+	// sidecars alone leaves the gateway owner alive and able to recreate metadata.
 	if let Some(ref cwd) = cwd {
+		let existing = lock_ok(&state.channels).get(cwd).cloned();
+		let socket = gateway_channel::gateway_socket_path();
+		let target = cwd.clone();
+		tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+			if let Some(channel) = existing {
+				return channel.stop_workspace(&target);
+			}
+			if let Some(socket) = socket {
+				// No channel means the workspace may already be idle. Never start a gateway just to delete it.
+				if let Ok(channel) = gateway_channel::GatewayChannel::connect(&socket) {
+					let result = channel.stop_workspace(&target);
+					channel.close();
+					return result;
+				}
+			}
+			Ok(())
+		})
+		.await
+		.map_err(|e| format!("stop workspace: {e}"))??;
 		kill_sidecar_for_cwd(state.inner(), cwd);
+		if let Some(channel) = lock_ok(&state.channels).remove(cwd) {
+			channel.close();
+		}
 	}
 
 	// Remove the workspace directory.
