@@ -44,7 +44,7 @@
 		"start": "node dist/src/cli.js",
 		"build": "tsc -p tsconfig.build.json && shx chmod +x dist/src/cli.js && shx cp package.json README.md dist/ && npm run generate-providers && npm run copy-assets && node scripts/prepare-google-desktop-oauth.mjs",
 		"build:release": "npm run build && npm run vendor-tools",
-		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets",
+		"build:binary": "npm run build && npm run vendor-tools && bun build --compile ./dist/src/bun/cli.js --external chromium-bidi --external electron --outfile dist/pizza && npm run copy-binary-assets && node scripts/prepare-macos-binary.mjs",
 		"build:remote-server": "node scripts/build-remote-server.mjs",
 		"build:desktop": "npm run clean && npm run build:binary && npm run build:remote-server && npm run prepare-desktop-vendor && cd apps/desktop && cargo tauri build",
 		"dev:desktop": "npm run build && npm run fix:pty-permissions && npm run prepare-desktop-resources && npm run prepare-desktop-vendor && node scripts/dev-desktop.mjs",

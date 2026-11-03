@@ -127,6 +127,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
 
+      - name: Verify macOS executable signatures and startup
+        if: runner.os == 'macOS'
+        run: |
+          node scripts/prepare-macos-binary.mjs --verify apps/desktop/target/release/bundle/macos/Pizza.app/Contents/Resources/pizza
+          # Check the actual updater archive as well as the unpacked app.
+          CHECK_DIR=$(mktemp -d)
+          trap 'rm -rf "$CHECK_DIR"' EXIT
+          tar -xzf apps/desktop/target/release/bundle/macos/Pizza.app.tar.gz -C "$CHECK_DIR"
+          node scripts/prepare-macos-binary.mjs --verify "$CHECK_DIR/Pizza.app/Contents/Resources/pizza"
+        shell: bash
+
       - name: Rename artifacts with platform name
         run: |
           LABEL="${{ matrix.label }}"
