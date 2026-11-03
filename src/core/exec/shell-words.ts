@@ -204,3 +204,21 @@ export function splitShellSegments(command: string): string[] {
 	segments.push(command.slice(start));
 	return segments;
 }
+
+/**
+ * The command prefix before the first unquoted shell control operator
+ * (| & ; < > newline), or the whole (trimmed) command when there is none.
+ * Used to suggest a corrected underscore command: `_agentcli -h | head`
+ * suggests `_agentcli -h`. May return "" for commands like `> out`.
+ */
+export function firstPureCommandSegment(command: string): string {
+	const mask = computeUnquotedCodeMask(command);
+	for (let i = 0; i < command.length; i++) {
+		if (!mask[i]) continue;
+		const c = command[i];
+		if (c === "|" || c === "&" || c === ";" || c === "<" || c === ">" || c === "\n") {
+			return command.slice(0, i).trim();
+		}
+	}
+	return command.trim();
+}

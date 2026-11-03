@@ -26,7 +26,7 @@ import {
 	parseBuiltinToolInput,
 	type ParsedBuiltinToolInput,
 } from "./builtin-commands.js";
-import { hasShellControlSyntax, splitShellSegments, splitShellWords } from "../exec/shell-words.js";
+import { firstPureCommandSegment, hasShellControlSyntax, splitShellSegments, splitShellWords } from "../exec/shell-words.js";
 import { createEditToolDefinition, type EditToolDetails, type EditToolInput, type EditToolOptions } from "./edit.js";
 import { createReadToolDefinition, type ReadToolDetails, type ReadToolInput, type ReadToolOptions } from "./read.js";
 import { createHistoryTreeToolDefinition, type HistoryTreeToolInput } from "./history-tree.js";
@@ -469,12 +469,16 @@ async function runDynamicBuiltinCommand(
 	// Dynamic built-ins are not a shell: reject control syntax the same way the
 	// static built-ins do (heredocs are fine — they are passed to parseArguments).
 	if (parsed.heredoc === undefined && hasShellControlSyntax(rawCommand)) {
+		const suggested = firstPureCommandSegment(rawCommand);
 		return dynamicBuiltinTextResult(
 			command.name +
 				" is an underscore command and does not support shell operators " +
 				"(|, >, <, ;, &, &&, command substitution, or newlines)." +
-				" Issue it as a single pure command. For pipelines or redirections, use a plain " +
-				"shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ....",
+				(suggested && suggested !== rawCommand
+					? ` Issue the leading part alone: \`${suggested}\`. For pipelines or redirections, use a plain ` +
+						"shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ...."
+					: " Issue it as a single pure command. For pipelines or redirections, use a plain " +
+						"shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ...."),
 		);
 	}
 	let params: Record<string, unknown>;
@@ -578,6 +582,18 @@ export function createBashToolDefinition(
 				// outside quotes) is rejected with guidance rather than misbehaving or running
 				// unintended shell commands.
 				if (parsedCommand.heredoc === undefined && hasShellControlSyntax(trimmedCommand)) {
+					const suggested = firstPureCommandSegment(trimmedCommand);
+					const editWriteGuidance =
+						" For multi-line or special-character content, pass it through a channel that " +
+						"preserves it verbatim: edit --edits '{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"line1\\nline2\"}' " +
+						"(JSON keeps quotes/spaces/newlines), a <<EOF heredoc, or wrap the whole value in quotes. " +
+						"Do not split a value across bare positional tokens.";
+					const genericGuidance =
+						suggested && suggested !== trimmedCommand
+							? ` Issue the leading part alone: \`${suggested}\`. For pipelines or redirections, use a plain ` +
+								"shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ...."
+							: " Issue it as a single pure command. For pipelines or redirections, use a plain " +
+								"shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ....";
 					return {
 						content: [
 							{
@@ -586,13 +602,7 @@ export function createBashToolDefinition(
 									firstWord +
 									" is an underscore command and does not support shell operators " +
 									"(|, >, <, ;, &, &&, command substitution, or newlines)." +
-									(["_edit", "edit", "_write", "write"].includes(firstWord)
-										? " For multi-line or special-character content, pass it through a channel that "
-										+ "preserves it verbatim: edit --edits '{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"line1\\nline2\"}' "
-										+ "(JSON keeps quotes/spaces/newlines), a <<EOF heredoc, or wrap the whole value in quotes. "
-										+ "Do not split a value across bare positional tokens."
-									: " Issue it as a single pure command. For pipelines or redirections, use a plain "
-										+ "shell command instead — e.g. grep PATTERN FILE, cat FILE | ..., or sed ...."),
+									(["_edit", "edit", "_write", "write"].includes(firstWord) ? editWriteGuidance : genericGuidance),
 							},
 						],
 						details: undefined,

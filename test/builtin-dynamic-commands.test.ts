@@ -99,6 +99,8 @@ describe("dynamic built-in cli commands (ExtensionAPI.registerBuiltinCommand)", 
     const tool = makeTool(makeEchoCommand());
     const piped = await tool.execute("t5", { command: "_echotest ping | cat" });
     expect(getTextOutput(piped)).toContain("does not support shell operators");
+    // The guidance names the corrected pure command so the caller can retry.
+    expect(getTextOutput(piped)).toContain("Issue the leading part alone: `_echotest ping`");
     const chained = await tool.execute("t6", {
       command: "_echotest ping; echo pwned",
     });

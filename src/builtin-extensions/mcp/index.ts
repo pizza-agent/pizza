@@ -552,7 +552,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			);
 		};
 
-		const refreshConfig = (ctx: ExtensionContext) => {
+		const refreshConfig = (ctx: ExtensionContext, opts?: { connect?: boolean }) => {
 			const loaded = (options.loadConfig ?? defaultLoadConfig)(ctx);
 			configErrors = loaded.errors;
 			projectConfig = loaded.projectConfig;
@@ -574,9 +574,11 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 				]).then(() => undefined).catch(() => undefined));
 			}
 			servers = next;
-			for (const server of servers) {
-				if (!previous.includes(server) && isEnabled(server)) {
-					void startConnection(server, closing.get(server.entry.name)).catch(() => undefined);
+			if (opts?.connect !== false) {
+				for (const server of servers) {
+					if (!previous.includes(server) && isEnabled(server)) {
+						void startConnection(server, closing.get(server.entry.name)).catch(() => undefined);
+					}
 				}
 			}
 			emitChange();
@@ -597,8 +599,14 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			pending.abort.abort();
 		};
 
+		// `-h` help is rendered outside execute() — no ExtensionContext is
+		// available. Reconcile from the session cwd without starting
+		// connections so help never claims an empty configuration.
+		const refreshConfigForHelp = () => refreshConfig({ cwd: sessionCwd } as ExtensionContext, { connect: false });
+
 		const agentCliHost: AgentCliHost = {
 			refreshConfig,
+			refreshConfigForHelp,
 			getServers: () => servers,
 			getConfigErrors: () => configErrors,
 			async waitForServer(name: string, signal?: AbortSignal) {

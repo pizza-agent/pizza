@@ -548,6 +548,15 @@ export type AgentCliSignInResult =
 
 export interface AgentCliHost {
 	refreshConfig?(ctx: ExtensionContext): void;
+	/**
+	 * Re-read mcp.json and rebuild the server list without a live
+	 * ExtensionContext (uses the last known session cwd), and without
+	 * starting connections. Called from the `help` getter, which runs
+	 * before execute() (and its refreshConfig) in the underscore-command
+	 * pipeline — without it, `_agentcli -h` can report "no servers" for a
+	 * session whose list was cleared on session_shutdown.
+	 */
+	refreshConfigForHelp?(): void;
 	getServers(): readonly AgentCliServerView[];
 	getConfigErrors(): readonly string[];
 	waitForServer(name: string, signal?: AbortSignal): Promise<AgentCliServerView | undefined>;
@@ -1237,6 +1246,11 @@ export function createAgentCliBuiltinCommand(host: AgentCliHost): BuiltinCommand
 		name: "_agentcli",
 		description: "Discover and execute tools from configured MCP servers via progressive CLI disclosure.",
 		get help() {
+			// The underscore-command pipeline serves `-h` from this getter
+			// without calling execute(), so refreshConfig(ctx) never runs here.
+			// Reconcile the list from mcp.json first or help can claim no
+			// servers are configured (e.g. after session_shutdown cleared it).
+			host.refreshConfigForHelp?.();
 			return renderTopLevelHelp(host);
 		},
 		parseArguments(args: string[], heredoc?: string) {
