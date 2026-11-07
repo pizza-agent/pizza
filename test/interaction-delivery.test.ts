@@ -112,7 +112,7 @@ describe("interaction delivery lifecycle", () => {
 	it("does not accept scheduled input as a user's answer", async () => {
 		const handlers = new Map<string, Function>();
 		createInteractionExtension({
-			registerBuiltinCommand: () => {},
+			registerCliCommand: () => {},
 			on: (name: string, handler: Function) => handlers.set(name, handler),
 		} as never);
 		const context = {

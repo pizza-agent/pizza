@@ -2,10 +2,11 @@ import { access, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createEditTool } from "../src/core/tools/edit.js";
+import { createEditToolDefinition } from "../src/core/tools/edit.js";
 import { withFileMutationQueue } from "../src/core/tools/file-mutation-queue.js";
 import { formatLineAnchor } from "../src/core/tools/line-anchors.js";
-import { createWriteTool } from "../src/core/tools/write.js";
+import { createWriteToolDefinition } from "../src/core/tools/write.js";
+import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.js";
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,7 +94,7 @@ describe("built-in edit and write tools", () => {
 		const filePath = join(dir, "parallel-edit.txt");
 		await writeFile(filePath, "alpha\nbeta\ngamma\n", "utf8");
 
-		const editTool = createEditTool(dir, {
+		const editTool = wrapToolDefinition(createEditToolDefinition(dir, {
 			operations: {
 				access,
 				readFile: async (path) => {
@@ -106,7 +107,7 @@ describe("built-in edit and write tools", () => {
 					await writeFile(path, content, "utf8");
 				},
 			},
-		});
+		}));
 
 		await Promise.all([
 			editTool.execute("call-1", {
@@ -128,7 +129,7 @@ describe("built-in edit and write tools", () => {
 		const filePath = join(dir, "mixed.txt");
 		await writeFile(filePath, "original\n", "utf8");
 
-		const editTool = createEditTool(dir, {
+		const editTool = wrapToolDefinition(createEditToolDefinition(dir, {
 			operations: {
 				access,
 				readFile: async (path) => {
@@ -141,8 +142,8 @@ describe("built-in edit and write tools", () => {
 					await writeFile(path, content, "utf8");
 				},
 			},
-		});
-		const writeTool = createWriteTool(dir, {
+		}));
+		const writeTool = wrapToolDefinition(createWriteToolDefinition(dir, {
 			operations: {
 				mkdir: async () => {},
 				writeFile: async (path, content) => {
@@ -150,7 +151,7 @@ describe("built-in edit and write tools", () => {
 					await writeFile(path, content, "utf8");
 				},
 			},
-		});
+		}));
 
 		const editPromise = editTool.execute("call-1", {
 			path: filePath,

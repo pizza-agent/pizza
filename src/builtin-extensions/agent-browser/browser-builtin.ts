@@ -21,7 +21,7 @@
  */
 
 import type { AgentToolResult, TextContent } from "../../core/agent/types.js";
-import type { BuiltinCommandDefinition } from "../../core/extensions/types.js";
+import type { CliCommandDefinition } from "../../core/extensions/types.js";
 import { BrowserError, getBrowserController } from "../../core/browser/controller.js";
 import { chromiumStatusLine } from "../../core/browser/chromium.js";
 import { hasNativeBridge, runNative } from "../../core/browser/native-bridge.js";
@@ -311,7 +311,7 @@ async function runBrowserCommand(subcommand: string, parsed: ParsedFlags, signal
 }
 
 /** The `_browser` dynamic built-in cli command definition. */
-export const browserBuiltinCommand: BuiltinCommandDefinition = {
+export const browserBuiltinCommand: CliCommandDefinition = {
 	name: "_browser",
 	description:
 		"Drive the managed Chromium browser (browser-use): open/snapshot/click/type/key/scroll/screenshot/tabs/use/wait/downloads/close/status with ARIA refs.",

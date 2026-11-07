@@ -118,7 +118,7 @@ describe("branch lifecycle validation", () => {
 		const next = vi.fn(async (): Promise<ToolCallEventResult> => ({ block: true, reason: "test guard" }));
 		const extension = (path: string, handler: Extension["handlers"] extends Map<string, Array<infer H>> ? H : never): Extension => ({
 			path, resolvedPath: path, sourceInfo: { path, source: "test", scope: "temporary", origin: "top-level" } as never,
-			handlers: new Map([["tool_call", [handler]]]), tools: new Map(), builtinCommands: new Map(), commands: new Map(), messageRenderers: new Map(), flags: new Map(), shortcuts: new Map(),
+			handlers: new Map([["tool_call", [handler]]]), tools: new Map(), cliCommands: new Map(), commands: new Map(), messageRenderers: new Map(), flags: new Map(), shortcuts: new Map(),
 		});
 		const runner = new ExtensionRunner([extension("broken", async () => { throw new Error("bad hook"); }), extension("guard", next)], createExtensionRuntime(), cwd,
 			new EventStoreExtensionSessionManager({ store, projection: projection(store), cwd }), ModelRegistry.inMemory(AuthStorage.inMemory()));

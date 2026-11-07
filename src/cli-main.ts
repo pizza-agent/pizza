@@ -1,15 +1,18 @@
 /**
  * CLI entry point for the coding agent.
- * Routes read/write/edit built-in commands to builtin-commands.ts.
- * grep, find, ls are not built-in commands — they are passed to the system shell.
- * and passes other commands to main.ts.
+ * `pizza builtin _read|_write|_edit ...` runs a built-in cli command outside a
+ * session through the same command-table entries the cli tool uses; commands
+ * that need a session (_skill, _cron, ...) are rejected. Everything else goes
+ * to main.ts.
  * Loaded dynamically by cli.ts — see that file for why this is not a
  * static import chain.
  */
 import { writeFileSync } from "node:fs";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { executeCompatCommand, COMPAT_COMMANDS } from "./core/tools/compat-commands.js";
-import { executeBuiltinCommand, BUILTIN_COMMANDS } from "./core/tools/builtin-commands.js";
+import { BUILTIN_COMMANDS, createBuiltinCliCommands } from "./core/tools/builtin-cli-commands.js";
+import { isHelpRequest } from "./core/tools/builtin-commands.js";
+import { getCliCommandHelp } from "./core/tools/command-resolve.js";
 import { main } from "./main.js";
 import { cliArguments } from "../packages/cli/argv.js";
 
@@ -45,31 +48,37 @@ if (args[0] === "__compat" && args.length >= 2) {
 	writeCompatOutput(2, result.stderr);
 	process.exitCode = result.exitCode;
 } else if (args[0] === "builtin" && args.length >= 2 && !isBuiltinExtensionCommand) {
-	const command = args[1] as typeof BUILTIN_COMMANDS[number];
-
-	if (!BUILTIN_COMMANDS.includes(command)) {
+	const command = args[1];
+	const cwd = process.cwd();
+	const spec = createBuiltinCliCommands(cwd).find((entry) => entry.name === command);
+	if (!spec) {
 		console.error(`Unknown builtin command: ${command}`);
 		console.error(`Available commands: ${BUILTIN_COMMANDS.join(", ")}`);
 		process.exit(1);
 	}
-
 	const commandArgs = args.slice(2);
-	const cwd = process.cwd();
-
-	executeBuiltinCommand(command, commandArgs, { cwd })
-		.then((result) => {
-			if (result.stdout) {
-				console.log(result.stdout);
-			}
-			if (result.stderr) {
-				console.error(result.stderr);
-			}
-			process.exit(result.exitCode);
-		})
-		.catch((error) => {
-			console.error(`Error executing builtin command: ${error.message}`);
-			process.exit(1);
-		});
+	if (isHelpRequest(commandArgs)) {
+		console.log(getCliCommandHelp(spec));
+		process.exit(0);
+	}
+	// Outside a session only the file commands can run.
+	if (!["_read", "_write", "_edit"].includes(command)) {
+		console.error(`${command} requires an active agent session and is executed through the cli tool.`);
+		process.exit(1);
+	}
+	try {
+		const params = spec.parseArguments!(commandArgs, undefined, {});
+		const result = await spec.execute(`builtin_${Date.now()}`, params, undefined, undefined, {} as never);
+		const text = result.content
+			.filter((block) => block.type === "text")
+			.map((block) => (block as { text: string }).text)
+			.join("\n");
+		if (text) console.log(text);
+		process.exit(0);
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
 } else {
 	main(args);
 }

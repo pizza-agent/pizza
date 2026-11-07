@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBashTool } from "../src/core/tools/bash.js";
+import { createCliTestTool } from "./helpers/cli-tool.js";
 import type { CronToolOptions } from "../src/core/tools/cron.js";
 import type { SchedulerEngine } from "../src/core/scheduler/engine.js";
 import type { ScheduledTaskSummary } from "../packages/protocol/index.js";
@@ -57,7 +57,7 @@ function mockEngine(list: ScheduledTaskSummary[] = []): {
 
 describe("_cron built-in cli command", () => {
 	it("is recognized as a built-in and shows help (no longer 'command not found')", async () => {
-		const tool = createBashTool(process.cwd());
+		const tool = createCliTestTool(process.cwd());
 		const result = await tool.execute("cron-help", { command: "_cron -h" });
 		const output = getTextOutput(result);
 		expect(output).toContain("_cron - Manage scheduled/cron jobs");
@@ -66,12 +66,11 @@ describe("_cron built-in cli command", () => {
 	});
 
 	it("degrades gracefully when no scheduler engine is configured", async () => {
-		const tool = createBashTool(process.cwd());
-		const result = await tool.execute("cron-list-no-engine", { command: "_cron list" });
-		const output = getTextOutput(result);
+		const tool = createCliTestTool(process.cwd());
 		// Not available because the cli tool has no cron option wired.
-		expect(output).toContain("not available");
-		expect(output).toMatch(/scheduler/i);
+		await expect(tool.execute("cron-list-no-engine", { command: "_cron list" })).rejects.toThrow(
+			/not available.*scheduler|scheduler.*not available/is,
+		);
 	});
 
 	it("routes _cron list through the cli tool to the engine", async () => {
@@ -96,12 +95,12 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 		const result = await tool.execute("cron-list", { command: "_cron list" });
 		const output = getTextOutput(result);
 		expect(output).toContain("st_abc");
 		expect(output).toContain("self-review");
-		expect(result.details?.builtin?.name).toBe("cron");
+		expect(result.details?.command?.name).toBe("_cron");
 	});
 
 	it("routes _cron create to the engine with a parsed schedule", async () => {
@@ -111,7 +110,7 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 		const result = await tool.execute("cron-create", {
 			command: '_cron create --schedule 30m --name "self-review" --prompt "review changes"',
 		});
@@ -145,7 +144,7 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 		const result = await tool.execute("cron-show", { command: "_cron show st_daily" });
 		const output = getTextOutput(result);
 		// Prompt body is present (the whole point of `show`).
@@ -177,7 +176,7 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 
 		// Compact list does NOT show the prompt body.
 		const compact = getTextOutput(await tool.execute("cron-list", { command: "_cron list" }));
@@ -211,7 +210,7 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 
 		// Move the daily fire from 09:00 to 10:10 — the exact scenario from the report.
 		const result = await tool.execute("cron-update", {
@@ -247,7 +246,7 @@ describe("_cron built-in cli command", () => {
 			scope: "main",
 			getActiveSessionId: () => "sess_1",
 		};
-		const tool = createBashTool(process.cwd(), { cron: cronOptions });
+		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
 		const output = getTextOutput(await tool.execute("cron-update-noop", { command: "_cron update --task st_n" }));
 		expect(output).toContain("nothing to change");
 	});

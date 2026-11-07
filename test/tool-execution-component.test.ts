@@ -6,9 +6,11 @@ import { Type } from "@sinclair/typebox";
 import stripAnsi from "strip-ansi";
 import { beforeAll, afterEach, describe, expect, test, vi } from "vitest";
 import type { ToolDefinition } from "../src/core/extensions/types.js";
-import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
+import type { BashOperations } from "../src/core/tools/shell.js";
+import { createCliTestToolDefinition } from "./helpers/cli-tool.js";
 import { formatLineAnchor } from "../src/core/tools/line-anchors.js";
-import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
+import { createReadToolDefinition } from "../src/core/tools/read.js";
+import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";
 import { ToolExecutionComponent } from "../packages/tui/components/tool-execution.js";
 import { initTheme } from "../packages/tui/theme/theme.js";
@@ -69,7 +71,7 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("custom result");
 	});
 
-	test("uses built-in rendering for built-in overrides without custom renderers", () => {
+	test("renders tools without custom renderers generically", () => {
 		const overrideDefinition: ToolDefinition = {
 			...createBaseToolDefinition("edit"),
 		};
@@ -83,11 +85,12 @@ describe("ToolExecutionComponent parity", () => {
 			createFakeTui(),
 			process.cwd(),
 		);
-		component.updateResult({ content: [], details: { diff: "+1 after", firstChangedLine: 1 }, isError: false });
+		component.updateResult({ content: [{ type: "text", text: "done" }], details: { diff: "+1 after", firstChangedLine: 1 }, isError: false });
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("edit");
-		expect(rendered).toContain("README.md");
-		expect(rendered).not.toContain(":1");
+		expect(rendered).toContain("done");
+		// Generic rendering shows no structured args/diff.
+		expect(rendered).not.toContain("README.md");
 	});
 
 	test("preserves legacy file_path rendering compatibility for built-in tools", () => {
@@ -108,7 +111,7 @@ describe("ToolExecutionComponent parity", () => {
 	test("cli call renders its timeout in milliseconds", () => {
 		const component = new ToolExecutionComponent(
 			"cli", "tool-timeout-ms", { command: "echo ok", timeout: 1500 }, {},
-			createBashToolDefinition(process.cwd()), createFakeTui(), process.cwd(),
+			createCliTestToolDefinition(process.cwd()), createFakeTui(), process.cwd(),
 		);
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("(timeout 1500ms)");
 	});
@@ -121,7 +124,7 @@ describe("ToolExecutionComponent parity", () => {
 				return { exitCode: 0 };
 			},
 		};
-		const tool = createBashToolDefinition(process.cwd(), { operations });
+		const tool = createCliTestToolDefinition(process.cwd(), { operations });
 		const promise = tool.execute(
 			"tool-cli-1",
 			{ command: "sleep 10" },
@@ -137,13 +140,13 @@ describe("ToolExecutionComponent parity", () => {
 		const testDir = await mkdtemp(join(tmpdir(), "pizza-cli-builtin-read-"));
 		try {
 			await writeFile(join(testDir, "sample.txt"), "hello\nworld\n", "utf-8");
-			const tool = createBashToolDefinition(testDir);
+			const tool = createCliTestToolDefinition(testDir);
 			const result = await tool.execute("tool-cli-read", { command: "_read sample.txt --offset 2 --limit 1" });
 
 			expect(result.content[0]?.type).toBe("text");
 			expect(result.content[0]?.text).toContain("world");
-			expect(result.details?.builtin).toMatchObject({
-				name: "read",
+			expect(result.details?.command).toMatchObject({
+				name: "_read",
 				args: { path: "sample.txt", offset: 2, limit: 1 },
 			});
 		} finally {
@@ -168,7 +171,7 @@ describe("ToolExecutionComponent parity", () => {
 		component.updateToolCall(
 			"cli",
 			{ command: "ls -la /Users/gongchao/coding/" },
-			undefined,
+			createCliTestToolDefinition(process.cwd()),
 		);
 
 		const cliRendered = stripAnsi(component.render(120).join("\n"));
@@ -183,7 +186,7 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-cli-read-render",
 			{ command: "_read README.md --offset 2 --limit 3" },
 			{},
-			createBashToolDefinition(process.cwd()),
+			createCliTestToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -197,9 +200,9 @@ describe("ToolExecutionComponent parity", () => {
 		const component = new ToolExecutionComponent(
 			"cli",
 			"tool-cli-edit-render",
-			{ command: `edit --path README.md --op replace --range ${formatLineAnchor(1, "before")} --new after` },
+			{ command: `_edit --path README.md --op replace --range ${formatLineAnchor(1, "before")} --new after` },
 			{},
-			createBashToolDefinition(process.cwd()),
+			createCliTestToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -207,8 +210,9 @@ describe("ToolExecutionComponent parity", () => {
 			{
 				content: [{ type: "text", text: "Successfully applied 1 edit(s) in README.md." }],
 				details: {
-					builtin: {
-						name: "edit",
+					command: {
+						source: "builtin",
+						name: "_edit",
 						args: { path: "README.md", edits: [{ op: "replace", range: formatLineAnchor(1, "before"), new: "after" }] },
 						details: { diff: "@@ -1 +1 @@\n-before\n+after", firstChangedLine: 1 },
 					},
@@ -259,7 +263,7 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("hello");
 	});
 
-	test("inherits missing built-in call renderer slot from the built-in tool", () => {
+	test("renders the call generically when only the result renderer is custom", () => {
 		const overrideDefinition: ToolDefinition = {
 			...createBaseToolDefinition("read"),
 			renderResult: () => new Text("override result", 0, 0),
@@ -277,7 +281,6 @@ describe("ToolExecutionComponent parity", () => {
 		component.updateResult({ content: [{ type: "text", text: "hello" }], details: undefined, isError: false }, false);
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("read");
-		expect(rendered).toContain("README.md");
 		expect(rendered).toContain("override result");
 	});
 
@@ -304,7 +307,7 @@ describe("ToolExecutionComponent parity", () => {
 	});
 
 	test("uses custom renderers for built-in overrides that reuse wrapped built-in tool parameters", () => {
-		const builtInTool = createReadTool(process.cwd());
+		const builtInTool = wrapToolDefinition(createReadToolDefinition(process.cwd()));
 		const component = new ToolExecutionComponent(
 			"read",
 			"tool-4e",

@@ -201,7 +201,7 @@ export const createAgentBrowserExtension: ExtensionFactory = (pizza: ExtensionAP
 	// The in-process managed-browser engine: one dynamic command, registered
 	// like computer-use's `_computer_use` (intercepted by the cli tool before
 	// shell fallback; no extra tool schemas in the model context).
-	pizza.registerBuiltinCommand(browserBuiltinCommand);
+	pizza.registerCliCommand(browserBuiltinCommand);
 
 	// Inject a short hint into the system prompt at the start of every agent turn.
 	// The full command reference is left for the model to discover via

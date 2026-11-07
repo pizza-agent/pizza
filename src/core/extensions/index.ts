@@ -35,8 +35,15 @@ export type {
 	// App keybindings (for custom editors)
 	AppKeybinding,
 	// Events - Tool (ToolCallEvent types)
-	BashToolCallEvent,
-	BashToolResultEvent,
+	CliToolCallEvent,
+	CliToolResultEvent,
+	// cli command table
+	CliCommandDefinition,
+	CliCommandParseMeta,
+	RegisteredCliCommand,
+	ResolvedToolCall,
+	ToolCallCommand,
+	ToolCallIntent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	BeforeProviderRequestEvent,
@@ -51,8 +58,6 @@ export type {
 	ContextUsage,
 	CustomToolCallEvent,
 	CustomToolResultEvent,
-	EditToolCallEvent,
-	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -84,22 +89,16 @@ export type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
-	FindToolCallEvent,
-	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetCommandsHandler,
 	GetThinkingLevelHandler,
-	GrepToolCallEvent,
-	GrepToolResultEvent,
 	// Events - Input
 	InputEvent,
 	InputEventResult,
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
-	LsToolCallEvent,
-	LsToolResultEvent,
 	McpExposure,
 	McpHttpServerConfig,
 	McpOAuthConfig,
@@ -118,8 +117,6 @@ export type {
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
-	ReadToolCallEvent,
-	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
@@ -173,19 +170,12 @@ export type {
 	UserBashEventResult,
 	WidgetPlacement,
 	WorkingIndicatorOptions,
-	WriteToolCallEvent,
-	WriteToolResultEvent,
 } from "./types.js";
 // Type guards
 export {
+	defineCliCommand,
 	defineTool,
-	isBashToolResult,
-	isEditToolResult,
-	isFindToolResult,
-	isGrepToolResult,
-	isLsToolResult,
-	isReadToolResult,
+	isCliToolResult,
 	isToolCallEventType,
-	isWriteToolResult,
 } from "./types.js";
 export { wrapRegisteredTool, wrapRegisteredTools } from "./wrapper.js";

@@ -2,7 +2,7 @@
  * Public SDK entry point.
  *
  * Exposes `createSessionFacade()` as the primary session creation API,
- * plus tool factories and type exports for extension development.
+ * plus the cli command-table helpers and type exports for extension development.
  */
 
 export {
@@ -11,14 +11,18 @@ export {
 	type CreateSessionFacadeResult,
 } from "./session/session-facade-factory.js";
 export type {
+	CliCommandDefinition,
+	CliCommandParseMeta,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionFactory,
 	SlashCommandInfo,
 	SlashCommandSource,
+	ToolCallIntent,
 	ToolDefinition,
 } from "./extensions/index.js";
+export { defineCliCommand } from "./extensions/index.js";
 export type { PromptTemplate } from "./context/prompt-templates.js";
 export type { Skill } from "./skills/skills.js";
 export type {
@@ -26,20 +30,14 @@ export type {
 	ResourceLoader,
 } from "./config/resource-loader.js";
 export { DefaultResourceLoader } from "./config/resource-loader.js";
-export type { Tool } from "./tools/index.js";
-
 export {
+	BUILTIN_COMMANDS,
+	type BuiltinCommand,
+	DEFAULT_TOOLS,
+	type ShellOptions,
+	type ShellPolicy,
+	type ToolsOptionEntry,
 	withFileMutationQueue,
-	// Tool factories (for custom cwd)
-	createCodingTools,
-	createReadOnlyTools,
-	createReadTool,
-	createBashTool,
-	createEditTool,
-	createWriteTool,
-	createGrepTool,
-	createFindTool,
-	createLsTool,
 } from "./tools/index.js";
 
 export * from "./event-store/async-storage.js";

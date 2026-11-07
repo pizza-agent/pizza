@@ -13,11 +13,8 @@ import { buildSessionBreadcrumb } from "../projection/history-tree.js";
 import type { SessionManager as ProjectionSessionManager } from "../projection/session-manager.js";
 import type { ResourceLoader } from "../config/resource-loader.js";
 import { buildSystemPrompt } from "../context/system-prompt.js";
-import { createToolDefinition } from "../tools/index.js";
-import type { BashToolOptions } from "../tools/bash.js";
-import { createHistoryTreeToolDefinition } from "../tools/history-tree.js";
-import { createSessionSplitToolDefinition } from "../tools/session-split.js";
-import { createTellToolDefinition } from "../tools/tell.js";
+import type { CommandRegistry } from "../tools/command-registry.js";
+import type { ShellOptions } from "../tools/shell.js";
 
 export interface PromptBuilderDeps {
 	cwd: string;
@@ -31,13 +28,16 @@ export interface PromptBuilderDeps {
 	mainInitiativePrompt?: () => string;
 	resourceLoader: ResourceLoader;
 	sessionManager: ProjectionSessionManager;
-	toolOptions: { read: { autoResizeImages: boolean }; cli: BashToolOptions };
+	/** The cli tool's command table; its available commands are documented in the prompt. */
+	commandRegistry: CommandRegistry;
+	/** Shell fallback of the cli tool; undefined when disabled. */
+	shell: ShellOptions | undefined;
 }
 
 export type PromptBuilder = (definitions: ExtensionToolDefinition[]) => string;
 
 export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
-	const { cwd, agentDir, mainDir, memoryDir, isMainAgent, resourceLoader, sessionManager, toolOptions } = deps;
+	const { cwd, mainDir, memoryDir, isMainAgent, resourceLoader, sessionManager, commandRegistry, shell } = deps;
 
 	return (definitions: ExtensionToolDefinition[]): string => {
 		const appendSystemPrompt = resourceLoader.getAppendSystemPrompt();
@@ -56,29 +56,16 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 			}
 		}
 
-		// read/write/edit/session_split/history_tree/tell are built-in
-		// cli commands routed internally by the cli tool, not separate tools; ensure
-		// their prompt guidelines are included whenever the cli tool is active, so the
-		// model sees how to use each built-in under the single cli tool.
-		if (definitions.some((definition) => definition.name === "cli" || definition.name === "bash")) {
-			// Only promptGuidelines is consumed below; type loosely to avoid
-			// renderCall contravariance between the concrete tool definitions.
-			const builtinDefs: Array<{ promptGuidelines?: string[] }> = [
-				createToolDefinition("read", cwd, toolOptions),
-				createToolDefinition("write", cwd, toolOptions),
-				createToolDefinition("edit", cwd, toolOptions),
-				createSessionSplitToolDefinition(),
-				createHistoryTreeToolDefinition(),
-			];
-			if (agentDir) {
-				builtinDefs.push(createTellToolDefinition({ agentDir, mainDir }));
-			}
-			for (const builtinDef of builtinDefs) {
-				for (const guideline of builtinDef.promptGuidelines ?? []) {
-					const normalized = guideline.trim();
-					if (normalized) {
-						promptGuidelines.push(normalized);
-					}
+		// Commands of the cli tool are not separate tools: document the ones
+		// available right now (built-in, SDK and extension) and collect their
+		// guidelines whenever the cli tool is active.
+		const hasCli = definitions.some((definition) => definition.name === "cli");
+		const cliCommands = hasCli ? commandRegistry.available().map((entry) => entry.spec) : [];
+		for (const command of cliCommands) {
+			for (const guideline of command.promptGuidelines ?? []) {
+				const normalized = guideline.trim();
+				if (normalized) {
+					promptGuidelines.push(normalized);
 				}
 			}
 		}
@@ -108,6 +95,13 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 			customPrompt: resourceLoader.getSystemPrompt(),
 			appendSystemPrompt: appendSystemPrompt.length > 0 ? appendSystemPrompt.join("\n\n") : undefined,
 			selectedTools: definitions.map((definition) => definition.name),
+			cli: hasCli
+				? {
+						commands: cliCommands.map(({ name, description, usage }) => ({ name, description, usage })),
+						shell: shell !== undefined,
+						shellAllow: shell?.policy?.allow?.map((rule) => (typeof rule === "string" ? rule : rule.toString())),
+					}
+				: undefined,
 			toolSnippets,
 			promptGuidelines,
 			soulFile,

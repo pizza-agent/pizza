@@ -58,27 +58,15 @@ import type { ExtensionSessionManager } from "./session-context.js";
 import type { SlashCommandInfo } from "../commands/slash-commands.js";
 import type { SourceInfo } from "../skills/source-info.js";
 import type { BuildSystemPromptOptions } from "../context/system-prompt.js";
-import type { BashOperations } from "../tools/bash.js";
-import type { EditToolDetails } from "../tools/edit.js";
+import type { BashOperations } from "../tools/shell.js";
+import type { ResolvedToolCall, ToolCallCommand, ToolCallIntent } from "../intent/types.js";
 import type { McpExposure, McpHttpServerConfig, McpOAuthConfig, McpServerConfig, McpServerRegistry, McpStdioServerConfig, RegisteredMcpServer } from "../mcp/servers.js";
-import type {
-	BashToolDetails,
-	BashToolInput,
-	EditToolInput,
-	FindToolDetails,
-	FindToolInput,
-	GrepToolDetails,
-	GrepToolInput,
-	LsToolDetails,
-	LsToolInput,
-	ReadToolDetails,
-	ReadToolInput,
-	WriteToolInput,
-} from "../tools/index.js";
+import type { CliToolDetails, CliToolInput } from "../tools/cli.js";
 
 export type { ExecOptions, ExecResult } from "../exec/exec.js";
 export type { BuildSystemPromptOptions } from "../context/system-prompt.js";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
+export type { ResolvedToolCall, ToolCallCommand, ToolCallIntent };
 export type { AppKeybinding, KeybindingsManager } from "../commands/keybindings.js";
 export type { McpExposure, McpHttpServerConfig, McpOAuthConfig, McpServerConfig, McpStdioServerConfig, RegisteredMcpServer };
 
@@ -494,6 +482,13 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	prepareArguments?: (args: unknown) => Static<TParams>;
 
 	/**
+	 * Resolve a call once, before approval. The result feeds the classifier,
+	 * the `tool_call` hook and execution (the cli tool resolves its command
+	 * against the command table here).
+	 */
+	resolve?(args: Static<TParams>, toolCallId: string): ResolvedToolCall | undefined;
+
+	/**
 	 * Per-tool execution mode override.
 	 * - "sequential": this tool must execute one at a time with other tool calls.
 	 * - "parallel": this tool can execute concurrently with other tool calls.
@@ -834,41 +829,13 @@ export interface McpServersChangeEvent {
 interface ToolCallEventBase {
 	type: "tool_call";
 	toolCallId: string;
+	/** Structured command resolved before approval (cli: name + parsed params). */
+	command?: ToolCallCommand;
 }
 
-export interface BashToolCallEvent extends ToolCallEventBase {
-	toolName: "bash";
-	input: BashToolInput;
-}
-
-export interface ReadToolCallEvent extends ToolCallEventBase {
-	toolName: "read";
-	input: ReadToolInput;
-}
-
-export interface EditToolCallEvent extends ToolCallEventBase {
-	toolName: "edit";
-	input: EditToolInput;
-}
-
-export interface WriteToolCallEvent extends ToolCallEventBase {
-	toolName: "write";
-	input: WriteToolInput;
-}
-
-export interface GrepToolCallEvent extends ToolCallEventBase {
-	toolName: "grep";
-	input: GrepToolInput;
-}
-
-export interface FindToolCallEvent extends ToolCallEventBase {
-	toolName: "find";
-	input: FindToolInput;
-}
-
-export interface LsToolCallEvent extends ToolCallEventBase {
-	toolName: "ls";
-	input: LsToolInput;
+export interface CliToolCallEvent extends ToolCallEventBase {
+	toolName: "cli";
+	input: CliToolInput;
 }
 
 export interface CustomToolCallEvent extends ToolCallEventBase {
@@ -884,15 +851,7 @@ export interface CustomToolCallEvent extends ToolCallEventBase {
  * Runs after any approval and before execution; returning `{ block: true }` or throwing
  * rejects the call (fail closed). Mutations affect execution only, not the logged intent.
  */
-export type ToolCallEvent =
-	| BashToolCallEvent
-	| ReadToolCallEvent
-	| EditToolCallEvent
-	| WriteToolCallEvent
-	| GrepToolCallEvent
-	| FindToolCallEvent
-	| LsToolCallEvent
-	| CustomToolCallEvent;
+export type ToolCallEvent = CliToolCallEvent | CustomToolCallEvent;
 
 interface ToolResultEventBase {
 	type: "tool_result";
@@ -902,39 +861,9 @@ interface ToolResultEventBase {
 	isError: boolean;
 }
 
-export interface BashToolResultEvent extends ToolResultEventBase {
-	toolName: "bash";
-	details: BashToolDetails | undefined;
-}
-
-export interface ReadToolResultEvent extends ToolResultEventBase {
-	toolName: "read";
-	details: ReadToolDetails | undefined;
-}
-
-export interface EditToolResultEvent extends ToolResultEventBase {
-	toolName: "edit";
-	details: EditToolDetails | undefined;
-}
-
-export interface WriteToolResultEvent extends ToolResultEventBase {
-	toolName: "write";
-	details: undefined;
-}
-
-export interface GrepToolResultEvent extends ToolResultEventBase {
-	toolName: "grep";
-	details: GrepToolDetails | undefined;
-}
-
-export interface FindToolResultEvent extends ToolResultEventBase {
-	toolName: "find";
-	details: FindToolDetails | undefined;
-}
-
-export interface LsToolResultEvent extends ToolResultEventBase {
-	toolName: "ls";
-	details: LsToolDetails | undefined;
+export interface CliToolResultEvent extends ToolResultEventBase {
+	toolName: "cli";
+	details: CliToolDetails | undefined;
 }
 
 export interface CustomToolResultEvent extends ToolResultEventBase {
@@ -943,66 +872,26 @@ export interface CustomToolResultEvent extends ToolResultEventBase {
 }
 
 /** Fired after a tool executes. Can modify result. */
-export type ToolResultEvent =
-	| BashToolResultEvent
-	| ReadToolResultEvent
-	| EditToolResultEvent
-	| WriteToolResultEvent
-	| GrepToolResultEvent
-	| FindToolResultEvent
-	| LsToolResultEvent
-	| CustomToolResultEvent;
+export type ToolResultEvent = CliToolResultEvent | CustomToolResultEvent;
 
-// Type guards for ToolResultEvent
-export function isBashToolResult(e: ToolResultEvent): e is BashToolResultEvent {
-	return e.toolName === "bash";
-}
-export function isReadToolResult(e: ToolResultEvent): e is ReadToolResultEvent {
-	return e.toolName === "read";
-}
-export function isEditToolResult(e: ToolResultEvent): e is EditToolResultEvent {
-	return e.toolName === "edit";
-}
-export function isWriteToolResult(e: ToolResultEvent): e is WriteToolResultEvent {
-	return e.toolName === "write";
-}
-export function isGrepToolResult(e: ToolResultEvent): e is GrepToolResultEvent {
-	return e.toolName === "grep";
-}
-export function isFindToolResult(e: ToolResultEvent): e is FindToolResultEvent {
-	return e.toolName === "find";
-}
-export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
-	return e.toolName === "ls";
+export function isCliToolResult(e: ToolResultEvent): e is CliToolResultEvent {
+	return e.toolName === "cli";
 }
 
 /**
  * Type guard for narrowing ToolCallEvent by tool name.
  *
- * Built-in tools narrow automatically (no type params needed):
  * ```ts
- * if (isToolCallEventType("bash", event)) {
+ * if (isToolCallEventType("cli", event)) {
  *   event.input.command;  // string
+ *   event.command?.name;  // e.g. "_write"
  * }
- * ```
- *
- * Custom tools require explicit type parameters:
- * ```ts
  * if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
  *   event.input.action;  // typed
  * }
  * ```
- *
- * Note: Direct narrowing via `event.toolName === "bash"` doesn't work because
- * CustomToolCallEvent.toolName is `string` which overlaps with all literals.
  */
-export function isToolCallEventType(toolName: "bash", event: ToolCallEvent): event is BashToolCallEvent;
-export function isToolCallEventType(toolName: "read", event: ToolCallEvent): event is ReadToolCallEvent;
-export function isToolCallEventType(toolName: "edit", event: ToolCallEvent): event is EditToolCallEvent;
-export function isToolCallEventType(toolName: "write", event: ToolCallEvent): event is WriteToolCallEvent;
-export function isToolCallEventType(toolName: "grep", event: ToolCallEvent): event is GrepToolCallEvent;
-export function isToolCallEventType(toolName: "find", event: ToolCallEvent): event is FindToolCallEvent;
-export function isToolCallEventType(toolName: "ls", event: ToolCallEvent): event is LsToolCallEvent;
+export function isToolCallEventType(toolName: "cli", event: ToolCallEvent): event is CliToolCallEvent;
 export function isToolCallEventType<TName extends string, TInput extends Record<string, unknown>>(
 	toolName: TName,
 	event: ToolCallEvent,
@@ -1204,14 +1093,14 @@ export interface ExtensionAPI {
 	registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;
 
 	/**
-	 * Register a dynamic built-in cli command (e.g. computer-use's `_computer_use`).
-	 * Like the static _read/_edit family it is intercepted by the cli tool before
-	 * shell fallback: it must be a pure single command (no shell operators) and its
-	 * execute runs in-process with the session's ExtensionContext.
-	 * The name must be an underscore token ("_" + lowercase identifier) and must
-	 * not collide with the static built-ins (_read, _edit, ...).
+	 * Register a command in the cli tool's command table (e.g. computer-use's
+	 * `_computer_use`). Like the built-in _read/_edit family it is intercepted
+	 * by the cli tool before shell fallback: it must be a pure single command
+	 * (no shell operators) and its execute runs in-process with the session's
+	 * ExtensionContext. The name must be an underscore token ("_" + lowercase
+	 * identifier) and must not collide with the built-ins (_read, _edit, ...).
 	 */
-	registerBuiltinCommand(command: BuiltinCommandDefinition): void;
+	registerCliCommand(command: CliCommandDefinition): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(
@@ -1474,41 +1363,76 @@ export interface RegisteredTool {
 	sourceInfo: SourceInfo;
 }
 
+/** Parser metadata passed to CliCommandDefinition.parseArguments. */
+export interface CliCommandParseMeta {
+	/** Quote characters the shell-word splitter consumed as quoting (see parseCliCommandLine). */
+	quoteDelimitersConsumed?: number;
+}
+
 /**
- * A dynamic built-in cli command registered by an extension via
- * ExtensionAPI.registerBuiltinCommand (e.g. computer-use's `_computer_use`).
+ * One entry of the cli tool's command table. Built-in commands (_read,
+ * _write, ...), extension commands (ExtensionAPI.registerCliCommand) and SDK
+ * commands (`tools: [defineCliCommand(...)]`) all share this shape.
  *
- * Like the static _read/_edit family, these are intercepted by the cli tool
- * BEFORE shell fallback: pure single commands with no shell operators,
- * executed in-process so the extension keeps its in-memory state (e.g.
- * computer-use's stateId/@ref machines).
+ * Commands are intercepted by the cli tool BEFORE shell fallback: pure single
+ * commands with no shell operators, executed in-process with the session's
+ * ExtensionContext.
  */
-export interface BuiltinCommandDefinition {
+export interface CliCommandDefinition<P = any> {
 	/** Command token including the underscore prefix, e.g. `_computer_use`. */
 	name: string;
-	/** One-line summary, shown in the cli tool description and the help index. */
+	/** One-line summary, shown in the cli tool description and the system prompt command table. */
 	description: string;
-	/** Full help text returned for `<name> -h` / `--help` / `help`. */
-	help: string;
+	/** Usage line, e.g. `_read <path> [offset] [limit]`. */
+	usage?: string;
+	/** Full help text for `<name> -h` / `--help` / `help`. Generated from description/usage/parameters when omitted. */
+	help?: string;
+	/** Extra system-prompt guideline bullets while the command is available. */
+	promptGuidelines?: string[];
 	/**
 	 * Convert raw cli words (tokens after the command name; heredoc content is
 	 * passed separately) into execute params. Throw an Error with a user-facing
-	 * message on invalid arguments — the cli tool surfaces it as clean text.
+	 * message on invalid arguments. Either this or `parameters` is required.
 	 */
-	parseArguments: (args: string[], heredoc?: string) => Record<string, unknown>;
-	/** Execute with params from parseArguments. Same contract as ToolDefinition.execute. */
+	parseArguments?: (args: string[], heredoc: string | undefined, meta: CliCommandParseMeta) => P;
+	/**
+	 * TypeBox object schema; the cli tool derives `--flag value` parsing from it
+	 * (booleans as bare `--flag`, plus `--json '<object>'` for any value).
+	 */
+	parameters?: TSchema;
+	/** Environment check; when false the command is left out of the prompt and calls return unavailable. */
+	isAvailable?: () => boolean;
+	/** Message returned when isAvailable() is false. */
+	unavailableReason?: string;
+	/** Approval category for one invocation. Omitted → "unknown". */
+	classify?: (params: P) => ToolCallIntent;
+	/** Execute with parsed params. Same contract as ToolDefinition.execute. */
 	execute: (
 		toolCallId: string,
-		params: Record<string, unknown>,
+		params: P,
 		signal: AbortSignal | undefined,
 		onUpdate: AgentToolUpdateCallback<any> | undefined,
 		ctx: ExtensionContext,
 	) => Promise<AgentToolResult<any>>;
+	/** Custom TUI rendering for the call (receives parsed params). */
+	renderCall?: (args: P, theme: Theme, context: ToolRenderContext<any, P>) => Component;
+	/** Custom TUI rendering for the result (receives the command's own details). */
+	renderResult?: (
+		result: AgentToolResult<any>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+		context: ToolRenderContext<any, P>,
+	) => Component;
 }
 
-/** A BuiltinCommandDefinition annotated with the registering extension's source info. */
-export interface RegisteredBuiltinCommand extends BuiltinCommandDefinition {
+/** A CliCommandDefinition annotated with the registering extension's source info. */
+export interface RegisteredCliCommand extends CliCommandDefinition {
 	sourceInfo: SourceInfo;
+}
+
+/** Preserve parameter inference for a standalone cli command definition. */
+export function defineCliCommand<P>(command: CliCommandDefinition<P>): CliCommandDefinition<P> {
+	return command;
 }
 
 export interface ExtensionFlag {
@@ -1666,7 +1590,7 @@ export interface Extension {
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
-	builtinCommands: Map<string, RegisteredBuiltinCommand>;
+	cliCommands: Map<string, RegisteredCliCommand>;
 	messageRenderers: Map<string, MessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;

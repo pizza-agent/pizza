@@ -1,55 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { detectChainedBuiltin } from "../src/core/tools/bash.js";
+import { detectChainedBuiltin } from "../src/core/tools/shell.js";
+import { BUILTIN_COMMANDS } from "../src/core/tools/builtin-cli-commands.js";
+
+const TOKENS = [...BUILTIN_COMMANDS, "_echotest"];
 
 describe("detectChainedBuiltin", () => {
-	it("returns the built-in when chained after &&", () => {
-		expect(detectChainedBuiltin("sed -i '' x && _read src/main.ts 88 8")).toBe("_read");
+	it("detects a built-in command chained after &&", () => {
+		expect(detectChainedBuiltin("sed -i '' x && _read src/main.ts 88 8", TOKENS)).toBe("_read");
 	});
 
-	it("returns the built-in when chained after ;", () => {
-		expect(detectChainedBuiltin("echo hi; _write out.txt hello")).toBe("_write");
+	it("detects a built-in command after ;", () => {
+		expect(detectChainedBuiltin("echo hi; _write out.txt hello", TOKENS)).toBe("_write");
 	});
 
-	it("returns the built-in when chained after |", () => {
-		expect(detectChainedBuiltin("echo hi | _edit f.ts replace 1#a x")).toBe("_edit");
+	it("detects a built-in command after |", () => {
+		expect(detectChainedBuiltin("echo hi | _edit f.ts replace 1#a x", TOKENS)).toBe("_edit");
 	});
 
-	it("returns the built-in when chained after ||", () => {
-		expect(detectChainedBuiltin("false || _history_tree list")).toBe("_history_tree");
+	it("detects other built-ins in chains", () => {
+		expect(detectChainedBuiltin("false || _history_tree list", TOKENS)).toBe("_history_tree");
+		expect(detectChainedBuiltin("a && b && _session_split topic", TOKENS)).toBe("_session_split");
+		expect(detectChainedBuiltin("foo && _tell list", TOKENS)).toBe("_tell");
 	});
 
-	it("returns the built-in for the trailing segment after the last operator", () => {
-		expect(detectChainedBuiltin("a && b && _session_split topic")).toBe("_session_split");
+	it("returns null when the built-in leads the command", () => {
+		expect(detectChainedBuiltin("_read src/main.ts", TOKENS)).toBeNull();
 	});
 
-	it("ignores a built-in that is the FIRST word (that one routes through normal parsing)", () => {
-		expect(detectChainedBuiltin("_read src/main.ts")).toBeNull();
-	});
-
-	it("does not false-positive on content that merely contains the word", () => {
-		// _read appears only as data / inside quotes / as a search pattern — not as a
-		// command after an operator. These should not be flagged.
-		expect(detectChainedBuiltin("grep _read file.txt")).toBeNull();
-		expect(detectChainedBuiltin("echo '_read is great' && true")).toBeNull();
-		expect(detectChainedBuiltin("printf '%s' _read")).toBeNull();
+	it("ignores _-tokens that are not the first word of a later segment", () => {
+		expect(detectChainedBuiltin("grep _read file.txt", TOKENS)).toBeNull();
+		expect(detectChainedBuiltin("echo '_read is great' && true", TOKENS)).toBeNull();
+		expect(detectChainedBuiltin("printf '%s' _read", TOKENS)).toBeNull();
 	});
 
 	it("is case-insensitive", () => {
-		expect(detectChainedBuiltin("foo && _READ x")).toBe("_read");
+		expect(detectChainedBuiltin("foo && _READ x", TOKENS)).toBe("_read");
 	});
 
-	it("is not fooled by a quoted operator", () => {
-		// The && is inside quotes, so the whole thing is one segment whose first word
-		// is echo — no built-in chained after an operator.
-		expect(detectChainedBuiltin("echo 'a && _read'")).toBeNull();
+	it("ignores _-tokens inside quoted strings", () => {
+		expect(detectChainedBuiltin("echo 'a && _read'", TOKENS)).toBeNull();
 	});
 
-	it("recognizes _tell", () => {
-		expect(detectChainedBuiltin("foo && _tell list")).toBe("_tell");
+	it("covers dynamic extension command tokens", () => {
+		expect(detectChainedBuiltin("sed -i '' x && _echotest ping", TOKENS)).toBe("_echotest");
 	});
 
-	it("returns null for a normal shell command", () => {
-		expect(detectChainedBuiltin("grep -rn foo . | head")).toBeNull();
-		expect(detectChainedBuiltin("git status && git diff")).toBeNull();
+	it("returns null for commands with no command-table names", () => {
+		expect(detectChainedBuiltin("grep -rn foo . | head", TOKENS)).toBeNull();
+		expect(detectChainedBuiltin("git status && git diff", TOKENS)).toBeNull();
 	});
 });

@@ -22,11 +22,12 @@ import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec/exec.js";
 import { execCommand } from "../exec/exec.js";
 import { createSyntheticSourceInfo } from "../skills/source-info.js";
+import { validateCliCommand } from "../tools/command-registry.js";
 import { type McpServerConfig, McpServerRegistry, mcpNamespace, validateMcpServerConfig } from "../mcp/servers.js";
 import { petService, type PetActionDef } from "../pet/service.js";
 import { isValidSpecies, type PetMood, type PetSpeciesDef } from "../pet/sprites.js";
 import type {
-	BuiltinCommandDefinition,
+	CliCommandDefinition,
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
@@ -39,34 +40,6 @@ import type {
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.js";
-
-/** Underscore tokens owned by the core static built-in commands; extensions must not shadow them. */
-const STATIC_BUILTIN_TOKENS: ReadonlySet<string> = new Set([
-	"_read",
-	"_write",
-	"_edit",
-	"_session_split",
-	"_history_tree",
-	"_skill",
-	"_cron",
-	"_tell",
-]);
-
-/**
- * Validate a dynamic built-in command token: "_" + lowercase identifier
- * (letters/digits/underscore/hyphen), and never a collision with the static
- * built-in commands (_read, _write, ...).
- */
-function validateBuiltinCommandName(name: string): void {
-	if (!/^_[a-z][a-z0-9_-]*$/.test(name)) {
-		throw new Error(
-			`Invalid builtin command name: ${name}. Must be an underscore token like "_computer_use" (lowercase letters, digits, - or _).`,
-		);
-	}
-	if (STATIC_BUILTIN_TOKENS.has(name.toLowerCase())) {
-		throw new Error(`Builtin command name ${name.toLowerCase()} collides with a static built-in command.`);
-	}
-}
 
 /**
  * Modules available to extensions via virtualModules (compiled Bun binary
@@ -276,13 +249,11 @@ function createExtensionAPI(
 			runtime.refreshTools();
 		},
 
-		registerBuiltinCommand(command: BuiltinCommandDefinition): void {
+		registerCliCommand(command: CliCommandDefinition): void {
 			runtime.assertActive();
-			validateBuiltinCommandName(command.name);
-			const name = command.name.toLowerCase();
-			extension.builtinCommands.set(name, {
+			validateCliCommand(command);
+			extension.cliCommands.set(command.name, {
 				...command,
-				name,
 				sourceInfo: extension.sourceInfo,
 			});
 			runtime.refreshTools();
@@ -512,7 +483,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		sourceInfo: createSyntheticSourceInfo(extensionPath, { source, baseDir }),
 		handlers: new Map(),
 		tools: new Map(),
-		builtinCommands: new Map(),
+		cliCommands: new Map(),
 		messageRenderers: new Map(),
 		commands: new Map(),
 		flags: new Map(),

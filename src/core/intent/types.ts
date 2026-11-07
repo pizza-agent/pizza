@@ -36,6 +36,37 @@ export interface IntentClassification {
 	description: string;
 }
 
+/**
+ * Classification hint a tool declares for one call (e.g. the cli tool for a
+ * resolved `_write`). The classifier still derives risk/requires_approval
+ * from its own config; the hint only picks the category.
+ */
+export interface ToolCallIntent {
+	category: IntentCategory;
+	affectedFiles?: string[];
+	description?: string;
+	/** Approval gate for file_write: "edits" uses require_approval_edits (default: writes). */
+	gate?: "writes" | "edits";
+}
+
+/** Structured command a tool call resolved to (cli: `_write` + parsed params). */
+export interface ToolCallCommand {
+	name: string;
+	source: "builtin" | "extension" | "sdk" | "shell";
+	params?: unknown;
+}
+
+/**
+ * Result of resolving a tool call once, before approval. Shared by the
+ * classifier, the `tool_call` hook, and execution so the same command is
+ * never parsed differently by different consumers.
+ */
+export interface ResolvedToolCall {
+	/** Undefined → classifier falls back to its own rules for the tool. */
+	intent?: ToolCallIntent;
+	command?: ToolCallCommand;
+}
+
 // ============================================================================
 // Intent Execution
 // ============================================================================
@@ -75,6 +106,8 @@ export interface ToolRegistry {
 /** Tool executor interface */
 export interface ToolExecutor {
 	execute(args: Record<string, unknown>, options?: ToolExecutionOptions): Promise<ToolExecutionResult>;
+	/** Resolve a call once before approval (see ResolvedToolCall). */
+	resolve?(args: Record<string, unknown>, toolCallId: string): ResolvedToolCall | undefined;
 	getMetadata(): ToolMetadata;
 }
 

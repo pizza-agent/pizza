@@ -12,7 +12,7 @@ import {
 import { listInteractionCapabilities, registerInteractionCapabilities } from "../src/core/interaction/capabilities.js";
 import { interactionCardSchema, validateInteractionAnswer } from "../src/core/interaction/schema.js";
 import { createInteractionExtension } from "../src/builtin-extensions/interaction/index.js";
-import type { BuiltinCommandDefinition, ExtensionContext } from "../src/core/extensions/types.js";
+import type { CliCommandDefinition, ExtensionContext } from "../src/core/extensions/types.js";
 
 const card = {
 	title: "认识一下",
@@ -147,10 +147,10 @@ describe("durable dynamic interactions", () => {
 		expect(listInteractionCapabilities(store)).toEqual([]);
 	});
 	it("serves a nonblocking GUI card, accepts ordinary chat, and falls back to terminal prompts", async () => {
-		let command: BuiltinCommandDefinition | undefined;
+		let command: CliCommandDefinition | undefined;
 		const handlers = new Map<string, Function>();
 		createInteractionExtension({
-			registerBuiltinCommand: (c: BuiltinCommandDefinition) => {
+			registerCliCommand: (c: CliCommandDefinition) => {
 				command = c;
 			},
 			on: (name: string, handler: Function) => handlers.set(name, handler),

@@ -11,63 +11,37 @@
  */
 
 import type { AgentTool } from "../agent/types.js";
-import type { IntentCategory, IntentRisk, ToolExecutionOptions, ToolExecutionResult, ToolExecutor, ToolMetadata, ToolRegistry } from "./types.js";
+import type {
+	IntentCategory,
+	IntentRisk,
+	ResolvedToolCall,
+	ToolExecutionOptions,
+	ToolExecutionResult,
+	ToolExecutor,
+	ToolMetadata,
+	ToolRegistry,
+} from "./types.js";
 import type { FileMutation } from "../event-store/types.js";
-import type { BashToolDetails } from "../tools/bash.js";
+import type { CliToolDetails } from "../tools/cli.js";
 
 // ============================================================================
 // File Mutation Detection
 // ============================================================================
 
-/** Tools known to mutate files */
-const FILE_MUTATING_TOOLS = new Set(["edit", "edit_diff", "write", "cli", "bash"]);
-
 /**
- * Infer file mutations from a tool execution.
- *
- * For write/edit tools, the path is in the arguments.
- * For cli/bash, we cannot reliably detect mutations (best-effort).
+ * Infer file mutations from a tool execution: the cli tool's `_write` /
+ * `_edit` commands report their target path. Shell commands cannot be
+ * detected reliably and are not reported.
  */
-function inferFileMutations(
-	toolName: string,
-	args: Record<string, unknown>,
-	_result: ToolExecutionResult,
-): FileMutation[] | undefined {
-	if (!FILE_MUTATING_TOOLS.has(toolName)) return undefined;
-
-	switch (toolName) {
-		case "edit":
-		case "edit_diff": {
-			const path = args.path as string | undefined;
-			if (path) return [{ path, operation: "modify" }];
-			return undefined;
-		}
-		case "write": {
-			const path = args.path as string | undefined;
-			if (path) return [{ path, operation: "create" }];
-			return undefined;
-		}
-		case "cli":
-		case "bash": {
-			const details = _result.details as BashToolDetails | undefined;
-			const builtin = details?.builtin;
-			if (!builtin) return undefined;
-			// Static built-ins (write/edit) carry typed args; dynamic built-ins
-			// (extension-registered names) carry untyped records and never match
-			// the write/edit checks below.
-			if (builtin.name !== "write" && builtin.name !== "edit") return undefined;
-			const args = builtin.args as { path?: string };
-			if (builtin.name === "write" && args.path) {
-				return [{ path: args.path, operation: "create" }];
-			}
-			if (builtin.name === "edit" && args.path) {
-				return [{ path: args.path, operation: "modify" }];
-			}
-			return undefined;
-		}
-		default:
-			return undefined;
-	}
+function inferFileMutations(toolName: string, result: ToolExecutionResult): FileMutation[] | undefined {
+	if (toolName !== "cli") return undefined;
+	const command = (result.details as CliToolDetails | undefined)?.command;
+	if (command?.source !== "builtin") return undefined;
+	const path = (command.args as { path?: string } | undefined)?.path;
+	if (!path) return undefined;
+	if (command.name === "_write") return [{ path, operation: "create" }];
+	if (command.name === "_edit") return [{ path, operation: "modify" }];
+	return undefined;
 }
 
 // ============================================================================
@@ -76,25 +50,7 @@ function inferFileMutations(
 
 /** Map AgentTool name to IntentCategory */
 function inferCategory(toolName: string): IntentCategory {
-	switch (toolName) {
-		case "read":
-		case "find":
-		case "grep":
-		case "ls":
-		case "path_utils":
-			return "file_read";
-		case "write":
-		case "edit":
-		case "edit_diff":
-			return "file_write";
-		case "cli":
-		case "bash":
-			return "shell_moderate";
-		case "truncate":
-			return "file_delete";
-		default:
-			return "unknown";
-	}
+	return toolName === "cli" ? "shell_moderate" : "unknown";
 }
 
 /** Map category to default risk */
@@ -149,7 +105,7 @@ export class AgentToolAdapter implements ToolExecutor {
 			};
 
 			// Detect file mutations
-			const mutations = inferFileMutations(this.tool.name, args, executionResult);
+			const mutations = inferFileMutations(this.tool.name, executionResult);
 			if (mutations?.length) {
 				executionResult.file_mutations = mutations;
 			}
@@ -163,6 +119,10 @@ export class AgentToolAdapter implements ToolExecutor {
 				error_message: msg,
 			};
 		}
+	}
+
+	resolve(args: Record<string, unknown>, toolCallId: string): ResolvedToolCall | undefined {
+		return this.tool.resolve?.(args, toolCallId);
 	}
 
 	getMetadata(): ToolMetadata {

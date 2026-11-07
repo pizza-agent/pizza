@@ -23,7 +23,7 @@ import { MCP_CONNECTOR_CATALOG } from "../connectors/catalog.js";
 import { join, resolve } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
-import type { AgentToolResult, BuiltinCommandDefinition, ExtensionContext } from "../../core/extensions/types.js";
+import type { AgentToolResult, CliCommandDefinition, ExtensionContext } from "../../core/extensions/types.js";
 import { type CallToolResult, type ContentBlock, type Tool as McpTool, toLlmContent } from "../../core/mcp/index.js";
 import { getMcpToolExposure, type McpServerConfig, validateMcpServerConfig } from "../../core/mcp/servers.js";
 import { formatSize, truncateMiddle } from "../../core/tools/truncate.js";
@@ -1238,10 +1238,10 @@ async function handleResourceCommand(
 }
 
 // ============================================================================
-// BuiltinCommandDefinition factory
+// CliCommandDefinition factory
 // ============================================================================
 
-export function createAgentCliBuiltinCommand(host: AgentCliHost): BuiltinCommandDefinition {
+export function createAgentCliBuiltinCommand(host: AgentCliHost): CliCommandDefinition {
 	return {
 		name: "_agentcli",
 		description: "Discover and execute tools from configured MCP servers via progressive CLI disclosure.",

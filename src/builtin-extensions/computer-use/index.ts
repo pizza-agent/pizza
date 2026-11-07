@@ -461,7 +461,7 @@ export const createComputerUseExtension: ExtensionFactory = (
 ) => {
   // The _computer_use cli command: same engine, invoked through the cli tool's
   // dynamic built-in interception (in-process, shares the stateId/@ref state).
-  pizza.registerBuiltinCommand(computerUseBuiltinCommand);
+  pizza.registerCliCommand(computerUseBuiltinCommand);
 
   pizza.registerCommand("computer", {
     description: "Manage the built-in computer-use desktop automation helper.",

@@ -235,12 +235,12 @@ describe("runRpcModeWithFacade", () => {
 		const parseArguments = vi.fn((args: string[]) => ({ args }));
 		const ctx = { cwd: "/workspace" };
 		Object.defineProperty(facade, "extensionRunner", { value: {
-			getAllRegisteredBuiltinCommands: () => [{ name: "_agentcli", parseArguments, execute }],
+			getAllRegisteredCliCommands: () => [{ name: "_agentcli", parseArguments, execute }],
 			createContext: () => ctx,
 		} });
 		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-list", type: "mcp_command", args: ["server", "list", "--include-config"] }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-list", success: true, data: { text: '{"ok":true,"data":[]}' } })));
-		expect(parseArguments).toHaveBeenCalledWith(["server", "list", "--include-config"]);
+		expect(parseArguments).toHaveBeenCalledWith(["server", "list", "--include-config"], undefined, {});
 		expect(execute).toHaveBeenCalledWith(expect.any(String), { args: ["server", "list", "--include-config"] }, undefined, undefined, ctx);
 		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-invalid", type: "mcp_command", args: [42] }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-invalid", success: false })));
@@ -258,7 +258,7 @@ describe("runRpcModeWithFacade", () => {
 		Object.defineProperty(facade, "extensionRunner", {
 			value: {
 				setUIContext: () => {},
-				getAllRegisteredBuiltinCommands: () => [{ name: "_interact" }],
+				getAllRegisteredCliCommands: () => [{ name: "_interact" }],
 				createContext: () => ({ sessionManager: { eventStore: store } }),
 			},
 		});

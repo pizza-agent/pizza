@@ -1,4 +1,3 @@
-import type { AgentTool } from "../agent/types.js";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
@@ -19,7 +18,6 @@ import {
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { toolRenderBridge as tui } from "./render-bridge.js";
 
 type EditPreview = EditDiffResult | EditDiffError;
@@ -524,6 +522,3 @@ export function createEditToolDefinition(
 	};
 }
 
-export function createEditTool(cwd: string, options?: EditToolOptions): AgentTool<typeof editSchema> {
-	return wrapToolDefinition(createEditToolDefinition(cwd, options));
-}

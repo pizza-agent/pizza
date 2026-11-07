@@ -10,7 +10,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { makePrivateLogPath, PRIVATE_LOG_MODE } from "../../utils/temp-files.js";
 import stripAnsi from "strip-ansi";
 import { sanitizeBinaryOutput } from "../../utils/shell.js";
-import type { BashOperations } from "../tools/bash.js";
+import type { BashOperations } from "../tools/shell.js";
 import { DEFAULT_MAX_BYTES, truncateTail } from "../tools/truncate.js";
 
 // ============================================================================

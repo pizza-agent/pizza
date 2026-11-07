@@ -236,6 +236,8 @@ export class EventSourcedRuntime {
 				llmClient: this.config.llmClient,
 				classifier: this.classifier,
 				toolRegistry: this.config.toolRegistry,
+				resolveToolCall: (toolName, args, toolCallId) =>
+					this.config.toolRegistry.get(toolName)?.resolve?.(args, toolCallId),
 				approvalHandler: this.config.approvalHandler,
 				beforeToolCall: this.config.beforeToolCall,
 				runtimeAdapter: this.runtimeAdapter,

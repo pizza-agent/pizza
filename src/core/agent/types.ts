@@ -145,6 +145,8 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = unk
 	executionMode?: ToolExecutionMode;
 	/** Optional shim for raw tool-call arguments before schema validation. */
 	prepareArguments?: (args: unknown) => Static<TParameters>;
+	/** Resolve a call once before approval (classifier / tool_call hook / execute share it). */
+	resolve?: (args: Static<TParameters>, toolCallId: string) => import("../intent/types.js").ResolvedToolCall | undefined;
 	/** Execute the tool call. Throw on failure. */
 	execute: (
 		toolCallId: string,

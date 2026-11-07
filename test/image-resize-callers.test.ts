@@ -9,7 +9,8 @@ vi.mock("../src/utils/image-resize.js", () => ({
 }));
 
 import { processFileArguments } from "../packages/cli/file-processor.js";
-import { createReadTool } from "../src/core/tools/read.js";
+import { createReadToolDefinition } from "../src/core/tools/read.js";
+import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.js";
 import { resizeImage } from "../src/utils/image-resize.js";
 
 const TINY_PNG_BASE64 =
@@ -33,7 +34,7 @@ describe("image resize callers", () => {
 		const imagePath = join(testDir, "test.png");
 		writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 
-		const tool = createReadTool(testDir);
+		const tool = wrapToolDefinition(createReadToolDefinition(testDir));
 		const result = await tool.execute("test-read-image", { path: imagePath });
 
 		expect(result.content).toHaveLength(1);

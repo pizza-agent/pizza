@@ -11,12 +11,10 @@ import type { ExtensionRunner } from "../extensions/index.js";
 import type { ToolDefinition as RuntimeToolDefinition } from "../runtime/llm-types.js";
 import type { EventSourcedRuntime } from "../runtime/runtime.js";
 import { createSyntheticSourceInfo } from "../skills/source-info.js";
-import { allToolNames, createToolDefinition, type ToolName } from "../tools/index.js";
+import { createCliToolDefinition } from "../tools/cli.js";
+import type { CommandRegistry } from "../tools/command-registry.js";
+import type { ShellOptions } from "../tools/shell.js";
 import type { PromptBuilder } from "./prompt-builder.js";
-
-function isBuiltInToolName(name: string): name is ToolName {
-	return allToolNames.has(name as ToolName);
-}
 
 export function toRuntimeToolDefinition(definition: ExtensionToolDefinition): RuntimeToolDefinition {
 	return {
@@ -28,10 +26,10 @@ export function toRuntimeToolDefinition(definition: ExtensionToolDefinition): Ru
 
 export interface ToolAssemblyDeps {
 	cwd: string;
-	requestedToolNames: string[];
-	/** When set, only these tool names are exposed (options.tools allowlist). */
-	allowedToolNames: Set<string> | undefined;
-	toolOptions: Parameters<typeof createToolDefinition>[2];
+	/** The cli tool's command table (built-in, SDK and extension commands). */
+	commandRegistry: CommandRegistry;
+	/** Shell fallback of the cli tool; undefined disables the shell. */
+	shell: ShellOptions | undefined;
 	extensionRunner: ExtensionRunner;
 	customTools: ExtensionToolDefinition[];
 	buildPrompt: PromptBuilder;
@@ -71,42 +69,25 @@ export class ToolAssembly {
 		return this._active.map(toRuntimeToolDefinition);
 	}
 
-	private _include(name: string): boolean {
-		return !this.deps.allowedToolNames || this.deps.allowedToolNames.has(name);
-	}
-
 	private _buildAvailable(): void {
 		const definitions = new Map<string, ExtensionToolDefinition>();
 		const sources = new Map<string, ToolInfo["sourceInfo"]>();
 
-		for (const name of this.deps.requestedToolNames) {
-			if (!isBuiltInToolName(name) || !this._include(name)) continue;
-			// The cli tool additionally routes extension-registered dynamic built-in
-			// commands (e.g. computer-use's _computer_use); wire the lazy provider
-			// here so the tool sees commands from every loaded extension.
-			const toolOptions =
-				name === "cli"
-					? {
-							...this.deps.toolOptions,
-							cli: {
-								...this.deps.toolOptions?.cli,
-								dynamicBuiltins: () => this.deps.extensionRunner.getAllRegisteredBuiltinCommands(),
-							},
-						}
-					: this.deps.toolOptions;
-			const definition = createToolDefinition(name, this.deps.cwd, toolOptions);
-			definitions.set(definition.name, definition);
-			sources.set(definition.name, createSyntheticSourceInfo(`<builtin:${definition.name}>`, { source: "builtin" }));
+		// The cli tool is rebuilt every time so its description tracks the
+		// command table. With no commands and no shell there is nothing to run.
+		const { commandRegistry, shell } = this.deps;
+		if (shell || commandRegistry.entries().length > 0) {
+			const cli = createCliToolDefinition(this.deps.cwd, { registry: commandRegistry, shell });
+			definitions.set(cli.name, cli as unknown as ExtensionToolDefinition);
+			sources.set(cli.name, createSyntheticSourceInfo(`<builtin:${cli.name}>`, { source: "builtin" }));
 		}
 
 		for (const tool of this.deps.extensionRunner.getAllRegisteredTools()) {
-			if (!this._include(tool.definition.name)) continue;
 			definitions.set(tool.definition.name, tool.definition);
 			sources.set(tool.definition.name, tool.sourceInfo);
 		}
 
 		for (const definition of this.deps.customTools) {
-			if (!this._include(definition.name)) continue;
 			definitions.set(definition.name, definition);
 			sources.set(definition.name, createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }));
 		}
