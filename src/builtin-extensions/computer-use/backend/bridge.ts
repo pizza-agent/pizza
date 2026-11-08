@@ -1831,10 +1831,10 @@ export function reconstructStateFromBranch(ctx: ExtensionContext): void {
 		let rawDetails = message.details as any;
 		if (message.toolName === "cli") {
 			// Result routed through the _computer_use cli command: the backend
-			// details are nested under details.builtin.details.
-			const builtin = rawDetails?.builtin;
-			if (builtin?.name !== CLI_COMMAND_NAME) continue;
-			rawDetails = builtin.details;
+			// details are nested under details.command.details.
+			const command = rawDetails?.command;
+			if (command?.name !== CLI_COMMAND_NAME) continue;
+			rawDetails = command.details;
 		} else if (!AGENT_TOOL_NAMES.has(message.toolName)) {
 			continue;
 		}

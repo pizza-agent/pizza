@@ -13,6 +13,7 @@ import type { EventSourcedRuntime } from "../runtime/runtime.js";
 import { createSyntheticSourceInfo } from "../skills/source-info.js";
 import { createCliToolDefinition } from "../tools/cli.js";
 import type { CommandRegistry } from "../tools/command-registry.js";
+import type { ResolvedCliCommand } from "../tools/command-resolve.js";
 import type { ShellOptions } from "../tools/shell.js";
 import type { PromptBuilder } from "./prompt-builder.js";
 
@@ -30,6 +31,10 @@ export interface ToolAssemblyDeps {
 	commandRegistry: CommandRegistry;
 	/** Shell fallback of the cli tool; undefined disables the shell. */
 	shell: ShellOptions | undefined;
+	/** Whether the user asked for any cli capability (`tools: []` turns it off). */
+	cliEnabled: boolean;
+	/** Session-owned pre-approval resolutions, passed through to the cli tool. */
+	resolvedCommandCache: Map<string, ResolvedCliCommand>;
 	extensionRunner: ExtensionRunner;
 	customTools: ExtensionToolDefinition[];
 	buildPrompt: PromptBuilder;
@@ -75,9 +80,13 @@ export class ToolAssembly {
 
 		// The cli tool is rebuilt every time so its description tracks the
 		// command table. With no commands and no shell there is nothing to run.
-		const { commandRegistry, shell } = this.deps;
-		if (shell || commandRegistry.entries().length > 0) {
-			const cli = createCliToolDefinition(this.deps.cwd, { registry: commandRegistry, shell });
+		const { commandRegistry, shell, cliEnabled, resolvedCommandCache } = this.deps;
+		if (cliEnabled && (shell || commandRegistry.entries().length > 0)) {
+			const cli = createCliToolDefinition(this.deps.cwd, {
+				registry: commandRegistry,
+				shell,
+				resolvedCache: resolvedCommandCache,
+			});
 			definitions.set(cli.name, cli as unknown as ExtensionToolDefinition);
 			sources.set(cli.name, createSyntheticSourceInfo(`<builtin:${cli.name}>`, { source: "builtin" }));
 		}

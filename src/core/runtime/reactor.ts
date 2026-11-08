@@ -1266,6 +1266,9 @@ export class Reactor {
 		result: ToolExecutionResult,
 		causedBy: string,
 	): void {
+		// The call dies here: drop its pre-approval resolution (the gate path
+		// deletes its own entry before running hooks).
+		this._resolvedToolCalls.delete(tool_call_id);
 		this._emit({
 			actor_id: "runtime",
 			type: "TOOL_EXECUTION_START",

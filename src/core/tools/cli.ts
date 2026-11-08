@@ -44,6 +44,13 @@ export interface CliToolOptions {
 	registry: CommandRegistry;
 	/** Shell fallback configuration; undefined disables the shell entirely. */
 	shell?: ShellOptions;
+	/**
+	 * Pre-approval resolutions consumed by execute. Pass a session-owned map so
+	 * resolutions survive tool rebuilds — rebuilding drops a private cache and
+	 * would silently re-resolve against a command table that changed while an
+	 * approval was pending.
+	 */
+	resolvedCache?: Map<string, ResolvedCliCommand>;
 }
 
 const RESOLVED_CACHE_LIMIT = 256;
@@ -224,7 +231,7 @@ export function createCliToolDefinition(
 	const operations = shell ? (shell.operations ?? createLocalBashOperations({ shellPath: shell.shellPath })) : undefined;
 	const resolveContext = { registry, shell };
 	/** Resolutions made before approval, consumed by execute (keyed by tool call id). */
-	const resolvedCache = new Map<string, ResolvedCliCommand>();
+	const resolvedCache = options.resolvedCache ?? new Map<string, ResolvedCliCommand>();
 	const { description, snippet } = describeCli(
 		registry.available().map((entry) => entry.spec),
 		shell,

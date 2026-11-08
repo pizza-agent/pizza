@@ -47,6 +47,7 @@ import { SettingsManager } from "../config/settings-manager.js";
 import { DEFAULT_TOOLS, parseToolsOption, type ToolsOptionEntry } from "../tools/index.js";
 import { createBuiltinCliCommands } from "../tools/builtin-cli-commands.js";
 import { CommandRegistry } from "../tools/command-registry.js";
+import type { ResolvedCliCommand } from "../tools/command-resolve.js";
 import type { ShellOptions } from "../tools/shell.js";
 import type { SchedulerEngine } from "../scheduler/engine.js";
 import { wrapToolDefinitions } from "../tools/tool-definition-wrapper.js";
@@ -294,6 +295,13 @@ export async function createSessionFacade(
 	);
 
 	const toolsOption = parseToolsOption(options.tools ?? DEFAULT_TOOLS);
+	// `tools: []` disables the cli tool entirely — extension commands alone must
+	// not resurrect it (they ride the same command table).
+	const cliEnabled = toolsOption.builtins.size > 0 || toolsOption.shell || toolsOption.commands.length > 0;
+	// Pre-approval command resolutions keyed by tool call id. Session-owned so
+	// they survive cli tool rebuilds (otherwise a rebuild between approval and
+	// execution would silently re-resolve against a changed command table).
+	const resolvedCommandCache = new Map<string, ResolvedCliCommand>();
 	const shell: ShellOptions | undefined = toolsOption.shell
 		? {
 				commandPrefix: settingsManager.getShellCommandPrefix(),
@@ -362,6 +370,8 @@ export async function createSessionFacade(
 		cwd,
 		commandRegistry,
 		shell,
+		cliEnabled,
+		resolvedCommandCache,
 		extensionRunner,
 		customTools: options.customTools ?? [],
 		buildPrompt,

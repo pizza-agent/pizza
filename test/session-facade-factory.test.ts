@@ -167,6 +167,34 @@ describe("createSessionFacade", () => {
 		facade.dispose();
 	});
 
+	it("omits the cli tool for tools:[] even when extensions register commands", async () => {
+		const extension = makeExtension();
+		extension.cliCommands.set("_ext_test", {
+			name: "_ext_test",
+			description: "test command",
+			sourceInfo: extension.sourceInfo,
+			execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
+		} as never);
+
+		const { facade } = await createSessionFacade({
+			...makeOptions(),
+			resourceLoader: makeResourceLoader([extension]),
+			tools: [],
+		});
+		expect(facade.tools.map((t) => t.name)).not.toContain("cli");
+
+		// Any cli entry (built-in, shell or sdk command) turns the tool back on.
+		const enabled = await createSessionFacade({
+			...makeOptions(),
+			resourceLoader: makeResourceLoader([extension]),
+			tools: ["_read"],
+		});
+		expect(enabled.facade.tools.map((t) => t.name)).toContain("cli");
+
+		facade.dispose();
+		enabled.facade.dispose();
+	});
+
 	it("wires ExtensionRunner to EventStore events", async () => {
 		const extension = makeExtension();
 		let observedText = "";
