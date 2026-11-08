@@ -270,9 +270,9 @@ ${chalk.bold("Options:")}
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching
-  --no-tools                     Disable all tools by default (built-in and extension)
-  --tools <tools>                Comma-separated allowlist of tool names to enable
-                                 Applies to built-in and extension tools
+  --no-tools                     Start with no commands and no shell (the cli tool is omitted unless --tools adds entries back)
+  --tools <tools>                Comma-separated list of cli command names ("_read", "_write", ...)
+                                 and "shell" to enable the shell fallback
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
@@ -342,7 +342,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+  ${APP_NAME} --tools _read,shell -p "Review the code in src/"
 
   # Persistent ("main") agent with soul + long-term memory
   ${APP_NAME} --main

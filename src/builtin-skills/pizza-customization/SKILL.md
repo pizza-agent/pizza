@@ -129,7 +129,7 @@ API surface (methods on `pizza`):
   `waitForIdle`, `newSession`, `fork`, `switchSession`, `navigateTree`, and
   `reload` (hot-reload resources after writing files).
 - `pizza.registerShortcut`, `pizza.registerFlag` (new `--flag` CLI options),
-  `pizza.registerBuiltinCommand` (in-process `_name` commands the cli tool
+  `pizza.registerCliCommand` (in-process `_name` commands the cli tool
   calls before shell fallback), `pizza.registerMessageRenderer`.
   Flag values are injected after factories finish loading — `pizza.getFlag`
   returns `undefined` inside the factory; read it in event/command handlers.

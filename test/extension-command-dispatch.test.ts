@@ -83,7 +83,7 @@ describe("SessionFacade slash-command dispatch", () => {
 			sourceInfo: { path: `test-${commandName}`, source: "test", scope: "temporary", origin: "top-level" } as never,
 			handlers: new Map(),
 			tools: new Map(),
-			builtinCommands: new Map(),
+			cliCommands: new Map(),
 			commands: new Map([
 				[
 					commandName,

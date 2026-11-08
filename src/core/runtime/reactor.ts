@@ -41,6 +41,8 @@ import type { EventStore, EventAppendInput } from "../event-store/store.js";
 import type {
 	ApprovalHandler,
 	IntentClassification,
+	ResolvedToolCall,
+	ToolCallCommand,
 	ToolExecutionUpdate,
 	ToolExecutionResult,
 	ToolRegistry,
@@ -61,6 +63,8 @@ export interface ToolCallGateInput {
 	tool_call_id: string;
 	tool_name: string;
 	arguments: Record<string, unknown>;
+	/** Structured command the call resolved to before approval (cli: `_write` + params). */
+	command?: ToolCallCommand;
 }
 export type ToolCallGate = (
 	call: ToolCallGateInput,
@@ -78,6 +82,12 @@ export interface ReactorConfig {
 	classifier: IntentClassifier;
 	toolRegistry: ToolRegistry;
 	approvalHandler?: ApprovalHandler;
+	/**
+	 * Resolve a tool call once, before classification. The result picks the
+	 * approval category and is handed to the `tool_call` gate; the tool keeps
+	 * its own copy for execution (keyed by tool call id).
+	 */
+	resolveToolCall?: (toolName: string, args: Record<string, unknown>, toolCallId: string) => ResolvedToolCall | undefined;
 	/** Authoritative pre-execution gate (e.g. extension `tool_call` handlers).
 	 * Runs after approval and before TOOL_EXECUTION_START. It receives a private
 	 * copy of the arguments; in-place mutations are what the tool executes.
@@ -253,6 +263,8 @@ export class Reactor {
 	 * latest state; intermediate updates inside this window are dropped.
 	 */
 	private _lastToolUpdateAt = new Map<string, number>();
+	/** Resolutions made at classification time, consumed when the call executes. */
+	private readonly _resolvedToolCalls = new Map<string, ResolvedToolCall>();
 	private static readonly TOOL_UPDATE_MIN_INTERVAL_MS = 120;
 	constructor(config: ReactorConfig) {
 		this.config = config;
@@ -1021,7 +1033,8 @@ export class Reactor {
 
 		// Emit one INTENT_TOOL_CALL per tool call
 		for (const toolCall of toolCalls) {
-			const classification = this.config.classifier.classify(toolCall.name, toolCall.arguments);
+			const resolved = this._resolveToolCall(toolCall.name, toolCall.arguments, toolCall.id);
+			const classification = this.config.classifier.classify(toolCall.name, toolCall.arguments, resolved);
 			this._emit({
 				actor_id: "coder_agent",
 				type: "INTENT_TOOL_CALL",
@@ -1036,6 +1049,18 @@ export class Reactor {
 				caused_by: event.event_id,
 			});
 		}
+	}
+
+	/** Resolve once per tool call; a failing resolver degrades to the classifier's own rules. */
+	private _resolveToolCall(toolName: string, args: Record<string, unknown>, toolCallId: string): ResolvedToolCall | undefined {
+		let resolved: ResolvedToolCall | undefined;
+		try {
+			resolved = this.config.resolveToolCall?.(toolName, args, toolCallId);
+		} catch {
+			resolved = undefined;
+		}
+		if (resolved) this._resolvedToolCalls.set(toolCallId, resolved);
+		return resolved;
 	}
 
 	// ─── INTENT_TOOL_CALL ──────────────────────────────────────────────────
@@ -1121,6 +1146,8 @@ export class Reactor {
 
 		// Private copy: gate mutations must not leak into the logged intent event.
 		const args = structuredClone(payload.arguments ?? {});
+		const resolved = this._resolvedToolCalls.get(payload.tool_call_id);
+		this._resolvedToolCalls.delete(payload.tool_call_id);
 		if (this.config.beforeToolCall) {
 			let decision: { block?: boolean; reason?: string } | undefined | void;
 			try {
@@ -1128,6 +1155,7 @@ export class Reactor {
 					tool_call_id: payload.tool_call_id,
 					tool_name: payload.tool_name,
 					arguments: args,
+					command: resolved?.command,
 				});
 			} catch (err) {
 				decision = { block: true, reason: `tool_call hook failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -1238,6 +1266,9 @@ export class Reactor {
 		result: ToolExecutionResult,
 		causedBy: string,
 	): void {
+		// The call dies here: drop its pre-approval resolution (the gate path
+		// deletes its own entry before running hooks).
+		this._resolvedToolCalls.delete(tool_call_id);
 		this._emit({
 			actor_id: "runtime",
 			type: "TOOL_EXECUTION_START",

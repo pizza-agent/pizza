@@ -80,7 +80,7 @@ export interface WaitForParams extends StateTargetParams, UiCondition {}
  * Name of the extension's dynamic built-in cli command (`_computer_use`).
  * When the backend is invoked through the cli tool, tool results are recorded
  * under toolName "cli" with the backend details nested in
- * details.builtin.details — session restore unwraps that shape.
+ * details.command.details — session restore unwraps that shape.
  */
 export const CLI_COMMAND_NAME = "_computer_use";
 

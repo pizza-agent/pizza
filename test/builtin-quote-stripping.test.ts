@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { createBashTool } from "../src/core/tools/bash.js";
+import { createCliTestTool } from "./helpers/cli-tool.js";
 import { parseBuiltinCommand, parseBuiltinToolInput } from "../src/core/tools/builtin-commands.js";
 import { splitShellWordsWithMeta } from "../src/core/exec/shell-words.js";
 
@@ -142,21 +142,25 @@ describe("cli tool — end-to-end (no silent file corruption)", () => {
 	});
 
 	it("returns a guidance error AND leaves the file unchanged for the footgun input", async () => {
-		const bash = createBashTool(testDir);
-		const result = await bash.execute("guard-1", { command: `_edit ${file.replace(/\\/g, "/")} replace 1#xx x: secret("S", "d"),` });
-
-		const out = (result.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-		expect(out).toMatch(/quote-stripped/);
-		expect(out).toMatch(/--new|--edits|heredoc/);
+		const bash = createCliTestTool(testDir);
+		let error: Error | undefined;
+		try {
+			await bash.execute("guard-1", { command: `_edit ${file.replace(/\\/g, "/")} replace 1#xx x: secret("S", "d"),` });
+		} catch (e) {
+			error = e as Error;
+		}
+		expect(error).toBeInstanceOf(Error);
+		expect(error!.message).toMatch(/quote-stripped/);
+		expect(error!.message).toMatch(/--new|--edits|heredoc/);
 		// The guidance must include a concrete, copy-pasteable rewrite (a JSON
 		// --edits template for edit), not just "use --edits".
-		expect(out).toMatch(/--edits '\[\{"op":"replace"/);
+		expect(error!.message).toMatch(/--edits '\[\{"op":"replace"/);
 		// Crucially: the file was NOT modified.
 		expect(readFileSync(file, "utf-8")).toBe('  x: secret("OLD", "old"),\n');
 	});
 
 	it("applies the edit correctly via --edits JSON (quotes/spaces preserved)", async () => {
-		const bash = createBashTool(testDir);
+		const bash = createCliTestTool(testDir);
 		// Anchor the only line. Use search-free JSON edit with a stable range.
 		const result = await bash.execute("guard-2", {
 			command: `_edit ${file.replace(/\\/g, "/")} --edits '[{"op":"search","old":"secret(\\"OLD\\", \\"old\\")","new":"secret(\\"S\\", \\"d\\")"}]'`,
@@ -167,13 +171,11 @@ describe("cli tool — end-to-end (no silent file corruption)", () => {
 	});
 
 	it("points edit/write multi-line rejection at the verbatim channels", async () => {
-		const bash = createBashTool(testDir);
+		const bash = createCliTestTool(testDir);
 		// A literal newline in an unquoted positional new value.
 		const cmd = `_edit ${file.replace(/\\/g, "/")} replace 1#xx line one\nline two`;
-		const result = await bash.execute("guard-3", { command: cmd });
-		const out = (result.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-		expect(out).toMatch(/does not support shell operators/);
-		expect(out).toMatch(/--edits|heredoc|quotes/);
+		await expect(bash.execute("guard-3", { command: cmd })).rejects.toThrow(/does not support shell operators/);
+		await expect(bash.execute("guard-3b", { command: cmd })).rejects.toThrow(/--edits|heredoc|quotes/);
 	});
 });
 

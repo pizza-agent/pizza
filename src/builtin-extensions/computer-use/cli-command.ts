@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BuiltinCommandDefinition } from "../../core/extensions/types.js";
+import type { CliCommandDefinition } from "../../core/extensions/types.js";
 import {
   executeAct,
   executeExpandUi,
@@ -430,7 +430,7 @@ function statusText(cwd: string): string {
 const STATUS_SENTINEL = "__status__";
 
 /** The `_computer_use` dynamic built-in cli command definition. */
-export const computerUseBuiltinCommand: BuiltinCommandDefinition = {
+export const computerUseBuiltinCommand: CliCommandDefinition = {
   name: "_computer_use",
   description:
     "Drive desktop apps via structured UI observation (computer-use): roots/observe/search/expand/inspect/act/read/wait/status.",

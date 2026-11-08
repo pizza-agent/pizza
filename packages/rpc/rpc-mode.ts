@@ -37,7 +37,7 @@ import { takeOverStdout, writeRawStdout } from "../../src/core/exec/output-guard
 import type { SessionFacade } from "../../src/core/session/session-facade.js";
 import { makeSessionRef, parseSessionRef } from "../../src/core/session/session-ref.js";
 import { executeBashWithOperations } from "../../src/core/exec/bash-executor.js";
-import { createLocalBashOperations } from "../../src/core/tools/bash.js";
+import { createLocalBashOperations } from "../../src/core/tools/shell.js";
 import {
 	getBuiltinExtensionInfo,
 	getBuiltinExtensionInfos,
@@ -341,7 +341,7 @@ async function buildExtensionInfos(facade: SessionFacade): Promise<RpcExtensionI
 			path: ext.path,
 			toolCount: ext.tools.size,
 			commandCount: ext.commands.size,
-			builtinCommandCount: ext.builtinCommands?.size ?? 0,
+			builtinCommandCount: ext.cliCommands?.size ?? 0,
 			loadError: packageSource ? packageLoadErrors.get(packageSource) : undefined,
 		});
 	}
@@ -601,7 +601,7 @@ function getFacadeSessionState(facade: SessionFacade, ptyPort?: number): RpcSess
 		capabilities: {
 			mcpManagement: true,
 			mainProfile: Boolean(facade.mainAgent),
-			interactions: Boolean(facade.extensionRunner?.getAllRegisteredBuiltinCommands().some(c => c.name === "_interact")),
+			interactions: Boolean(facade.extensionRunner?.getAllRegisteredCliCommands().some(c => c.name === "_interact")),
 		},
 		isMainAgent: Boolean(facade.mainAgent),
 		model: resolvedModel,
@@ -1164,7 +1164,7 @@ export async function runRpcModeWithFacade(
 				const ctx = facade.extensionRunner?.createContext();
 				const store = ctx?.sessionManager.eventStore;
 				const threadId = facade.runtime.getProjection().getDescriptor().thread_id;
-				if (!store || !facade.extensionRunner?.getAllRegisteredBuiltinCommands().some((c) => c.name === "_interact")) {
+				if (!store || !facade.extensionRunner?.getAllRegisteredCliCommands().some((c) => c.name === "_interact")) {
 					throw new Error("Interaction capability is unavailable");
 				}
 				if (command.type === "interaction_list") {
@@ -1695,7 +1695,7 @@ export async function runRpcModeWithFacade(
 
 		case "mcp_command": {
 			const runner = facade.extensionRunner;
-			const builtin = runner?.getAllRegisteredBuiltinCommands().find((item) => item.name === "_agentcli");
+			const builtin = runner?.getAllRegisteredCliCommands().find((item) => item.name === "_agentcli");
 				if (!runner || !builtin)
 					return error(id, "mcp_command", "MCP extension is disabled. Enable it in Extensions first.");
 			if (!Array.isArray(command.args) || command.args.some((arg) => typeof arg !== "string")) {
@@ -1704,7 +1704,7 @@ export async function runRpcModeWithFacade(
 			try {
 					const result = await builtin.execute(
 						crypto.randomUUID(),
-						builtin.parseArguments(command.args),
+						builtin.parseArguments!(command.args, undefined, {}),
 						undefined,
 						undefined,
 						runner.createContext(),

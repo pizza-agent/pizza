@@ -65,7 +65,7 @@ import { executeBashWithOperations } from "../../src/core/exec/bash-executor.js"
 import {
   createLocalBashOperations,
   type BashOperations,
-} from "../../src/core/tools/bash.js";
+} from "../../src/core/tools/shell.js";
 
 import type { SessionFacade } from "../../src/core/session/session-facade.js";
 import type { CreateSessionFacadeResult } from "../../src/core/session/session-facade-factory.js";
@@ -1955,7 +1955,7 @@ export class InteractiveMode {
    * Get a registered tool definition by name (for custom rendering).
    */
   private getRegisteredToolDefinition(toolName: string) {
-    return (this.facade.tools as any[]).find((t) => t.name === toolName) as any;
+    return this.facade.getToolDefinition(toolName);
   }
 
   /**

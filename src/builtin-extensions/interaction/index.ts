@@ -59,7 +59,7 @@ async function terminalAnswer(
 	return { kind: "submit", values, ...(actionId ? { actionId } : {}) };
 }
 export const createInteractionExtension: ExtensionFactory = (pizza) => {
-	pizza.registerBuiltinCommand({
+	pizza.registerCliCommand({
 		name: "_interact",
 		description: "Ask dynamic questions or offer capability actions as persistent, skippable conversation cards.",
 		help: HELP,

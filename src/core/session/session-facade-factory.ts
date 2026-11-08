@@ -44,8 +44,11 @@ import { DefaultRetryPolicy } from "../runtime/policies.js";
 import { EventSourcedRuntime } from "../runtime/runtime.js";
 import { SessionFacade } from "./session-facade.js";
 import { SettingsManager } from "../config/settings-manager.js";
-import { DEFAULT_LLM_TOOLS } from "../tools/index.js";
-import type { BashToolOptions } from "../tools/bash.js";
+import { DEFAULT_TOOLS, parseToolsOption, type ToolsOptionEntry } from "../tools/index.js";
+import { createBuiltinCliCommands } from "../tools/builtin-cli-commands.js";
+import { CommandRegistry } from "../tools/command-registry.js";
+import type { ResolvedCliCommand } from "../tools/command-resolve.js";
+import type { ShellOptions } from "../tools/shell.js";
 import type { SchedulerEngine } from "../scheduler/engine.js";
 import { wrapToolDefinitions } from "../tools/tool-definition-wrapper.js";
 import { bindExtensionCore } from "../facade/extension-binding.js";
@@ -96,11 +99,20 @@ export interface CreateSessionFacadeOptions {
 	thinkingLevel?: ThinkingLevel;
 
 	/**
-	 * Allowlist of tool names to expose to the LLM.
-	 * Default: DEFAULT_LLM_TOOLS (["cli"]) plus custom/extension tools.
+	 * The cli tool's command table: built-in command names (`"_read"`,
+	 * `"_write"`, ...), `"shell"` to enable the shell fallback, and
+	 * `defineCliCommand(...)` objects for custom in-process commands.
+	 * Default: DEFAULT_TOOLS (every built-in command + "shell"). Extension
+	 * commands are always added. With no commands and no shell, the cli tool
+	 * is not exposed.
 	 */
-	tools?: string[];
-	/** Custom tools to register (in addition to built-in and extension tools). */
+	tools?: readonly ToolsOptionEntry[];
+	/**
+	 * Shell fallback configuration (only used when `tools` includes "shell").
+	 * Defaults come from settings (shellCommandPrefix / shellPath).
+	 */
+	shell?: ShellOptions;
+	/** Custom function tools exposed next to cli (independent of `tools`). */
 	customTools?: ExtensionToolDefinition[];
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
@@ -282,48 +294,49 @@ export async function createSessionFacade(
 		modelRegistry,
 	);
 
-	const requestedToolNames = options.tools ?? [...DEFAULT_LLM_TOOLS];
-	const allowedToolNames = options.tools ? new Set(options.tools) : undefined;
-	const shellCommandPrefix = settingsManager.getShellCommandPrefix();
-	const shellPath = settingsManager.getShellPath();
-	const autoResizeImages = settingsManager.getImageAutoResize();
-	const cliToolOptions: BashToolOptions = { commandPrefix: shellCommandPrefix, shellPath, read: { autoResizeImages } };
-	// The `tell` built-in command (agent-to-agent messaging via the gateway) is
-	// wired into the cli tool for both the main agent and workspace agents — it
-	// needs the agent dir to ensure/start the gateway and discover workspaces.
-	if (agentDir) {
-		cliToolOptions.tell = { agentDir, mainDir };
-	}
-	// The `skill` built-in command is wired into the cli tool whenever skills
-	// are available — it lets the LLM discover and load skills on demand via
-	// `_skill list` / `_skill load` / `_skill read` instead of having the full
-	// skills list injected into the system prompt.
-	// Registered when the session knows about any skill, including ones the user
-	// has disabled — otherwise re-enabling a skill mid-session would have no
-	// command to run until the next restart.
-	const knownSkillCount = resourceLoader.getSkillCatalog
-		? resourceLoader.getSkillCatalog().filter((entry) => entry.enabled || entry.builtinId === undefined).length
-		: resourceLoader.getSkills().skills.length;
-	if (knownSkillCount > 0) {
-		cliToolOptions.skill = { getSkills: () => resourceLoader.getSkills().skills };
-	}
-	// The `cron` built-in command (scheduled prompts) is wired into the cli
-	// tool with a LAZY engine getter. The SchedulerEngine is created later
-	// (in rpc mode, after this facade exists — it needs facade.prompt() to
-	// dispatch turns), so we hand out a mutable slot that rpc mode fills via
-	// the `setSchedulerEngine` escape hatch on the result. Until then
-	// getEngine() returns undefined and `_cron` degrades gracefully.
+	const toolsOption = parseToolsOption(options.tools ?? DEFAULT_TOOLS);
+	// `tools: []` disables the cli tool entirely — extension commands alone must
+	// not resurrect it (they ride the same command table).
+	const cliEnabled = toolsOption.builtins.size > 0 || toolsOption.shell || toolsOption.commands.length > 0;
+	// Pre-approval command resolutions keyed by tool call id. Session-owned so
+	// they survive cli tool rebuilds (otherwise a rebuild between approval and
+	// execution would silently re-resolve against a changed command table).
+	const resolvedCommandCache = new Map<string, ResolvedCliCommand>();
+	const shell: ShellOptions | undefined = toolsOption.shell
+		? {
+				commandPrefix: settingsManager.getShellCommandPrefix(),
+				shellPath: settingsManager.getShellPath(),
+				...options.shell,
+			}
+		: undefined;
+	// The `_cron` command (scheduled prompts) gets a LAZY engine getter. The
+	// SchedulerEngine is created later (in rpc mode, after this facade exists —
+	// it needs facade.prompt() to dispatch turns), so we hand out a mutable
+	// slot that rpc mode fills via the `setSchedulerEngine` escape hatch on the
+	// result. Until then getEngine() returns undefined and `_cron` degrades
+	// gracefully.
 	let schedulerEngineSlot: SchedulerEngine | undefined;
-	const cronScope: "main" | "workspace" = isMainAgent ? "main" : "workspace";
-	cliToolOptions.cron = {
-		getEngine: () => schedulerEngineSlot,
-		scope: cronScope,
-		getActiveSessionId: () => sessionManager.getActiveSessionId(),
-	};
-	const toolOptions = {
-		read: { autoResizeImages },
-		cli: cliToolOptions,
-	};
+	const builtinCommands = createBuiltinCliCommands(cwd, {
+		read: { autoResizeImages: settingsManager.getImageAutoResize() },
+		// `_skill` is available while any skill is enabled; read live so skills
+		// toggled mid-session are picked up without a restart.
+		skill: { getSkills: () => resourceLoader.getSkills().skills },
+		cron: {
+			getEngine: () => schedulerEngineSlot,
+			scope: isMainAgent ? "main" : "workspace",
+			getActiveSessionId: () => sessionManager.getActiveSessionId(),
+		},
+		// `_tell` (agent-to-agent messaging via the gateway) needs the agent dir
+		// to ensure/start the gateway and discover workspaces.
+		tell: agentDir ? { agentDir, mainDir } : undefined,
+	}).filter((command) => toolsOption.builtins.has(command.name as never));
+	const commandRegistry = new CommandRegistry({
+		builtins: builtinCommands,
+		sdk: toolsOption.commands,
+		extensions: () => extensionRunner.getAllRegisteredCliCommands(),
+		onConflict: (command, message) =>
+			extensionRunner.emitError({ extensionPath: command.sourceInfo.path, event: "register_cli_command", error: message }),
+	});
 
 	let runtime: EventSourcedRuntime | undefined;
 	const getRuntime = (): EventSourcedRuntime | undefined => runtime;
@@ -350,13 +363,15 @@ export async function createSessionFacade(
 		isMainAgent,
 		resourceLoader,
 		sessionManager,
-		toolOptions,
+		commandRegistry,
+		shell,
 	});
 	const toolAssembly = new ToolAssembly({
 		cwd,
-		requestedToolNames,
-		allowedToolNames,
-		toolOptions,
+		commandRegistry,
+		shell,
+		cliEnabled,
+		resolvedCommandCache,
 		extensionRunner,
 		customTools: options.customTools ?? [],
 		buildPrompt,
@@ -501,6 +516,7 @@ export async function createSessionFacade(
 		modelRegistry,
 		extensionRunner,
 		resourceLoader,
+		getToolDefinitions: () => toolAssembly.availableToolDefinitions,
 		disposers: workspaceLock ? [extensionEventUnsubscribe, detachPet, workspaceLock.release] : [extensionEventUnsubscribe, detachPet],
 	});
 

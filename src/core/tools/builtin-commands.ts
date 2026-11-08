@@ -1,33 +1,17 @@
 /**
- * Built-in CLI commands for file operations.
- * These are exposed to the LLM via the cli tool.
+ * Command-line parsing and help text for the built-in cli commands
+ * (_read, _write, _edit, ...). Execution lives in the command table
+ * (builtin-cli-commands.ts); this module only turns words into params.
  *
  * Supports heredoc syntax for multi-line content:
- *   write <path> <<EOF
+ *   _write <path> <<EOF
  *   line1
  *   line2
  *   EOF
  */
 
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { resolve, join } from "path";
-import {
-	applyEditsToNormalizedContent,
-	detectLineEnding,
-	type Edit,
-	normalizeToLF,
-	restoreLineEndings,
-	stripBom,
-} from "./edit-diff.js";
-import { annotateTextWithLineAnchors } from "./line-anchors.js";
-import { truncateHead } from "./truncate.js";
-import { splitShellWords, splitShellWordsWithMeta } from "../exec/shell-words.js";
-
-export interface BuiltinCommandResult {
-	stdout: string;
-	stderr: string;
-	exitCode: number;
-}
+import type { Edit } from "./edit-diff.js";
+import { splitShellWordsWithMeta } from "../exec/shell-words.js";
 
 // ============================================================================
 // Heredoc Parser
@@ -786,7 +770,7 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 	return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function isHelpRequest(args: string[]): boolean {
+export function isHelpRequest(args: string[]): boolean {
 	if (args.length !== 1) return false;
 	const value = args[0]?.toLowerCase();
 	return value === "-h" || value === "--help" || value === "help";
@@ -1061,258 +1045,5 @@ export function getBuiltinCommandHelpForArgs(command: string, args: string[]): s
 	return getBuiltinCommandHelp(command);
 }
 
-/** @deprecated Use parseBuiltinCommandWithHeredoc */
-export const parseCommandWithHeredoc = parseBuiltinCommandWithHeredoc;
-
-// ============================================================================
-// Read Command
-// ============================================================================
-
-interface ReadOptions {
-	path: string;
-	offset?: number;
-	limit?: number;
-	anchors?: "line" | "none";
-	cwd: string;
-}
-
-async function executeRead(options: ReadOptions): Promise<BuiltinCommandResult> {
-	try {
-		const filePath = resolve(options.cwd, options.path);
-		const anchors = options.anchors ?? "line";
-		const rawContent = await readFile(filePath, "utf-8");
-		const content = anchors === "line" ? normalizeToLF(rawContent) : rawContent;
-		let lines = content.split("\n");
-		const totalLines = lines.length;
-
-		// Apply offset (1-indexed)
-		const startLine = options.offset && options.offset > 0 ? options.offset - 1 : 0;
-		if (startLine > 0) {
-			lines = lines.slice(startLine);
-		}
-
-		// Apply limit
-		let userLimited = false;
-		if (options.limit !== undefined && options.limit > 0) {
-			lines = lines.slice(0, options.limit);
-			userLimited = true;
-		}
-
-		// Apply truncation
-		const truncation = truncateHead(lines.join("\n"));
-		const startLineDisplay = startLine + 1;
-		let output =
-			anchors === "line" ? annotateTextWithLineAnchors(truncation.content, startLineDisplay) : truncation.content;
-
-		if (truncation.truncated) {
-			const endLine = startLineDisplay + truncation.outputLines - 1;
-			const nextOffset = endLine + 1;
-			output += `\n\n[Showing lines ${startLineDisplay}-${endLine} of ${totalLines}. Use: read ${options.path} ${nextOffset}]`;
-		} else if (userLimited && startLine + lines.length < totalLines) {
-			const remaining = totalLines - (startLine + lines.length);
-			const nextOffset = startLine + lines.length + 1;
-			output += `\n\n[${remaining} more lines. Use: read ${options.path} ${nextOffset}]`;
-		}
-
-		return {
-			stdout: output,
-			stderr: "",
-			exitCode: 0,
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			stdout: "",
-			stderr: `Error reading file: ${message}`,
-			exitCode: 1,
-		};
-	}
-}
-
-// ============================================================================
-// Write Command
-// ============================================================================
-
-interface WriteOptions {
-	path: string;
-	content: string;
-	cwd: string;
-}
-
-async function executeWrite(options: WriteOptions): Promise<BuiltinCommandResult> {
-	try {
-		const filePath = resolve(options.cwd, options.path);
-
-		// Ensure parent directory exists
-		const parentDir = join(filePath, "..");
-		await mkdir(parentDir, { recursive: true });
-
-		await writeFile(filePath, options.content, "utf-8");
-		return {
-			stdout: `File written: ${options.path}`,
-			stderr: "",
-			exitCode: 0,
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			stdout: "",
-			stderr: `Error writing file: ${message}`,
-			exitCode: 1,
-		};
-	}
-}
-
-// ============================================================================
-// Edit Command
-// ============================================================================
-
-interface EditOptions {
-	path: string;
-	edits: Edit[];
-	cwd: string;
-}
-
-async function executeEdit(options: EditOptions): Promise<BuiltinCommandResult> {
-	try {
-		const filePath = resolve(options.cwd, options.path);
-		const rawContent = await readFile(filePath, "utf-8");
-		const { bom, text: content } = stripBom(rawContent);
-		const originalEnding = detectLineEnding(content);
-		const normalizedContent = normalizeToLF(content);
-		const { newContent } = applyEditsToNormalizedContent(normalizedContent, options.edits, options.path);
-		await writeFile(filePath, bom + restoreLineEndings(newContent, originalEnding), "utf-8");
-
-		return {
-			stdout: `File edited: ${options.path}`,
-			stderr: "",
-			exitCode: 0,
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			stdout: "",
-			stderr: `Error editing file: ${message}`,
-			exitCode: 1,
-		};
-	}
-}
-
-// ============================================================================
-// Main Router
-// ============================================================================
-
-export interface BuiltinCommandContext {
-	cwd: string;
-}
-
-export async function executeBuiltinCommand(
-	command: string,
-	args: string[],
-	context: BuiltinCommandContext,
-): Promise<BuiltinCommandResult> {
-	const help = getBuiltinCommandHelpForArgs(command, args);
-	if (help) {
-		return {
-			stdout: help,
-			stderr: "",
-			exitCode: 0,
-		};
-	}
-
-	let parsed: ParsedBuiltinToolInput | null;
-	try {
-		parsed = parseBuiltinToolInput(command, args);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			stdout: "",
-			stderr: message,
-			exitCode: 1,
-		};
-	}
-
-	switch (parsed?.command) {
-		case "read": {
-			return executeRead({ ...parsed.input, cwd: context.cwd });
-		}
-
-		case "write": {
-			return executeWrite({ ...parsed.input, cwd: context.cwd });
-		}
-
-		case "edit": {
-			return executeEdit({
-				path: parsed.input.path,
-				edits: parsed.input.edits,
-				cwd: context.cwd,
-			});
-		}
-
-		case "session_split": {
-			return {
-				stdout: "",
-				stderr: "session_split requires an active agent session context and is executed through the cli tool.",
-				exitCode: 1,
-			};
-		}
-
-		case "history_tree": {
-			return {
-				stdout: "",
-				stderr: "history_tree requires an active agent session context and is executed through the cli tool.",
-				exitCode: 1,
-			};
-		}
-		case "skill": {
-			return {
-				stdout: "",
-				stderr: "skill requires loaded skills and is executed through the cli tool.",
-				exitCode: 1,
-			};
-		}
-
-		case "tell": {
-			return {
-				stdout: "",
-				stderr: "tell requires an agent dir and is executed through the cli tool.",
-				exitCode: 1,
-			};
-		}
-
-		case "cron": {
-			return {
-				stdout: "",
-				stderr: "cron requires a running scheduler and is executed through the cli tool.",
-				exitCode: 1,
-			};
-		}
-
-		default:
-			return {
-				stdout: "",
-				stderr: `Unknown builtin command: ${command}. Available commands: ${BUILTIN_COMMANDS.join(", ")}`,
-				exitCode: 1,
-			};
-	}
-}
-
 export const BUILTIN_COMMANDS = ["_read", "_write", "_edit", "_session_split", "_history_tree", "_skill", "_cron", "_tell"] as const;
 export type BuiltinCommand = (typeof BUILTIN_COMMANDS)[number];
-
-// ============================================================================
-// Deprecated aliases (for backward compatibility)
-// ============================================================================
-
-/** @deprecated Use BuiltinCommandResult */
-export type NativeCommandResult = BuiltinCommandResult;
-/** @deprecated Use ParsedBuiltinCommand */
-export type ParsedCommand = ParsedBuiltinCommand;
-/** @deprecated Use BuiltinCommandContext */
-export type NativeCommandContext = BuiltinCommandContext;
-/** @deprecated Use executeBuiltinCommand */
-export const executeNativeCommand = executeBuiltinCommand;
-/** @deprecated Use BUILTIN_COMMANDS */
-export const NATIVE_COMMANDS = BUILTIN_COMMANDS;
-/** @deprecated Use BuiltinCommand */
-export type NativeCommand = BuiltinCommand;

@@ -16,6 +16,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SettingsManager } from "../src/core/config/settings-manager.js";
 import { IntentClassifier } from "../src/core/intent/classifier.js";
+import { CommandRegistry } from "../src/core/tools/command-registry.js";
+import { createBuiltinCliCommands } from "../src/core/tools/builtin-cli-commands.js";
+import { resolveCliCommand, toResolvedToolCall } from "../src/core/tools/command-resolve.js";
 
 describe("SettingsManager — safeMode tri-state", () => {
 	const testDir = join(process.cwd(), "test-safe-mode-tmp");
@@ -109,8 +112,16 @@ describe("SettingsManager — safeMode tri-state", () => {
 		});
 
 		// writes gated, edits not — this is the branch that was dead before.
-		expect(classifier.classify("write", { path: "a.txt" }).requires_approval).toBe(true);
-		expect(classifier.classify("edit", { path: "a.txt" }).requires_approval).toBe(false);
+		const registry = new CommandRegistry({ builtins: createBuiltinCliCommands(process.cwd()) });
+		const resolvedFor = (command: string) =>
+			toResolvedToolCall(resolveCliCommand(command, { registry, shell: {} }));
+		expect(
+			classifier.classify("cli", { command: "_write a.txt hi" }, resolvedFor("_write a.txt hi")).requires_approval,
+		).toBe(true);
+		expect(
+			classifier.classify("cli", { command: "_edit a.txt replace 1#a x" }, resolvedFor("_edit a.txt replace 1#a x"))
+				.requires_approval,
+		).toBe(false);
 	});
 
 	it("safeMode:false still overrides every per-category gate", () => {

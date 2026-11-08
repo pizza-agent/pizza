@@ -32,6 +32,7 @@ import { resolveCliModel } from "./core/models/model-resolver.js";
 import { installCrashHandlers } from "./core/ops/crash-handlers.js";
 import { restoreStdout, takeOverStdout } from "./core/exec/output-guard.js";
 import type { CreateSessionFacadeOptions } from "./core/session/session-facade-factory.js";
+import type { ToolsOptionEntry } from "./core/tools/index.js";
 import { createSessionFacade, type CreateSessionFacadeResult } from "./core/session/session-facade-factory.js";
 import { getAgentDirFromSessionDir, parseSessionRef } from "./core/session/session-ref.js";
 import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./core/session/session-listing.js";
@@ -281,12 +282,12 @@ function buildSessionOptions(
 	// API key from CLI - set in authStorage
 
 	// Tools
+	// Validated by createSessionFacade (unknown names fail fast).
 	if (parsed.noTools) {
-		// --no-tools: start with no built-in tools
-		// --tools can still add specific ones back, including extension tools.
-		options.tools = parsed.tools && parsed.tools.length > 0 ? [...parsed.tools] : [];
+		// --no-tools: start from an empty command table; --tools can add entries back.
+		options.tools = (parsed.tools ?? []) as ToolsOptionEntry[];
 	} else if (parsed.tools) {
-		options.tools = [...parsed.tools];
+		options.tools = [...parsed.tools] as ToolsOptionEntry[];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };

@@ -1,4 +1,3 @@
-import type { AgentTool } from "../agent/types.js";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai/compat";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
@@ -10,7 +9,6 @@ import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/type
 import { annotateTextWithLineAnchors } from "./line-anchors.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 import { toolRenderBridge as tui } from "./render-bridge.js";
 
@@ -284,6 +282,3 @@ export function createReadToolDefinition(
 	};
 }
 
-export function createReadTool(cwd: string, options?: ReadToolOptions): AgentTool<typeof readSchema> {
-	return wrapToolDefinition(createReadToolDefinition(cwd, options));
-}

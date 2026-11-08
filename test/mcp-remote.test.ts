@@ -88,7 +88,7 @@ describe("Remote MCP through _agentcli", () => {
 				]);
 				const runner = created.facade.extensionRunner;
 				const builtin = runner
-					.getAllRegisteredBuiltinCommands()
+					.getAllRegisteredCliCommands()
 					.find((command) => command.name === "_agentcli")!;
 				const call = async (args: string[]) =>
 					JSON.parse(
@@ -172,7 +172,7 @@ describe("Remote MCP through _agentcli", () => {
 		try {
 			const runner = created.facade.extensionRunner;
 			const builtin = runner
-				.getAllRegisteredBuiltinCommands()
+				.getAllRegisteredCliCommands()
 				.find((command) => command.name === "_agentcli")!;
 			const call = async (args: string[]) =>
 				getTextOutput(

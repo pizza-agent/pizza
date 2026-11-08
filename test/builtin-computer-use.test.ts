@@ -39,7 +39,7 @@ describe("computer-use built-in extension", () => {
     const pizza = {
       registerTool: (tool: { name: string }) => tools.push(tool),
       registerCommand: (name: string) => commands.push(name),
-      registerBuiltinCommand: (command: { name: string }) => builtins.push(command),
+      registerCliCommand: (command: { name: string }) => builtins.push(command),
       on: (event: string) => events.push(event),
     };
     await createComputerUseExtension(pizza as any);
@@ -53,12 +53,12 @@ describe("computer-use built-in extension", () => {
   });
 });
 
-it("registers the _computer_use dynamic builtin command via registerBuiltinCommand", async () => {
+it("registers the _computer_use dynamic builtin command via registerCliCommand", async () => {
     const builtins: Array<{ name: string }> = [];
     const pizza = {
       registerTool: () => undefined,
       registerCommand: () => undefined,
-      registerBuiltinCommand: (command: { name: string }) =>
+      registerCliCommand: (command: { name: string }) =>
         builtins.push(command),
       on: () => undefined,
     };

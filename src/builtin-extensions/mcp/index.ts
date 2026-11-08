@@ -769,7 +769,7 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			},
 		};
 
-		pizza.registerBuiltinCommand(createAgentCliBuiltinCommand(agentCliHost));
+		pizza.registerCliCommand(createAgentCliBuiltinCommand(agentCliHost));
 
 		// ---------------------------------------------------------------------------------------
 		// Manager (`/mcp` in the TUI)

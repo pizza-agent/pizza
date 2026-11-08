@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { createBashTool } from "../src/core/tools/bash.js";
+import { createCliTestTool } from "./helpers/cli-tool.js";
 import { parseBuiltinCommandWithHeredoc, parseBuiltinCommand } from "../src/core/tools/builtin-commands.js";
 
 describe("parseBuiltinCommandWithHeredoc", () => {
@@ -131,10 +131,10 @@ describe("heredoc write routing via cli", () => {
 
 	it("writes a file via a quoted heredoc (<<'EOF') through the cli tool", async () => {
 		const testFile = join(testDir, "soul.md");
-		const bashTool = createBashTool(testDir);
+		const cliTool = createCliTestTool(testDir);
 		const command = `_write ${testFile.replace(/\\/g, "/")} <<'EOF'\n---\nname: Pizza\n---\nHello, world!\nEOF`;
 
-		const result = await bashTool.execute("heredoc-quoted", { command });
+		const result = await cliTool.execute("heredoc-quoted", { command });
 		const out = (result.content ?? [])
 			.filter((b: any) => b.type === "text")
 			.map((b: any) => b.text)
@@ -147,10 +147,10 @@ describe("heredoc write routing via cli", () => {
 
 	it("writes a file via a double-quoted heredoc (<<\"EOF\") through the cli tool", async () => {
 		const testFile = join(testDir, "quoted.md");
-		const bashTool = createBashTool(testDir);
+		const cliTool = createCliTestTool(testDir);
 		const command = `_write ${testFile.replace(/\\/g, "/")} <<"EOF"\nline one\nline two\nEOF`;
 
-		await bashTool.execute("heredoc-double", { command });
+		await cliTool.execute("heredoc-double", { command });
 
 		expect(readFileSync(testFile, "utf-8")).toBe("line one\nline two");
 	});

@@ -41,6 +41,8 @@ export interface SessionFacadeConfig {
 	extensionRunner?: ExtensionRunner;
 	modelRegistry?: ModelRegistry;
 	resourceLoader?: ResourceLoader;
+	/** Full tool definitions (with renderers) currently available, e.g. the cli tool. */
+	getToolDefinitions?: () => import("../extensions/types.js").ToolDefinition<any, any>[];
 	disposers?: Array<() => void>;
 }
 
@@ -69,6 +71,7 @@ export class SessionFacade {
 	readonly modelRegistry: ModelRegistry | undefined;
 	readonly resourceLoader: ResourceLoader | undefined;
 	private disposers: Array<() => void>;
+	private readonly getToolDefinitions: () => import("../extensions/types.js").ToolDefinition<any, any>[];
 	private disposed = false;
 	private disposeAsyncPromise: Promise<void> | undefined;
 
@@ -79,7 +82,13 @@ export class SessionFacade {
 		this.extensionRunner = config.extensionRunner;
 		this.modelRegistry = config.modelRegistry;
 		this.resourceLoader = config.resourceLoader;
+		this.getToolDefinitions = config.getToolDefinitions ?? (() => []);
 		this.disposers = config.disposers ?? [];
+	}
+
+	/** Full definition (with TUI renderers) of an available tool, e.g. "cli". */
+	getToolDefinition(name: string): import("../extensions/types.js").ToolDefinition<any, any> | undefined {
+		return this.getToolDefinitions().find((definition) => definition.name === name);
 	}
 
 	subscribe(listener: SessionFacadeEventListener, options?: SubscribeOptions): () => void {

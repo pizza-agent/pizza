@@ -26,11 +26,16 @@ describe("AgentToolAdapter", () => {
 		expect((result.content[0] as any).text).toContain("read");
 	});
 
-	it("detects file mutations for edit tool", async () => {
-		const tool = createMockTool("edit");
+	it("detects file mutations for the _edit command", async () => {
+		const tool = createMockTool("cli", {
+			execute: async () => ({
+				content: [{ type: "text" as const, text: "edited" }],
+				details: { command: { source: "builtin", name: "_edit", args: { path: "src/app.ts" } } },
+			}),
+		});
 		const adapter = new AgentToolAdapter(tool);
 
-		const result = await adapter.execute({ path: "src/app.ts", edits: [] });
+		const result = await adapter.execute({ command: "_edit src/app.ts replace 1#a x" });
 
 		expect(result.is_error).toBe(false);
 		expect(result.file_mutations).toBeDefined();
@@ -38,17 +43,22 @@ describe("AgentToolAdapter", () => {
 		expect(result.file_mutations![0]).toEqual({ path: "src/app.ts", operation: "modify" });
 	});
 
-	it("detects file mutations for write tool", async () => {
-		const tool = createMockTool("write");
+	it("detects file mutations for the _write command", async () => {
+		const tool = createMockTool("cli", {
+			execute: async () => ({
+				content: [{ type: "text" as const, text: "written" }],
+				details: { command: { source: "builtin", name: "_write", args: { path: "new-file.ts" } } },
+			}),
+		});
 		const adapter = new AgentToolAdapter(tool);
 
-		const result = await adapter.execute({ path: "new-file.ts", content: "hello" });
+		const result = await adapter.execute({ command: "_write new-file.ts hello" });
 
 		expect(result.file_mutations).toHaveLength(1);
 		expect(result.file_mutations![0]).toEqual({ path: "new-file.ts", operation: "create" });
 	});
 
-	it("does not add file_mutations for read-only tools", async () => {
+	it("does not add file_mutations for custom tools", async () => {
 		const tool = createMockTool("grep");
 		const adapter = new AgentToolAdapter(tool);
 
@@ -123,16 +133,16 @@ describe("AgentToolAdapter", () => {
 		expect(readTool.getMetadata()).toEqual({
 			name: "read",
 			description: "Mock read tool",
-			category: "file_read",
-			defaultRisk: "safe",
+			category: "unknown",
+			defaultRisk: "dangerous",
 		});
 
 		const editTool = new AgentToolAdapter(createMockTool("edit"));
 		expect(editTool.getMetadata()).toEqual({
 			name: "edit",
 			description: "Mock edit tool",
-			category: "file_write",
-			defaultRisk: "moderate",
+			category: "unknown",
+			defaultRisk: "dangerous",
 		});
 
 		const cliTool = new AgentToolAdapter(createMockTool("cli"));
@@ -157,11 +167,16 @@ describe("createToolRegistry", () => {
 	});
 
 	it("registry executors work correctly", async () => {
-		const tools = [createMockTool("edit")];
+		const tools = [createMockTool("cli", {
+			execute: async () => ({
+				content: [{ type: "text" as const, text: "written" }],
+				details: { command: { source: "builtin", name: "_write", args: { path: "foo.ts" } } },
+			}),
+		})];
 		const registry = createToolRegistry(tools);
 
-		const executor = registry.get("edit")!;
-		const result = await executor.execute({ path: "foo.ts" });
+		const executor = registry.get("cli")!;
+		const result = await executor.execute({ command: "_write foo.ts hi" });
 
 		expect(result.is_error).toBe(false);
 		expect(result.file_mutations).toHaveLength(1);

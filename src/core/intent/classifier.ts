@@ -4,8 +4,7 @@
  * Classifies LLM-proposed tool calls by risk level and approval requirements.
  */
 
-import type { IntentClassification, IntentCategory, IntentRisk } from "./types.js";
-import { splitShellWords } from "../exec/shell-words.js";
+import type { IntentClassification, IntentCategory, IntentRisk, ResolvedToolCall, ToolCallIntent } from "./types.js";
 
 // ============================================================================
 // Classifier Configuration
@@ -80,15 +79,17 @@ export class IntentClassifier {
 	}
 
 	/**
-	 * Classify a tool call by name and arguments.
+	 * Classify a tool call by name and arguments. When the tool resolved the
+	 * call beforehand (`resolved.intent`, e.g. the cli tool for `_write`), the
+	 * declared category is used; otherwise the tool's own rules apply.
 	 *
 	 * Applies the `safe_mode` master toggle as a final override:
 	 * - safe_mode === false  → never require approval (tools auto-run)
 	 * - safe_mode === true   → require approval for any risky category
 	 * - safe_mode undefined  → use the individual require_approval_* flags
 	 */
-	classify(toolName: string, args: Record<string, unknown>): IntentClassification {
-		const result = this._classifyRaw(toolName, args);
+	classify(toolName: string, args: Record<string, unknown>, resolved?: ResolvedToolCall): IntentClassification {
+		const result = resolved?.intent ? this._classifyIntent(resolved.intent) : this._classifyRaw(toolName, args);
 		if (this.config.safe_mode === false) {
 			result.requires_approval = false;
 		} else if (this.config.safe_mode === true && result.risk !== "safe") {
@@ -122,103 +123,39 @@ export class IntentClassifier {
 		return this.config.safe_mode === true;
 	}
 
+	/** Classification from a tool-declared intent (before safe_mode override). */
+	private _classifyIntent(intent: ToolCallIntent): IntentClassification {
+		const base = this._classifyByCategoryRaw(intent.category, {});
+		if (intent.category === "file_write" && intent.gate === "edits") {
+			base.requires_approval = this.config.require_approval_edits;
+		}
+		return {
+			...base,
+			affected_files: intent.affectedFiles,
+			description: intent.description ?? base.description,
+		};
+	}
+
 	/**
 	 * Raw classification by name and arguments (before safe_mode override).
 	 */
 	private _classifyRaw(toolName: string, args: Record<string, unknown>): IntentClassification {
-		// Built-in tool classification
-		switch (toolName) {
-			case "read":
-			case "find":
-			case "grep":
-			case "ls":
-			case "path_utils":
-				return {
-					risk: "safe",
-					requires_approval: false,
-					category: "file_read",
-					description: `Read ${args.path ?? ""}`,
-				};
-
-			case "write":
-				return {
-					risk: "moderate",
-					requires_approval: this.config.require_approval_writes,
-					category: "file_write",
-					affected_files: [String(args.path)],
-					description: `Write to ${args.path}`,
-				};
-
-			case "edit":
-			case "edit_diff":
-				return {
-					risk: "moderate",
-					requires_approval: this.config.require_approval_edits,
-					category: "file_write",
-					affected_files: [String(args.path)],
-					description: `Edit ${args.path}`,
-				};
-
-			case "cli":
-			case "bash":
-				return this._classifyBashCommand(String(args.command ?? ""));
-
-			case "truncate":
-				return {
-					risk: "dangerous",
-					requires_approval: true,
-					category: "file_delete",
-					description: `Truncate ${args.path ?? ""}`,
-				};
-
-			case "builtin":
-				return this._classifyBuiltinCommand(String(args.command ?? ""));
-
-			default:
-				return {
-					risk: "moderate",
-					requires_approval: this.config.require_approval_unknown,
-					category: "unknown",
-					description: `Execute ${toolName}`,
-				};
+		if (toolName === "cli") {
+			return this._classifyShellCommand(String(args.command ?? ""));
 		}
+		return {
+			risk: "moderate",
+			requires_approval: this.config.require_approval_unknown,
+			category: "unknown",
+			description: `Execute ${toolName}`,
+		};
 	}
 
 	/**
-	 * Classify a bash command by its content.
+	 * Classify a shell command (cli fallback) by its content.
 	 */
-	private _classifyBashCommand(command: string): IntentClassification {
+	private _classifyShellCommand(command: string): IntentClassification {
 		const trimmed = command.trim();
-		const builtin = parseBuiltinInvocation(trimmed);
-		if (builtin) {
-			if (builtin.command === "read") {
-				return {
-					risk: "safe",
-					requires_approval: false,
-					category: "file_read",
-					affected_files: builtin.path ? [builtin.path] : undefined,
-					description: `Read ${builtin.path ?? ""}`,
-				};
-			}
-			if (builtin.command === "write") {
-				return {
-					risk: "moderate",
-					requires_approval: this.config.require_approval_writes,
-					category: "file_write",
-					affected_files: builtin.path ? [builtin.path] : undefined,
-					description: `Write to ${builtin.path ?? ""}`,
-				};
-			}
-			if (builtin.command === "edit") {
-				return {
-					risk: "moderate",
-					requires_approval: this.config.require_approval_edits,
-					category: "file_write",
-					affected_files: builtin.path ? [builtin.path] : undefined,
-					description: `Edit ${builtin.path ?? ""}`,
-				};
-			}
-		}
 
 		// Dangerous patterns
 		const dangerousPatterns: Array<{ pattern: RegExp; description: string }> = [
@@ -284,33 +221,6 @@ export class IntentClassifier {
 			requires_approval: this.config.require_approval_shell_moderate,
 			category: "shell_moderate",
 			description: trimmed.length > 50 ? trimmed.slice(0, 50) + "..." : trimmed,
-		};
-	}
-
-	/**
-	 * Classify a builtin command.
-	 */
-	private _classifyBuiltinCommand(command: string): IntentClassification {
-		const trimmed = command.trim().toLowerCase();
-
-		// Safe builtin commands
-		const safeCommands = ["help", "version", "list", "ls", "status"];
-
-		if (safeCommands.includes(trimmed)) {
-			return {
-				risk: "safe",
-				requires_approval: false,
-				category: "shell_safe",
-				description: `Builtin: ${command}`,
-			};
-		}
-
-		// Everything else is moderate
-		return {
-			risk: "moderate",
-			requires_approval: false,
-			category: "shell_moderate",
-			description: `Builtin: ${command}`,
 		};
 	}
 
@@ -413,46 +323,6 @@ function resolveClassifierConfig(config: ClassifierConfig): ResolvedClassifierCo
 			config.require_approval_unknown ?? config.approve_unknown ?? DEFAULT_CLASSIFIER_CONFIG.require_approval_unknown,
 	};
 }
-
-function parseBuiltinInvocation(command: string): { command: "read" | "write" | "edit"; path?: string } | undefined {
-	const firstLine = command.split("\n", 1)[0]?.trim() ?? "";
-	const parts = splitShellWords(firstLine);
-	const token = parts[0]?.toLowerCase();
-	// Underscore built-ins (_read/_write/_edit) run through the same `cli`
-	// tool as plain built-ins — the model reached them in exactly the way
-	// the default `tools: ["cli"]` list advertises. Classify them by their
-	// file semantics, or the approvals.writes/edits gates never see the
-	// primary file-mutation path.
-	const builtin = token === "_read" ? "read"
-		: token === "_write" ? "write"
-		: token === "_edit" ? "edit"
-		: token;
-	if (builtin !== "read" && builtin !== "write" && builtin !== "edit") return undefined;
-
-	let path: string | undefined;
-	// Flags that consume a following VALUE (not the path): --content/-c,
-	// --edits JSON, --range. Skip their values so they are never mistaken
-	// for the file argument.
-	const VALUE_FLAGS = new Set(["--path", "-p", "--content", "-c", "--edits", "-e", "--range", "-r"]);
-	for (let i = 1; i < parts.length; i++) {
-		const arg = parts[i]!;
-		if (VALUE_FLAGS.has(arg) && parts[i + 1]) {
-			if (arg === "--path" || arg === "-p") {
-				path = parts[i + 1];
-				break;
-			}
-			i++; // consume the flag value
-			continue;
-		}
-		if (!arg.startsWith("-") && !path) {
-			path = arg;
-			break;
-		}
-	}
-
-	return { command: builtin as "read" | "write" | "edit", path };
-}
-
 
 /**
  * Commands whose quoted or heredoc payloads are executed as code rather than

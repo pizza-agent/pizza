@@ -42,7 +42,7 @@ import type {
 	InputSource,
 	MessageRenderer,
 	ProviderConfig,
-	RegisteredBuiltinCommand,
+	RegisteredCliCommand,
 	RegisteredCommand,
 	RegisteredExtensionMenu,
 	RegisteredExtensionSettingsItem,
@@ -56,6 +56,7 @@ import type {
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	SessionShutdownEvent,
+	ToolCallCommand,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEvent,
@@ -537,11 +538,18 @@ export class ExtensionRunner {
 		tool_call_id: string;
 		tool_name: string;
 		arguments: Record<string, unknown>;
+		command?: ToolCallCommand;
 	}) => Promise<ToolCallEventResult | undefined> {
 		this.toolCallGateInstalled = true;
 		return async (call) =>
 			this.emitToolCall(
-				{ type: "tool_call", toolCallId: call.tool_call_id, toolName: call.tool_name, input: call.arguments } as ToolCallEvent,
+				{
+					type: "tool_call",
+					toolCallId: call.tool_call_id,
+					toolName: call.tool_name,
+					input: call.arguments,
+					command: call.command,
+				} as ToolCallEvent,
 				{ failClosed: true },
 			);
 	}
@@ -580,12 +588,12 @@ export class ExtensionRunner {
 		return Array.from(toolsByName.values());
 	}
 
-	/** Get all registered dynamic built-in cli commands (first registration per name wins). */
-	getAllRegisteredBuiltinCommands(): RegisteredBuiltinCommand[] {
-		const commandsByName = new Map<string, RegisteredBuiltinCommand>();
+	/** Get all cli commands registered by extensions (first registration per name wins). */
+	getAllRegisteredCliCommands(): RegisteredCliCommand[] {
+		const commandsByName = new Map<string, RegisteredCliCommand>();
 		for (const ext of this.extensions) {
 			// `?.` guards stub Extension objects built before the field existed.
-			for (const command of ext.builtinCommands?.values() ?? []) {
+			for (const command of ext.cliCommands?.values() ?? []) {
 				if (!commandsByName.has(command.name)) {
 					commandsByName.set(command.name, command);
 				}

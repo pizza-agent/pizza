@@ -3,29 +3,22 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/exec/bash-executor.js";
-import { executeBuiltinCommand, parseTellInput } from "../src/core/tools/builtin-commands.js";
-import { createBashTool, createLocalBashOperations } from "../src/core/tools/bash.js";
+import { parseTellInput } from "../src/core/tools/builtin-commands.js";
+import { createLocalBashOperations } from "../src/core/tools/shell.js";
+import { createBuiltinCliCommands } from "../src/core/tools/builtin-cli-commands.js";
+import { createCliTestTool } from "./helpers/cli-tool.js";
 import { formatLineAnchor } from "../src/core/tools/line-anchors.js";
-import {
-	createEditTool,
-	createFindTool,
-	createGrepTool,
-	createLsTool,
-	createReadTool,
-	createWriteTool,
-} from "../src/index.js";
+import { createEditToolDefinition } from "../src/core/tools/edit.js";
+import { createReadToolDefinition } from "../src/core/tools/read.js";
+import { createWriteToolDefinition } from "../src/core/tools/write.js";
+import { wrapToolDefinition } from "../src/core/tools/tool-definition-wrapper.js";
 import * as shellModule from "../src/utils/shell.js";
 import { getToolPath } from "../src/utils/tools-manager.js";
 
-const hasRipgrep = getToolPath("rg") !== null;
-
-const readTool = createReadTool(process.cwd());
-const writeTool = createWriteTool(process.cwd());
-const editTool = createEditTool(process.cwd());
-const bashTool = createBashTool(process.cwd());
-const grepTool = createGrepTool(process.cwd());
-const findTool = createFindTool(process.cwd());
-const lsTool = createLsTool(process.cwd());
+const readTool = wrapToolDefinition(createReadToolDefinition(process.cwd()));
+const writeTool = wrapToolDefinition(createWriteToolDefinition(process.cwd()));
+const editTool = wrapToolDefinition(createEditToolDefinition(process.cwd()));
+const bashTool = createCliTestTool(process.cwd());
 
 // Helper to extract text from content blocks
 function getTextOutput(result: any): string {
@@ -448,14 +441,14 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should show help from the direct builtin command entry point", async () => {
-			const result = await executeBuiltinCommand("_edit", ["--help"], { cwd: testDir });
+			const tool = createCliTestTool(testDir);
+			const result = await tool.execute("test-edit-help-direct", { command: "_edit --help" });
+			const output = getTextOutput(result);
 
-			expect(result.exitCode).toBe(0);
-			expect(result.stderr).toBe("");
-			expect(result.stdout).toContain("_edit - Edit a file with read range anchors or search-and-replace");
-			expect(result.stdout).toContain("--edits, -e");
-			expect(result.stdout).toContain("--range, -r");
-			expect(result.stdout).toContain("Examples:");
+			expect(output).toContain("_edit - Edit a file with read range anchors or search-and-replace");
+			expect(output).toContain("--edits, -e");
+			expect(output).toContain("--range, -r");
+			expect(output).toContain("Examples:");
 		});
 
 		it("parses tell send positionals without swallowing the first message word when --to is given", () => {
@@ -476,46 +469,43 @@ describe("Coding Agent Tools", () => {
 
 		it("should route tell list through the cli tool when the tell option is set", async () => {
 			// cli tool with tell option: tell routes to the tell definition.
-			const tool = createBashTool(process.cwd(), { tell: { agentDir: "/tmp/no-such-agent-dir" } });
+			const tool = createCliTestTool(process.cwd(), { tell: { agentDir: "/tmp/no-such-agent-dir" } });
 			const result = await tool.execute("test-tell-list", { command: "_tell list" });
 			const output = getTextOutput(result);
 			expect(output).toContain("No known workspace agents found");
-			expect(result.details?.builtin?.name).toBe("tell");
+			expect(result.details?.command?.name).toBe("_tell");
 		});
 
 		it("should reject shell operators on built-in commands instead of falling back to the shell", async () => {
-			const tool = createBashTool(process.cwd());
+			const tool = createCliTestTool(process.cwd());
 			// Pipe: read must NOT degrade to the shell (where `read` is the bash builtin).
-			const piped = await tool.execute("test-read-pipe", { command: "_read src/main.ts | grep foo" });
-			const pipedOut = getTextOutput(piped);
-			expect(pipedOut).toContain("does not support shell operators");
-			expect(pipedOut).toContain("_read");
+			await expect(
+				tool.execute("test-read-pipe", { command: "_read src/main.ts | grep foo" }),
+			).rejects.toThrow(/does not support shell operators.*_read|_read.*does not support shell operators/s);
 
 			// Redirect on write: must NOT fall through to the shell (which would run chained cmds).
-			const redirected = await tool.execute("test-write-redir", { command: "_write a.txt hi > out.txt" });
-			expect(getTextOutput(redirected)).toContain("does not support shell operators");
+			await expect(
+				tool.execute("test-write-redir", { command: "_write a.txt hi > out.txt" }),
+			).rejects.toThrow(/does not support shell operators/);
 
 			// Chaining: a `;` after a built-in must not execute the trailing shell command.
-			const chained = await tool.execute("test-edit-chain", { command: "_edit x.ts search a b ; echo pwned" });
-			const chainedOut = getTextOutput(chained);
-			expect(chainedOut).toContain("does not support shell operators");
-			expect(chainedOut).not.toContain("pwned");
+			await expect(
+				tool.execute("test-edit-chain", { command: "_edit x.ts search a b ; echo pwned" }),
+			).rejects.toThrow(/does not support shell operators/);
 		});
 
 		it("should still route a pure built-in command (operators inside quoted args are fine)", async () => {
-			const tool = createBashTool(process.cwd());
+			const tool = createCliTestTool(process.cwd());
 			// `;` is inside the quoted search text — not a shell operator, so it routes normally.
 			const result = await tool.execute("test-help-quoted", { command: "_read -h" });
 			expect(getTextOutput(result)).toContain("_read -");
 		});
 
 		it("should reject non-file commands from the direct builtin command entry point", async () => {
-			const result = await executeBuiltinCommand("grep", ["--help"], { cwd: testDir });
-
-			expect(result.exitCode).toBe(1);
-			expect(result.stdout).toBe("");
-			expect(result.stderr).toContain("Unknown builtin command: grep");
-			expect(result.stderr).toContain("_read, _write, _edit");
+			const commands = createBuiltinCliCommands(testDir);
+			expect(commands.find((c) => c.name === "grep")).toBeUndefined();
+			expect(commands.find((c) => c.name === "_grep")).toBeUndefined();
+			expect(commands.map((c) => c.name)).toContain("_read");
 		});
 
 		it("should prefer bundled fd/rg binaries from the package", async () => {
@@ -544,25 +534,25 @@ describe("Coding Agent Tools", () => {
 			writeFileSync(join(testDir, "alpha.txt"), "hello alpha\n", "utf-8");
 			writeFileSync(join(testDir, "beta.md"), "hello beta\n", "utf-8");
 			writeFileSync(join(testDir, "server.py"), "WORKER = 2\n", "utf-8");
-			const localBashTool = createBashTool(testDir);
+			const localBashTool = createCliTestTool(testDir);
 
 			const findResult = await localBashTool.execute("test-shell-find-pipeline", {
 				command:
 					"find . -name '*.py' | while IFS= read -r line; do case \"$line\" in *server.py) printf '%s\\n' \"$line\";; esac; done",
 			});
-			expect(findResult.details?.builtin).toBeUndefined();
+			expect(findResult.details?.command).toBeUndefined();
 			expect(getTextOutput(findResult)).toContain("server.py");
 
 			const grepResult = await localBashTool.execute("test-shell-grep-pipeline", {
 				command: "grep -rn 'WORKER' . | while IFS= read -r line; do printf '%s\\n' \"$line\"; break; done",
 			});
-			expect(grepResult.details?.builtin).toBeUndefined();
+			expect(grepResult.details?.command).toBeUndefined();
 			expect(getTextOutput(grepResult)).toContain("server.py:1");
 
 			const lsResult = await localBashTool.execute("test-shell-ls-glob", {
 				command: "ls -1 *.py | while IFS= read -r line; do case \"$line\" in *server.py) printf '%s\\n' \"$line\";; esac; done",
 			});
-			expect(lsResult.details?.builtin).toBeUndefined();
+			expect(lsResult.details?.command).toBeUndefined();
 			expect(getTextOutput(lsResult)).toContain("server.py");
 		});
 
@@ -573,7 +563,7 @@ describe("Coding Agent Tools", () => {
 			mkdirSync(join(testDir, "nested"));
 			writeFileSync(join(testDir, "nested", "BETA.PY"), "print('beta')\n", "utf-8");
 			writeFileSync(join(testDir, "nested", "empty.txt"), "", "utf-8");
-			const shimOnlyBashTool = createBashTool(testDir, {
+			const shimOnlyBashTool = createCliTestTool(testDir, {
 				spawnHook: (context) => ({
 					...context,
 					env: { ...context.env, PATH: "" },
@@ -583,20 +573,20 @@ describe("Coding Agent Tools", () => {
 			const grepResult = await shimOnlyBashTool.execute("test-shim-grep-pipeline", {
 				command: "printf 'foo\\nbar\\n' | grep foo",
 			});
-			expect(grepResult.details?.builtin).toBeUndefined();
+			expect(grepResult.details?.command).toBeUndefined();
 			expect(getTextOutput(grepResult).trim()).toBe("foo");
 
 			const findResult = await shimOnlyBashTool.execute("test-shim-find-pipeline", {
 				command:
 					"find . -name '*.py' | while IFS= read -r line; do case \"$line\" in *server.py) printf '%s\\n' \"$line\";; esac; done",
 			});
-			expect(findResult.details?.builtin).toBeUndefined();
+			expect(findResult.details?.command).toBeUndefined();
 			expect(getTextOutput(findResult)).toContain("server.py");
 
 			const lsResult = await shimOnlyBashTool.execute("test-shim-ls-grep-pipeline", {
 				command: "ls -1 *.py | grep server.py",
 			});
-			expect(lsResult.details?.builtin).toBeUndefined();
+			expect(lsResult.details?.command).toBeUndefined();
 			expect(getTextOutput(lsResult).trim()).toBe("server.py");
 
 			const commonArgsResult = await shimOnlyBashTool.execute("test-shim-common-args", {
@@ -625,7 +615,7 @@ describe("Coding Agent Tools", () => {
 					"printf 'common-args-ok\\n'",
 				].join("\n"),
 			});
-			expect(commonArgsResult.details?.builtin).toBeUndefined();
+			expect(commonArgsResult.details?.command).toBeUndefined();
 			expect(getTextOutput(commonArgsResult).trim()).toBe("common-args-ok");
 		});
 
@@ -648,7 +638,7 @@ describe("Coding Agent Tools", () => {
 
 		it("should pass milliseconds unchanged to custom command operations", async () => {
 			const exec = vi.fn(async () => ({ exitCode: 0 }));
-			const tool = createBashTool(testDir, { operations: { exec } });
+			const tool = createCliTestTool(testDir, { operations: { exec } });
 			await tool.execute("test-custom-timeout", { command: "echo ok", timeout: 1500 });
 			expect(exec).toHaveBeenCalledWith("echo ok", testDir, expect.objectContaining({ timeout: 1500 }));
 		});
@@ -656,7 +646,7 @@ describe("Coding Agent Tools", () => {
 		it("should throw error when cwd does not exist", async () => {
 			const nonexistentCwd = "/this/directory/definitely/does/not/exist/12345";
 
-			const bashToolWithBadCwd = createBashTool(nonexistentCwd);
+			const bashToolWithBadCwd = createCliTestTool(nonexistentCwd);
 
 			await expect(bashToolWithBadCwd.execute("test-call-11", { command: "echo test" })).rejects.toThrow(
 				/Working directory does not exist/,
@@ -669,14 +659,14 @@ describe("Coding Agent Tools", () => {
 				args: ["-c"],
 			});
 
-			const bashWithBadShell = createBashTool(testDir);
+			const bashWithBadShell = createCliTestTool(testDir);
 
 			await expect(bashWithBadShell.execute("test-call-12", { command: "echo test" })).rejects.toThrow(/ENOENT/);
 		});
 
 		it("should pass shellPath through to shell resolution", async () => {
 			const getShellConfigSpy = vi.spyOn(shellModule, "getShellConfig");
-			const bashWithCustomShell = createBashTool(testDir, {
+			const bashWithCustomShell = createCliTestTool(testDir, {
 				shellPath: "/custom/bash",
 				operations: {
 					exec: async () => ({ exitCode: 0 }),
@@ -697,7 +687,7 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should prepend command prefix when configured", async () => {
-			const bashWithPrefix = createBashTool(testDir, {
+			const bashWithPrefix = createCliTestTool(testDir, {
 				commandPrefix: "export TEST_VAR=hello",
 			});
 
@@ -706,7 +696,7 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should include output from both prefix and command", async () => {
-			const bashWithPrefix = createBashTool(testDir, {
+			const bashWithPrefix = createCliTestTool(testDir, {
 				commandPrefix: "echo prefix-output",
 			});
 
@@ -715,7 +705,7 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should work without command prefix", async () => {
-			const bashWithoutPrefix = createBashTool(testDir, {});
+			const bashWithoutPrefix = createCliTestTool(testDir, {});
 
 			const result = await bashWithoutPrefix.execute("test-prefix-3", { command: "echo no-prefix" });
 			expect(getTextOutput(result).trim()).toBe("no-prefix");
@@ -746,7 +736,7 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should persist full output when truncation happens by line count only", async () => {
-			const bash = createBashTool(testDir);
+			const bash = createCliTestTool(testDir);
 			const result = await bash.execute("test-call-line-truncation", { command: "seq 3000" });
 			const output = getTextOutput(result);
 			const fullOutputPath = result.details?.fullOutputPath;
@@ -787,100 +777,7 @@ describe("Coding Agent Tools", () => {
 		});
 	});
 
-	describe.skipIf(!hasRipgrep)("grep tool", () => {
-		it("should include filename when searching a single file", async () => {
-			const testFile = join(testDir, "example.txt");
-			writeFileSync(testFile, "first line\nmatch line\nlast line");
 
-			const result = await grepTool.execute("test-call-11", {
-				pattern: "match",
-				path: testFile,
-			});
-
-			const output = getTextOutput(result);
-			expect(output).toContain("example.txt:2: match line");
-		});
-
-		it("should respect global limit and include context lines", async () => {
-			const testFile = join(testDir, "context.txt");
-			const content = ["before", "match one", "after", "middle", "match two", "after two"].join("\n");
-			writeFileSync(testFile, content);
-
-			const result = await grepTool.execute("test-call-12", {
-				pattern: "match",
-				path: testFile,
-				limit: 1,
-				context: 1,
-			});
-
-			const output = getTextOutput(result);
-			expect(output).toContain("context.txt-1- before");
-			expect(output).toContain("context.txt:2: match one");
-			expect(output).toContain("context.txt-3- after");
-			expect(output).toContain("[1 matches limit reached. Use limit=2 for more, or refine pattern]");
-			// Ensure second match is not present
-			expect(output).not.toContain("match two");
-		});
-	});
-
-	describe("find tool", () => {
-		it("should include hidden files that are not gitignored", async () => {
-			const hiddenDir = join(testDir, ".secret");
-			mkdirSync(hiddenDir);
-			writeFileSync(join(hiddenDir, "hidden.txt"), "hidden");
-			writeFileSync(join(testDir, "visible.txt"), "visible");
-
-			const result = await findTool.execute("test-call-13", {
-				pattern: "**/*.txt",
-				path: testDir,
-			});
-
-			const outputLines = getTextOutput(result)
-				.split("\n")
-				.map((line) => line.trim())
-				.filter(Boolean);
-
-			expect(outputLines).toContain("visible.txt");
-			expect(outputLines).toContain(".secret/hidden.txt");
-		});
-
-		it("should respect .gitignore", async () => {
-			writeFileSync(join(testDir, ".gitignore"), "ignored.txt\n");
-			writeFileSync(join(testDir, "ignored.txt"), "ignored");
-			writeFileSync(join(testDir, "kept.txt"), "kept");
-
-			const result = await findTool.execute("test-call-14", {
-				pattern: "**/*.txt",
-				path: testDir,
-			});
-
-			const output = getTextOutput(result);
-			expect(output).toContain("kept.txt");
-			expect(output).not.toContain("ignored.txt");
-		});
-
-		it("should surface fd glob parse errors", async () => {
-			await expect(
-				findTool.execute("test-call-15", {
-					pattern: "[",
-					path: testDir,
-				}),
-			).rejects.toThrow(/error parsing glob|fd exited with code 1|fd error/i);
-		});
-	});
-
-	describe("ls tool", () => {
-		it("should list dotfiles and directories", async () => {
-			writeFileSync(join(testDir, ".hidden-file"), "secret");
-			mkdirSync(join(testDir, ".hidden-dir"));
-
-			const result = await lsTool.execute("test-call-15", { path: testDir });
-			const output = getTextOutput(result);
-
-			expect(output).toContain(".hidden-file");
-			expect(output).toContain(".hidden-dir/");
-		});
-	});
 });
 
 describe("edit tool line ending handling", () => {

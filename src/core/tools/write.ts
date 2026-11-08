@@ -1,4 +1,3 @@
-import type { AgentTool } from "../agent/types.js";
 import { Container, Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
@@ -7,7 +6,6 @@ import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/type
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
 import { invalidArgText, normalizeDisplayText, replaceTabs, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { toolRenderBridge as tui } from "./render-bridge.js";
 
 const writeSchema = Type.Object({
@@ -275,6 +273,3 @@ export function createWriteToolDefinition(
 	};
 }
 
-export function createWriteTool(cwd: string, options?: WriteToolOptions): AgentTool<typeof writeSchema> {
-	return wrapToolDefinition(createWriteToolDefinition(cwd, options));
-}

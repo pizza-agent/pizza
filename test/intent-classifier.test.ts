@@ -4,40 +4,50 @@
 
 import { describe, it, expect } from "vitest";
 import { IntentClassifier } from "../src/core/intent/classifier.js";
+import { CommandRegistry } from "../src/core/tools/command-registry.js";
+import { createBuiltinCliCommands } from "../src/core/tools/builtin-cli-commands.js";
+import { resolveCliCommand, toResolvedToolCall } from "../src/core/tools/command-resolve.js";
+import type { ResolvedToolCall } from "../src/core/intent/types.js";
+
+/** Resolve a cli command line against the real command table (as the reactor does). */
+function resolvedFor(command: string): ResolvedToolCall | undefined {
+	const registry = new CommandRegistry({ builtins: createBuiltinCliCommands(process.cwd()) });
+	return toResolvedToolCall(resolveCliCommand(command, { registry, shell: {} }));
+}
 
 describe("IntentClassifier", () => {
 	const classifier = new IntentClassifier();
 
-	describe("file read tools", () => {
-		it("should classify read as safe", () => {
-			const result = classifier.classify("read", { path: "/some/file.ts" });
+	describe("file read commands", () => {
+		it("should classify _read as safe", () => {
+			const result = classifier.classify("cli", { command: "_read /some/file.ts" }, resolvedFor("_read /some/file.ts"));
 			expect(result.risk).toBe("safe");
 			expect(result.requires_approval).toBe(false);
 			expect(result.category).toBe("file_read");
 		});
 
 		it("should classify ls as safe", () => {
-			const result = classifier.classify("ls", { path: "/some/dir" });
+			const result = classifier.classify("cli", { command: "ls /some/dir" });
 			expect(result.risk).toBe("safe");
 			expect(result.requires_approval).toBe(false);
 		});
 
 		it("should classify grep as safe", () => {
-			const result = classifier.classify("grep", { pattern: "TODO", path: "." });
+			const result = classifier.classify("cli", { command: "grep TODO ." });
 			expect(result.risk).toBe("safe");
 			expect(result.requires_approval).toBe(false);
 		});
 
 		it("should classify find as safe", () => {
-			const result = classifier.classify("find", { pattern: "*.ts" });
+			const result = classifier.classify("cli", { command: "find . -name '*.ts'" });
 			expect(result.risk).toBe("safe");
 			expect(result.requires_approval).toBe(false);
 		});
 	});
 
-	describe("file write tools", () => {
-		it("should classify write as moderate (ungated by default)", () => {
-			const result = classifier.classify("write", { path: "/some/file.ts" });
+	describe("file write commands", () => {
+		it("should classify _write as moderate (ungated by default)", () => {
+			const result = classifier.classify("cli", { command: "_write /some/file.ts hi" }, resolvedFor("_write /some/file.ts hi"));
 			expect(result.risk).toBe("moderate");
 			// Default "gated" policy: writes/edits auto-run.
 			expect(result.requires_approval).toBe(false);
@@ -45,8 +55,8 @@ describe("IntentClassifier", () => {
 			expect(result.affected_files).toContain("/some/file.ts");
 		});
 
-		it("should classify edit as moderate (ungated by default)", () => {
-			const result = classifier.classify("edit", { path: "/some/file.ts" });
+		it("should classify _edit as moderate (ungated by default)", () => {
+			const result = classifier.classify("cli", { command: "_edit /some/file.ts replace 1#a x" }, resolvedFor("_edit /some/file.ts replace 1#a x"));
 			expect(result.risk).toBe("moderate");
 			expect(result.requires_approval).toBe(false);
 			expect(result.category).toBe("file_write");
@@ -57,23 +67,23 @@ describe("IntentClassifier", () => {
 				require_approval_writes: true,
 				require_approval_edits: true,
 			});
-			expect(gating.classify("write", { path: "/some/file.ts" }).requires_approval).toBe(true);
-			expect(gating.classify("edit", { path: "/some/file.ts" }).requires_approval).toBe(true);
+			expect(gating.classify("cli", { command: "_write /some/file.ts hi" }, resolvedFor("_write /some/file.ts hi")).requires_approval).toBe(true);
+			expect(gating.classify("cli", { command: "_edit /some/file.ts replace 1#a x" }, resolvedFor("_edit /some/file.ts replace 1#a x")).requires_approval).toBe(true);
 		});
 
 		it("should support deprecated approval aliases", () => {
 			const strict = new IntentClassifier({ approve_writes: true, approve_edits: true });
-			expect(strict.classify("write", { path: "/some/file.ts" }).requires_approval).toBe(true);
-			expect(strict.classify("edit", { path: "/some/file.ts" }).requires_approval).toBe(true);
+			expect(strict.classify("cli", { command: "_write /some/file.ts hi" }, resolvedFor("_write /some/file.ts hi")).requires_approval).toBe(true);
+			expect(strict.classify("cli", { command: "_edit /some/file.ts replace 1#a x" }, resolvedFor("_edit /some/file.ts replace 1#a x")).requires_approval).toBe(true);
 		});
 	});
 
-	describe("file delete tools", () => {
-		it("should classify truncate as dangerous", () => {
-			const result = classifier.classify("truncate", { path: "/some/file.ts" });
-			expect(result.risk).toBe("dangerous");
+	describe("unknown tools", () => {
+		it("should classify removed standalone names as unknown", () => {
+			const result = classifier.classify("write", { path: "/some/file.ts" });
+			expect(result.risk).toBe("moderate");
 			expect(result.requires_approval).toBe(true);
-			expect(result.category).toBe("file_delete");
+			expect(result.category).toBe("unknown");
 		});
 	});
 
@@ -146,7 +156,8 @@ describe("IntentClassifier", () => {
 		});
 
 		it("should classify cli built-in writes as file writes (ungated by default)", () => {
-			const result = classifier.classify("cli", { command: "write src/app.ts <<EOF\nhello\nEOF" });
+			const command = "_write src/app.ts hello";
+			const result = classifier.classify("cli", { command }, resolvedFor(command));
 
 			expect(result.risk).toBe("moderate");
 			expect(result.requires_approval).toBe(false);
@@ -165,9 +176,8 @@ describe("IntentClassifier", () => {
 
 		it("should not misclassify quoted greater-than as redirection", () => {
 			const GT = String.fromCharCode(62); // build ">" so this source stays free of redirect-looking text
-			const result = classifier.classify("cli", {
-				command: `_edit src/app.ts search "if (count ${GT} bestCount) {" "if (bestCount < count) {"`,
-			});
+			const command = `_edit src/app.ts search "if (count ${GT} bestCount) {" "if (bestCount < count) {"`;
+			const result = classifier.classify("cli", { command }, resolvedFor(command));
 			expect(result.category).toBe("file_write");
 			expect(result.affected_files).toEqual(["src/app.ts"]);
 			expect(result.requires_approval).toBe(false);
@@ -248,18 +258,18 @@ describe("IntentClassifier", () => {
 			// shell_moderate would normally be auto-approved; safe mode forces approval
 			expect(c.classify("cli", { command: "npm install" }).requires_approval).toBe(true);
 			// safe tools never require approval
-			expect(c.classify("read", { path: "x" }).requires_approval).toBe(false);
-			expect(c.classify("ls", { path: "x" }).requires_approval).toBe(false);
+			expect(c.classify("cli", { command: "ls x" }).requires_approval).toBe(false);
+			expect(c.classify("cli", { command: "cat x" }).requires_approval).toBe(false);
 		});
 
 		it("setSafeMode toggles live", () => {
 			const c = new IntentClassifier();
 			expect(c.isSafeMode).toBe(false);
-			expect(c.classify("write", { path: "x" }).requires_approval).toBe(false); // flag default (writes ungated)
+			expect(c.classify("cli", { command: "_write x hi" }, resolvedFor("_write x hi")).requires_approval).toBe(false); // flag default (writes ungated)
 			expect(c.classify("some_unknown_tool", { arg: "v" }).requires_approval).toBe(true); // unknown gated
 			c.setSafeMode(false);
-			expect(c.classify("write", { path: "x" }).requires_approval).toBe(false);
-			expect(c.classify("truncate", { path: "x" }).requires_approval).toBe(false);
+			expect(c.classify("cli", { command: "_write x hi" }, resolvedFor("_write x hi")).requires_approval).toBe(false);
+			expect(c.classify("cli", { command: "dd if=/dev/zero" }).requires_approval).toBe(false);
 			c.setSafeMode(true);
 			expect(c.isSafeMode).toBe(true);
 			expect(c.classify("cli", { command: "npm install" }).requires_approval).toBe(true);
@@ -273,21 +283,21 @@ describe("IntentClassifier", () => {
 describe("cli built-in underscore commands", () => {
 	it("gates _write through approvals.writes like the write tool", () => {
 		const gated = new IntentClassifier({ require_approval_writes: true, require_approval_unknown: false });
-		const result = gated.classify("cli", { command: "_write hello.txt MARZIPAN" });
+		const result = gated.classify("cli", { command: "_write hello.txt MARZIPAN" }, resolvedFor("_write hello.txt MARZIPAN"));
 		expect(result.category).toBe("file_write");
 		expect(result.requires_approval).toBe(true);
 	});
 
 	it("gates _edit through approvals.edits", () => {
 		const gated = new IntentClassifier({ require_approval_edits: true, require_approval_unknown: false });
-		const result = gated.classify("cli", { command: `_edit a.ts replace 12#ab "x = 1"` });
+		const result = gated.classify("cli", { command: `_edit a.ts replace 12#ab "x = 1"` }, resolvedFor("_edit a.ts replace 12#ab \"x = 1\""));
 		expect(result.category).toBe("file_write");
 		expect(result.requires_approval).toBe(true);
 	});
 
 	it("does not gate underscore writes when the writes gate is off (default)", () => {
 		const c = new IntentClassifier();
-		expect(c.classify("cli", { command: "_write a.txt hi" }).requires_approval).toBe(false);
-		expect(c.classify("cli", { command: "_write a.txt hi" }).category).toBe("file_write");
+		expect(c.classify("cli", { command: "_write a.txt hi" }, resolvedFor("_write a.txt hi")).requires_approval).toBe(false);
+		expect(c.classify("cli", { command: "_write a.txt hi" }, resolvedFor("_write a.txt hi")).category).toBe("file_write");
 	});
 });

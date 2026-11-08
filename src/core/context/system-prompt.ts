@@ -93,11 +93,30 @@ You are being called in the following environment:
 `;
 }
 
+/** One command of the cli tool's command table, as documented in the prompt. */
+export interface PromptCliCommand {
+	name: string;
+	description: string;
+	usage?: string;
+}
+
+/** What the cli tool can run in this session. */
+export interface PromptCliInfo {
+	/** Available underscore commands (built-in, SDK and extension). */
+	commands: PromptCliCommand[];
+	/** Whether non-underscore commands fall through to the shell. */
+	shell: boolean;
+	/** Shell policy allow list, when one is configured. */
+	shellAllow?: string[];
+}
+
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
-	/** Tools to include in prompt. Default: [cli] */
+	/** Function tools to include in prompt. */
 	selectedTools?: string[];
+	/** The cli tool's commands; undefined when the cli tool is not active. */
+	cli?: PromptCliInfo;
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
 	/** Additional guideline bullets appended to the default system prompt guidelines. */
@@ -150,7 +169,7 @@ function buildMainAgentPrefix(options: {
 	if (memory.length > 0) {
 		prefix += "# Long-Term Memory\n\n";
 		prefix +=
-			"Your long-term memory index is below. Read the referenced files on demand with the read command.\n\n";
+			"Your long-term memory index is below. Read the referenced files on demand with the _read command.\n\n";
 		for (const { path: filePath, content } of memory) {
 			prefix += `## ${filePath}\n\n${content.trim()}\n\n`;
 		}
@@ -159,11 +178,38 @@ function buildMainAgentPrefix(options: {
 	return prefix;
 }
 
+function formatCommandTable(commands: PromptCliCommand[]): string[] {
+	const rows = commands.map((command) => ({ left: command.usage ?? command.name, right: command.description }));
+	const width = Math.min(48, Math.max(0, ...rows.map((row) => row.left.length)) + 2);
+	return rows.map((row) => `  ${row.left.padEnd(width)}${row.right}`);
+}
+
+function formatShellAvailability(cli: PromptCliInfo): string {
+	if (!cli.shell) return "Shell commands are disabled in this session: only the underscore commands above can run.";
+	if (cli.shellAllow?.length) return `Shell commands are restricted to: ${cli.shellAllow.join(", ")}.`;
+	return "Anything that is not an underscore command runs in the shell with full shell syntax.";
+}
+
+/** Compact command table appended to custom system prompts (the tool contract must not get lost). */
+function buildCompactCliSection(cli: PromptCliInfo): string {
+	return [
+		"",
+		"",
+		"# CLI Commands",
+		"",
+		"The cli tool runs underscore commands internally (pure single commands, no shell operators; `<name> --help` shows usage):",
+		...formatCommandTable(cli.commands),
+		"",
+		formatShellAvailability(cli),
+	].join("\n");
+}
+
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const {
 		customPrompt,
 		selectedTools,
+		cli,
 		toolSnippets,
 		promptGuidelines,
 		appendSystemPrompt,
@@ -191,7 +237,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
 
 	const contextFiles = providedContextFiles ?? [];
-	const skills = providedSkills ?? [];
+	const commandNames = new Set(cli?.commands.map((command) => command.name) ?? []);
+	// Skills are loaded on demand through `_skill`; without it the hint is useless.
+	const skills = commandNames.has("_skill") ? (providedSkills ?? []) : [];
 
 	if (customPrompt) {
 		let prompt = mainAgentPrefix + customPrompt;
@@ -209,11 +257,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			}
 		}
 
-		// Append skills hint — the full skills list is no longer injected into
-		// the prompt. Instead, the LLM discovers and loads skills on demand via
+		if (cli) {
+			prompt += buildCompactCliSection(cli);
+		}
+
+		// Append skills hint — the full skills list is not injected into the
+		// prompt. Instead, the LLM discovers and loads skills on demand via
 		// the `_skill` underscore command (routed through the `cli` tool).
-		const customPromptHasCli = !selectedTools || selectedTools.includes("cli") || selectedTools.includes("bash");
-		if (customPromptHasCli && skills.length > 0) {
+		if (skills.length > 0) {
 			prompt += formatSkillsHint(skills);
 		}
 
@@ -229,13 +280,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		return prompt;
 	}
 
-	// Build tools list - only cli is exposed via function calls.
-	// read/write/edit are handled internally by the cli tool;
-	// grep/find/ls and other commands are passed to bash as-is.
-	const tools = selectedTools || (toolSnippets ? Object.keys(toolSnippets) : ["cli"]);
+	const tools = selectedTools || (toolSnippets ? Object.keys(toolSnippets) : cli ? ["cli"] : []);
 	const toolSnippetsMap: Record<string, string> = {
 		cli: "Execute CLI commands",
-		bash: "Execute bash commands",
 		...toolSnippets,
 	};
 	const visibleTools = tools.filter((name) => !!toolSnippetsMap[name]);
@@ -255,8 +302,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		guidelinesList.push(guideline);
 	};
 
-	const hasCli = tools.includes("cli") || tools.includes("bash");
-
 	// Always include these first — short, behavioral guidelines that apply
 	// to every response. Tool-specific detail lives in the sections below.
 	addGuideline("Be concise in your responses");
@@ -275,86 +320,103 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 	}
 
-	// Tool-specific guidelines — kept short here; full detail is in the
-	// Underscore Commands / Bash Commands sections below.
-	if (hasCli) {
-		addGuideline("The cli tool handles two kinds of commands: (1) underscore commands (_read, _write, _edit, _session_split, _history_tree, _tell, _skill) — handled internally, no shell, no pipes/redirects/chaining; (2) bash commands (grep, find, ls, cat, git, npm, ...) — passed to bash with full bash syntax. See the sections below for which to use and how");
+	const underscoreList = cli?.commands.map((command) => command.name).join(", ") || "none";
+	if (cli) {
+		addGuideline(
+			cli.shell
+				? `The cli tool handles two kinds of commands: (1) underscore commands (${underscoreList}) — handled internally, no shell, no pipes/redirects/chaining; (2) shell commands (grep, find, ls, cat, git, npm, ...) — full shell syntax. See the sections below for which to use and how`
+				: `The cli tool only runs underscore commands (${underscoreList}) — handled internally, no shell, no pipes/redirects/chaining. Shell commands are disabled in this session`,
+		);
 	}
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
+	const hasEditOrWrite = commandNames.has("_edit") || commandNames.has("_write");
 
-	// Underscore Commands section for the default system prompt
-	const builtinCommandsSection = [
-		"## Underscore Commands (handled internally, never sent to the shell)",
-		"",
-		"These Pizza-specific commands are prefixed with _ and executed inside the cli tool —",
-		"no shell fork, no shell parsing. Each must be the FIRST word of its own single cli()",
-		"call; buried after &&/||/;/| it falls through to the shell, which has no such command.",
-		"",
-		"  _read <path> [offset] [limit]                Read file content with 2-hex line anchors",
-		"  _write <path> <content>                       Write content to file",
-		"  _write <path> <<EOF\ncontent\nEOF             Write multi-line content (heredoc)",
-		"  _edit <path> <op> <range> [new]               Edit anchored whole line(s)",
-		"  _session_split [reason] [name]                Split promptly when the user starts a new task or topic",
-		"  _history_tree <action> [session_id]           Browse past sessions: list, view, jump, fork",
-		"  _tell <action> [to] [message]                 Send a message to another workspace's agent and get its reply",
-		"  _skill <action> [--name <name>] [--file <f>]   Discover and load Agent Skills: list, load, read",
-		"",
-		"IMPORTANT: underscore commands do NOT support shell operators — no pipes (|),",
-		"redirects (> <), chaining (; & &&), command substitution, or newlines. Issue each as",
-		"its own separate call; do not prefix it with cd && since the working directory is",
-		"already set. For pipelines, redirections, or globs, use a bash command instead.",
-		"",
-		"PASSING VALUES WITH QUOTES / SPACES / NEWLINES:",
-		"- _edit / _write arguments are shell-tokenized. A value written as bare positional",
-		"  text has its inner \" or ' silently consumed as shell quoting and DROPPED. NEVER write",
-		"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#ab call(\"x\") as bare tokens.",
-		"- Instead use a verbatim channel: _edit --edits JSON, _write --content, or a <<EOF heredoc.",
-		"  These preserve quotes, spaces, and newlines exactly.",
-		"",
-		"EDIT DISCIPLINE:",
-		"- Underscore arguments are LITERAL: $(), ``, $VAR never expand. Don't stage payloads",
-		"  or assemble values in shell — inline the JSON, or split into single-edit calls.",
-		"- Prefer _edit (fresh anchors or op=search) for targeted edits; scripts (sed/python) only",
-		"  for bulk/regex changes _edit cannot express.",
-	].join("\n");
-
-	// Bash Commands section — the second kind of command the cli tool handles.
-	const shellCommandsSection = [
-		"## Bash Commands (passed to bash, full bash syntax allowed)",
-		"",
-		"Anything that is NOT an underscore command is a bash command: grep, find, ls, cat,",
-		"sed, git, npm, cargo, make, curl, etc. These are passed to bash as-is and support the",
-		"full bash syntax — pipes (|), redirects (> >> <), chaining (&& || ; &), command",
-		"substitution ($() ``), globs (* ?), and newlines. Use bash commands when you need",
-		"any of these. If grep/find/ls are missing from PATH, Pizza injects temporary",
-		"per-process shims for only those missing commands.",
-	].join("\n");
-
-	// Examples split by command kind so the distinction is unambiguous.
-	const examplesSection = [
-		"## Examples",
-		"",
-		"Underscore commands (single, pure, no shell operators):",
-		'- cli("_read src/main.ts") - Read a file; text lines include <line>#<2-hex-hash> anchors',
-		'- cli("_read src/main.ts 10 50") - Read lines 10-59 (offset=10, limit=50)',
-		'- cli("_write output.txt Hello World") - Write to a file',
-		'- cli("_edit src/main.ts replace 12#ab \"const value = 2\"") - Replace an anchored line',
-		'- cli("_edit src/main.ts insert_after 12#ab \"const next = 3\"") - Insert after an anchored line',
-		'- cli("_edit src/main.ts delete 12#ab..14#de") - Delete an anchored range',
-		'- cli("_edit src/main.ts search \"const a = 1\" \"const a = 2\"") - Search-and-replace without line anchors (fallback when anchors are stale or unavailable)',
-		'- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)',
-		'- cli("_session_split topic_change") - Split when the conversation topic changes',
-		'- cli("_session_split --reason topic_change --name \"Fix auth\"") - Split and name the new session',
-		'- cli("_history_tree list") - Show the session history tree',
-		'- cli("_history_tree jump sess_0042") - Return to a previous session and continue there',
-		"",
-		"Bash commands (full bash syntax — pipes, redirects, chaining, globs):",
-		'- cli("grep -rn \"foo\" . | head") - Search with a pipeline',
-		'- cli("find . -name \"*.py\" -maxdepth 2 | wc -l") - Find and count with a pipeline',
-		'- cli("ls -lah *.py") - List files with glob expansion',
-		'- cli("npm test 2>&1 | tail -20") - Run tests and show last 20 lines',
-	].join("\n");
+	const cliSections: string[] = [];
+	if (cli) {
+		cliSections.push(
+			[
+				cli.shell
+					? "The cli tool handles two kinds of commands:\n1. Underscore commands — handled internally, no shell, no pipes/redirects/chaining\n2. Shell commands (grep, find, ls, git, npm, ...) — full shell syntax"
+					: "The cli tool runs underscore commands only (handled internally). Shell commands are disabled in this session.",
+				"",
+				"## Underscore Commands (handled internally, never sent to the shell)",
+				"",
+				"These commands are prefixed with _ and executed inside the cli tool — no shell fork,",
+				"no shell parsing. Each must be the FIRST word of its own single cli() call; run",
+				"`<name> --help` for full usage.",
+				"",
+				...formatCommandTable(cli.commands),
+				"",
+				"IMPORTANT: underscore commands do NOT support shell operators — no pipes (|),",
+				"redirects (> <), chaining (; & &&), command substitution, or newlines. Issue each as",
+				"its own separate call; do not prefix it with cd && since the working directory is",
+				"already set." + (cli.shell ? " For pipelines, redirections, or globs, use a shell command instead." : ""),
+				...(hasEditOrWrite
+					? [
+							"",
+							"PASSING VALUES WITH QUOTES / SPACES / NEWLINES:",
+							"- _edit / _write arguments are shell-tokenized. A value written as bare positional",
+							"  text has its inner \" or ' silently consumed as shell quoting and DROPPED. NEVER write",
+							"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#ab call(\"x\") as bare tokens.",
+							"- Instead use a verbatim channel: _edit --edits JSON, _write --content, or a <<EOF heredoc.",
+							"  These preserve quotes, spaces, and newlines exactly.",
+							"",
+							"EDIT DISCIPLINE:",
+							"- Underscore arguments are LITERAL: $(), ``, $VAR never expand. Don't stage payloads",
+							"  or assemble values in shell — inline the JSON, or split into single-edit calls.",
+							"- Prefer _edit (fresh anchors or op=search) for targeted edits; scripts (sed/python) only",
+							"  for bulk/regex changes _edit cannot express.",
+						]
+					: []),
+			].join("\n"),
+		);
+		if (cli.shell) {
+			cliSections.push(
+				[
+					"## Shell Commands (full shell syntax allowed)",
+					"",
+					"Anything that is NOT an underscore command is a shell command: grep, find, ls, cat,",
+					"sed, git, npm, cargo, make, curl, etc. These are passed to the shell as-is and support",
+					"the full syntax — pipes (|), redirects (> >> <), chaining (&& || ; &), command",
+					"substitution ($() ``), globs (* ?), and newlines. Use shell commands when you need",
+					"any of these. If grep/find/ls are missing from PATH, Pizza injects temporary",
+					"per-process shims for only those missing commands.",
+					...(cli.shellAllow?.length ? ["", formatShellAvailability(cli)] : []),
+				].join("\n"),
+			);
+		}
+		const underscoreExamples: Array<[string, string]> = [
+			["_read", '- cli("_read src/main.ts") - Read a file; text lines include <line>#<2-hex-hash> anchors'],
+			["_read", '- cli("_read src/main.ts 10 50") - Read lines 10-59 (offset=10, limit=50)'],
+			["_write", '- cli("_write output.txt Hello World") - Write to a file'],
+			["_edit", '- cli("_edit src/main.ts replace 12#ab \"const value = 2\"") - Replace an anchored line'],
+			["_edit", '- cli("_edit src/main.ts insert_after 12#ab \"const next = 3\"") - Insert after an anchored line'],
+			["_edit", '- cli("_edit src/main.ts delete 12#ab..14#de") - Delete an anchored range'],
+			["_edit", '- cli("_edit src/main.ts search \"const a = 1\" \"const a = 2\"") - Search-and-replace without line anchors (fallback when anchors are stale or unavailable)'],
+			["_edit", '- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)'],
+			["_session_split", '- cli("_session_split topic_change") - Split when the conversation topic changes'],
+			["_session_split", '- cli("_session_split --reason topic_change --name \"Fix auth\"") - Split and name the new session'],
+			["_history_tree", '- cli("_history_tree list") - Show the session history tree'],
+			["_history_tree", '- cli("_history_tree jump sess_0042") - Return to a previous session and continue there'],
+		];
+		const examples = underscoreExamples.filter(([name]) => commandNames.has(name)).map(([, line]) => line);
+		const examplesSection = ["## Examples"];
+		if (examples.length > 0) {
+			examplesSection.push("", "Underscore commands (single, pure, no shell operators):", ...examples);
+		}
+		if (cli.shell && !cli.shellAllow?.length) {
+			examplesSection.push(
+				"",
+				"Shell commands (full shell syntax — pipes, redirects, chaining, globs):",
+				'- cli("grep -rn \"foo\" . | head") - Search with a pipeline',
+				'- cli("find . -name \"*.py\" -maxdepth 2 | wc -l") - Find and count with a pipeline',
+				'- cli("ls -lah *.py") - List files with glob expansion',
+				'- cli("npm test 2>&1 | tail -20") - Run tests and show last 20 lines',
+			);
+		}
+		if (examplesSection.length > 1) cliSections.push(examplesSection.join("\n"));
+	}
 
 	let prompt = mainAgentPrefix + [
 		isMainAgent
@@ -364,16 +426,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		"Available tools:",
 		toolsList,
 		"",
-		"The cli tool handles two kinds of commands:",
-		"1. Underscore commands (_read, _write, _edit, ...) — handled internally, no shell, no pipes/redirects/chaining",
-		"2. Bash commands (grep, find, ls, git, npm, ...) — passed to bash with full bash syntax",
-		"",
-		builtinCommandsSection,
-		"",
-		shellCommandsSection,
-		"",
-		examplesSection,
-		"",
+		...cliSections.flatMap((section) => [section, ""]),
 		"In addition to the tools above, you may have access to other custom tools depending on the project.",
 		"",
 		"Guidelines:",
@@ -399,7 +452,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// Append skills hint — the full skills list is no longer injected into
 	// the prompt. Instead, the LLM discovers and loads skills on demand via
 	// the `_skill` underscore command (routed through the `cli` tool).
-	if (hasCli && skills.length > 0) {
+	if (skills.length > 0) {
 		prompt += formatSkillsHint(skills);
 	}
 

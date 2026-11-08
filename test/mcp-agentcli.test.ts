@@ -26,7 +26,7 @@ import {
 	McpServerConnection,
 } from "../src/builtin-extensions/mcp/runtime.js";
 import { InMemoryAuthStorageBackend } from "../src/core/auth/auth-storage.js";
-import type { BuiltinCommandDefinition, RegisteredBuiltinCommand } from "../src/core/extensions/types.js";
+import type { CliCommandDefinition, RegisteredCliCommand } from "../src/core/extensions/types.js";
 import {
 	type JsonRpcMessage,
 	type JsonRpcRequest,
@@ -37,7 +37,7 @@ import {
 } from "../src/core/mcp/index.js";
 import { createInMemoryTransportPair } from "../src/core/mcp/testing/index.js";
 import { createSyntheticSourceInfo } from "../src/core/skills/source-info.js";
-import { createBashTool } from "../src/core/tools/bash.js";
+import { createCliTestTool } from "./helpers/cli-tool.js";
 import { getTextOutput } from "../src/core/tools/render-utils.js";
 
 const FIXTURE = resolve(import.meta.dirname, "fixtures/mcp/stdio-server.mjs");
@@ -383,11 +383,11 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 			removeServer: async () => ({ path: join(dir, "mcp.json"), removed: true }),
 		});
 
-		const registered: RegisteredBuiltinCommand = {
+		const registered: RegisteredCliCommand = {
 			...cmdDef,
 			sourceInfo: createSyntheticSourceInfo("<builtin:mcp>", { source: "builtin" }),
 		};
-		const cliTool = createBashTool(dir, { dynamicBuiltins: () => [registered] });
+		const cliTool = createCliTestTool(dir, { dynamicBuiltins: () => [registered] });
 		return { dir, cliTool, cmdDef };
 	}
 
@@ -772,14 +772,14 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 
 	it("does NOT register per-MCP-tool definitions on ExtensionAPI, only `_agentcli` and `/mcp`", () => {
 		const toolsRegistered: string[] = [];
-		const builtinsRegistered: BuiltinCommandDefinition[] = [];
+		const builtinsRegistered: CliCommandDefinition[] = [];
 		const commandsRegistered: string[] = [];
 
 		const factory = createMcpExtension();
 		factory({
 			on: () => {},
 			registerTool: (t: { name: string }) => toolsRegistered.push(t.name),
-			registerBuiltinCommand: (c: BuiltinCommandDefinition) => builtinsRegistered.push(c),
+			registerCliCommand: (c: CliCommandDefinition) => builtinsRegistered.push(c),
 			registerCommand: (name: string) => commandsRegistered.push(name),
 			getMcpServers: () => [],
 		} as never);
@@ -835,7 +835,7 @@ describe("_agentcli dynamic builtin command & MCP extension", () => {
 			expect(runtimeTools).toEqual(["cli"]);
 
 			// Execute _agentcli through the session extensionRunner
-			const builtins = created.facade.extensionRunner.getAllRegisteredBuiltinCommands();
+			const builtins = created.facade.extensionRunner.getAllRegisteredCliCommands();
 			const agentcli = builtins.find((b) => b.name === "_agentcli");
 			expect(agentcli).toBeDefined();
 
