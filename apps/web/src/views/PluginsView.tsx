@@ -314,6 +314,7 @@ function SkillsTab() {
 
 	return (
 		<div className="space-y-4">
+			<p className="text-sm text-muted">{t("plugins.skills.description")}</p>
 			<div className="flex items-center gap-2">
 				<div className="relative flex-1">
 					<Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
@@ -1053,6 +1054,7 @@ function ExtensionsTab() {
 
 	return (
 		<div className="space-y-4">
+			<p className="text-sm text-muted">{t("plugins.extensions.description")}</p>
 			<div className="flex items-center gap-2">
 				<div className="relative flex-1">
 					<Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
@@ -1256,21 +1258,35 @@ function ChannelsTab() {
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editing, setEditing] = useState<ChannelInfo | null>(null);
 
-	const refresh = useCallback(async () => {
+	const refresh = useCallback(async (silent = false) => {
 		try {
-			setLoading(true);
-			setError("");
+			if (!silent) {
+				setLoading(true);
+				setError("");
+			}
 			setChannels(await listChannels());
 		} catch (e) {
-			setError(e instanceof Error ? e.message : String(e));
+			if (!silent) setError(e instanceof Error ? e.message : String(e));
 		} finally {
-			setLoading(false);
+			if (!silent) setLoading(false);
 		}
 	}, []);
 
 	useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	// Adapter start is async: save/enable returns while the channel is still
+	// "configuring" and flips to connected/error seconds later. Nothing pushes
+	// that transition to the UI, so re-list while any channel is mid-start —
+	// without this the card sits on "configuring" forever (even though the
+	// adapter is already live and delivering messages).
+	const hasPending = channels.some((c) => c.enabled && c.status === "configuring");
+	useEffect(() => {
+		if (!hasPending) return;
+		const timer = setInterval(() => void refresh(true), 2000);
+		return () => clearInterval(timer);
+	}, [hasPending, refresh]);
 
 	const upsert = useCallback((ch: ChannelInfo) => {
 		setChannels((prev) => {
@@ -1355,6 +1371,7 @@ function ChannelsTab() {
 				existing={editing}
 				onSaved={upsert}
 			/>
+			<p className="text-sm text-muted">{t("channels.description")}</p>
 			<div className="flex items-center justify-end">
 				<Button size="sm" tone="accent" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={handleAdd}>
 					{t("channels.add")}

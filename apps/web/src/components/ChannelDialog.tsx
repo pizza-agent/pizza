@@ -104,7 +104,7 @@ export function ChannelDialog({ open, onClose, existing, onSaved }: ChannelDialo
 			const saved = await saveChannel(existing?.id ?? null, input);
 			const result = await testChannel(saved.id);
 			setTestMessage(result.message);
-			onSaved({ ...saved, status: result.ok ? "connected" : "error" });
+			// Show the gateway's real status — the credential probe doesn't prove\n			// the adapter is live (the card converges via ChannelsTab's polling).\n			onSaved(saved);
 		} catch (e) {
 			setTestMessage(e instanceof Error ? e.message : String(e));
 		} finally {

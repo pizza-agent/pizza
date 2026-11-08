@@ -579,6 +579,7 @@
     },
     "skills": {
       "type": "Skill",
+      "description": "Skills are reusable instruction packs and workflows, loaded on demand once enabled.",
       "search": "Search skills...",
       "count": "{{count}} skill(s)",
       "empty": "No skills found",
@@ -608,6 +609,7 @@
     },
     "extensions": {
       "comingSoon": "Extensions coming soon",
+      "description": "Extensions register custom tools, commands, and UI for a session — load them per project or globally.",
       "comingSoonHint": "Extension management will be available here.",
       "enabled": "Enabled",
       "disabled": "Disabled",
@@ -792,6 +794,7 @@
   },
   "channels": {
     "add": "Add Channel",
+    "description": "Route messages from Discord, Lark, Slack, Telegram, or a webhook into a workspace and send the agent\u0027s replies back.",
     "loading": "Loading channels...",
     "error": "Error: {{error}}",
     "empty": "No channels configured",
@@ -800,7 +803,7 @@
       "connected": "Connected",
       "disconnected": "Disconnected",
       "error": "Error",
-      "configuring": "Not configured"
+      "configuring": "Connecting"
     },
     "bind": "→ {{workspace}}",
     "bindNone": "Not bound",
