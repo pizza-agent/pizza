@@ -101,7 +101,8 @@ const DEFAULT_INDEX_TEMPLATE = `# Memory Index
 This file indexes the long-term memory library. Each entry links a memory file
 to a short summary so the agent knows what exists without loading everything.
 
-- user-profile.md — stable facts about the user (preferences, environment, style)
+user-profile.md is a first-class document (like SOUL.md): its content is always
+in the prompt, so it needs no index entry. List topic memory files here.
 `;
 
 const DEFAULT_USER_PROFILE_TEMPLATE = `# User Profile
@@ -149,6 +150,23 @@ export function loadSoulFile(mainDir: string): SoulFile | undefined {
 	}
 	try {
 		return { path: soulPath, content: readFileSync(soulPath, "utf-8") };
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Load the user profile file (`<memoryDir>/user-profile.md`) if it exists.
+ * Injected into the prompt as the "About the User" section — stable facts
+ * about the user, kept separate from the agent's own identity in the soul.
+ */
+export function loadUserProfileFile(memoryDir: string): SoulFile | undefined {
+	const profilePath = join(memoryDir, "user-profile.md");
+	if (!existsSync(profilePath)) {
+		return undefined;
+	}
+	try {
+		return { path: profilePath, content: readFileSync(profilePath, "utf-8") };
 	} catch {
 		return undefined;
 	}
@@ -230,7 +248,11 @@ function reconcileIndex(indexContent: string, memoryFiles: string[]): string {
 		listedFiles.add(basename(match[1]));
 	}
 
-	const unindexed = memoryFiles.filter((file) => !listedFiles.has(file));
+	// user-profile.md is not a topic memory — its content is always injected,
+	// so an index entry is optional and its absence must not be flagged.
+	const unindexed = memoryFiles.filter(
+		(file) => file !== "user-profile.md" && !listedFiles.has(file),
+	);
 	const stale = [...listedFiles].filter(
 		(file) => file !== "_index.md" && !memoryFiles.includes(file),
 	);
@@ -273,23 +295,23 @@ export function getMainAgentGuidelines(
 
 	if (options?.soulUninitialized && options?.soulPath) {
 		guidelines.push(
-			`Your soul file (${options.soulPath}) still contains [NOT YET DEFINED]. Offer a short, optional introduction when it fits the conversation; do not interrupt the user's task or require onboarding before helping. Read existing identity and user-profile memories first and ask only for information that is actually missing. If _interact is available, discover its help and use one small, skippable dynamic card with questions suited to this user. Do not use a fixed sequence, repeat answered questions, or insist on a name. Let the user answer in chat or decline. Discover _interact capabilities before suggesting account connections; offer them when relevant to the user's needs, never connect automatically.`,
+			`Your soul file (${options.soulPath}) still contains [NOT YET DEFINED]. Offer a short, optional introduction when it fits the conversation; do not interrupt the user's task or require onboarding before helping. Your identity and the known user facts are already in this prompt (Identity and About the User sections) — ask only for information that is actually missing. If _interact is available, discover its help and use one small, skippable dynamic card with questions suited to this user. Do not use a fixed sequence, repeat answered questions, or insist on a name. Let the user answer in chat or decline. Discover _interact capabilities before suggesting account connections; offer them when relevant to the user's needs, never connect automatically.`,
 		);
 	}
 
 	if (options?.soulPath) {
 		guidelines.push(
-			`When the user asks you to remember a preference, save user facts and preferences in the appropriate user memory file. When they ask to update your personality or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. Persist explicit identity changes to the soul and user preferences to user memory; do not mix the two or treat unanswered cards as facts.`,
+			`When the user asks you to remember a preference, save stable user facts to ${join(memoryDir, "user-profile.md")} (the About the User section in this prompt). When they ask to update your personality or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. Persist explicit identity changes to the soul and user preferences to the user profile file; do not mix the two or treat unanswered cards as facts.`,
 		);
 	}
 
 	guidelines.push(
-		"You are a persistent agent: your identity lives in the Identity section and your long-term memory index is in the Long-Term Memory section of this prompt.",
+		"You are a persistent agent: your identity lives in the Identity section, stable user facts in the About the User section, and your long-term memory index is in the Long-Term Memory section of this prompt.",
 		"Before starting a new topic, review the relevant long-term memory; the index is in the prompt, read the specific memory file with the read command when you need details.",
-		`When you learn a stable fact about the user, write it to the appropriate file under ${memoryDir} (create a new file for a new topic and add it to _index.md).`,
+		`When you learn a stable fact about the user, write it to ${join(memoryDir, "user-profile.md")} (no index entry needed — it is always in this prompt); for other topics, create a new file under ${memoryDir} and add it to _index.md.`,
 		`When you notice outdated or inaccurate information in memory, update or delete the corresponding file under ${memoryDir} and keep _index.md in sync.`,
 		`At a meaningful milestone or natural session boundary, you may append a short factual entry to ${join(memoryDir, "journal")}/YYYY-MM-DD.md using the user's local calendar date. Read existing entries first; avoid duplicates, raw logs, secrets, invented feelings, or filler just because a day passed. Keep journals separate from the topic index; promote only durable findings into topic memories.`,
-		"Memory you write during a session is loaded into the system prompt at the next session boundary (after _session_split), not immediately.",
+		"Memory you write during a session — including the soul and user profile — is loaded into the system prompt at the next session boundary (after _session_split), not immediately.",
 		"You can delegate a task to a sub-agent in another project directory (workspace) with the built-in `_tell` cli command. Run `_tell list` first to see which workspaces are available — each shows a name (the last path component, e.g. \"web\"), its cwd, and metadata. Then `_tell send --to <name> --message \"...\"` (or a project path) to hand off the task. The target agent runs in its own workspace (kept alive by the gateway) and only its reply enters this conversation — keep other projects' context out of this conversation by delegating instead of handling them inline.",
 	);
 

@@ -30,6 +30,8 @@ describe("main agent profile", () => {
 		expect(result.soul).toMatchObject({ name: "Atlas", initialized: true, sourceId: "SOUL.md" });
 		expect(result.soul.summary).not.toContain("metadata");
 		expect(result.userProfile).toEqual({ sourceId: "memory/user-profile.md", summary: "中文，回答简洁。" });
+		// user-profile.md is shown in the dedicated About-you section, not the memory list.
+		expect(result.memories.some((entry) => entry.sourceId === "memory/user-profile.md")).toBe(false);
 		expect(result.memories).toEqual(expect.arrayContaining([
 			expect.objectContaining({ sourceId: "memory/missing.md", status: "stale" }),
 			expect.objectContaining({ sourceId: "memory/new.md", status: "unindexed", title: "New finding" }),
