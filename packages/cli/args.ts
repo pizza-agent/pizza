@@ -253,6 +253,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} plugin list                List installed extensions from settings
   ${APP_NAME} mcp add|remove|list|login|logout  Manage MCP servers (see ${APP_NAME} mcp --help)
   ${APP_NAME} config                    Open TUI to enable/disable package resources
+  ${APP_NAME} sessions [--all] [--json] List saved sessions (see ${APP_NAME} sessions --help)
   ${APP_NAME} update [check]            Check npm registry / GitHub releases for a newer version
   ${APP_NAME} update enable|disable     Turn the automatic startup update check on or off
   ${APP_NAME} plugin --help             Show help for plugin commands
@@ -351,6 +352,12 @@ ${chalk.bold("Examples:")}
   # Export an event session to HTML
   ${APP_NAME} --export event-session:<workspace-id>:<session-id>
   ${APP_NAME} --export <session-id> output.html
+
+  # List saved sessions for this workspace
+  ${APP_NAME} sessions
+
+  # List every workspace as machine-readable JSON
+  ${APP_NAME} sessions --all --json
 
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY                - Anthropic Claude API key
