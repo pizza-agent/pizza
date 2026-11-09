@@ -1,5 +1,6 @@
 import { createInteraction } from "../src/core/interaction/store.js";
-import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { initializeMainAgent } from "../src/core/agent/main-agent.js";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -219,8 +220,11 @@ describe("runRpcModeWithFacade", () => {
 		rpcIo.lineHandler!(JSON.stringify({ id: "edit-base", type: "main_document_read", sourceId: "SOUL.md" }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "edit-base", success: true })));
 		const base = parseOutputLines().find((line) => line.id === "edit-base")!.data as { revision: string };
+		const refresh = vi.spyOn(facade.runtime, "refreshSystemPromptForCurrentSession");
 		rpcIo.lineHandler!(JSON.stringify({ id: "save-source", type: "main_document_write", sourceId: "SOUL.md", content: "# Identity\n\nName: Nova", expectedRevision: base.revision }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "save-source", success: true, data: expect.objectContaining({ content: "# Identity\n\nName: Nova" }) })));
+		expect(readFileSync(join(mainDir, "SOUL.md"), "utf-8")).toBe("# Identity\n\nName: Nova");
+		expect(refresh).toHaveBeenCalled();
 		rpcIo.lineHandler!(JSON.stringify({ id: "stale-save", type: "main_document_write", sourceId: "SOUL.md", content: "Overwrite", expectedRevision: base.revision }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "stale-save", success: false, error: expect.stringContaining("DOCUMENT_CONFLICT") })));
 	});
@@ -245,6 +249,48 @@ describe("runRpcModeWithFacade", () => {
 		rpcIo.lineHandler!(JSON.stringify({ id: "mcp-invalid", type: "mcp_command", args: [42] }));
 		await vi.waitFor(() => expect(parseOutputLines()).toContainEqual(expect.objectContaining({ id: "mcp-invalid", success: false })));
 		expect(execute).toHaveBeenCalledTimes(1);
+	});
+
+	it("starts the main greeting once after SOUL.md is (re)created, and recreates a deleted soul", async () => {
+		const facade = createFacade();
+		void runRpcModeWithFacade(facade);
+		await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+		const send = async (id: string, extra: Record<string, unknown> = {}) => {
+			rpcIo.lineHandler!(JSON.stringify({ id, type: "main_greet", locale: "zh-CN", ...extra }));
+			await vi.waitFor(() => expect(parseOutputLines().some((line) => line.id === id)).toBe(true));
+			return parseOutputLines().find((line) => line.id === id)!;
+		};
+		expect(await send("not-main")).toMatchObject({ success: false });
+
+		const mainDir = makeTempDir();
+		const refresh = vi.spyOn(facade.runtime, "refreshSystemPromptForCurrentSession");
+		// An existing install whose template soul predates the pending marker is not greeted.
+		initializeMainAgent(mainDir, join(mainDir, "memory"));
+		rmSync(join(mainDir, ".greet-pending"));
+		Object.defineProperty(facade, "mainAgent", { value: { mainDir, memoryDir: join(mainDir, "memory") } });
+		expect(await send("legacy")).toMatchObject({ success: true, data: { started: false, reason: "already_greeted" } });
+		// Deleting SOUL.md starts over: the template is recreated, reloaded and a greeting is pending.
+		rmSync(join(mainDir, "SOUL.md"));
+		expect(await send("no-model")).toMatchObject({ success: true, data: { started: false, reason: "no_model" } });
+		expect(readFileSync(join(mainDir, "SOUL.md"), "utf-8")).toContain("[NOT YET DEFINED]");
+		expect(refresh).toHaveBeenCalled();
+		expect(existsSync(join(mainDir, ".greet-pending"))).toBe(true);
+
+		Object.defineProperty(facade, "modelRegistry", { value: { find: () => ({ id: "test-model" }), getAvailable: () => [] } });
+		Object.defineProperty(facade, "extensionRunner", { value: {
+			setUIContext: () => {},
+			getAllRegisteredCliCommands: () => [{ name: "_interact" }],
+			createContext: () => ({ sessionManager: { eventStore: facade.runtime.store } }),
+		} });
+		const prompt = vi.spyOn(facade, "prompt").mockResolvedValue();
+		expect(await send("greet")).toMatchObject({ success: true, data: { started: true } });
+		expect(prompt).toHaveBeenCalledOnce();
+		expect(prompt).toHaveBeenCalledWith(expect.stringMatching(/^\[main_greeting\]\n.*zh-CN/s), undefined, undefined, { source: "rpc", userRequestedForm: true });
+		expect(await send("again")).toMatchObject({ data: { started: false, reason: "already_greeted" } });
+		expect(prompt).toHaveBeenCalledOnce();
+
+		writeFileSync(join(mainDir, "SOUL.md"), "# Identity\n\nName: Atlas");
+		expect(await send("defined")).toMatchObject({ data: { started: false, reason: "soul_defined" } });
 	});
 
  it("lists and answers dynamic cards through RPC, dispatching exactly one follow-up", async () => {

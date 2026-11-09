@@ -1,9 +1,11 @@
 import { useInteractions } from "@/lib/interactions";
+import { isMainGreetingText } from "@/lib/interaction-presentation";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { sendCommandAwait, sendCommandRaw, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
 import type { RpcSessionState, TypedEvent } from "@/lib/types";
+import type { MainGreetResult } from "@tomsun28/pizza-protocol";
 import { Conversation, type TimelineItem } from "@/components/Conversation";
 import { Tooltip } from "@/components/Tooltip";
 import { ChatSearch } from "@/components/ChatSearch";
@@ -224,6 +226,7 @@ function buildTimelineFromMessages(
 		const ts = typeof msg.timestamp === "number" ? msg.timestamp : undefined;
 		if (role === "user") {
 			const text = messageText(msg);
+			if (isMainGreetingText(text)) continue;
 			const images = messageImages(msg);
 			const files = messageFiles(msg);
 			history.push({ id: `hist-${history.length}`, role: "user", title: t("common.you"), text, status: "", images: images.length > 0 ? images : undefined, files: files.length > 0 ? files : undefined, timestamp: ts, ...agentMessageFields(text) });
@@ -329,7 +332,7 @@ export default function AgentView({
 }) {
 	const interactions = useInteractions(workspace, state?.sessionId, sidecarReady && !!state?.capabilities?.interactions);
 	const { sidebarCollapsed, isMainAgent = false } = useOutletContext<LayoutOutletContext>() ?? { sidebarCollapsed: false };
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const [items, setItems] = useState<TimelineItem[]>([]);
 	const [error, setError] = useState("");
 	// Follow-ups queued while the agent is streaming. These are NOT part of
@@ -700,6 +703,7 @@ export default function AgentView({
 		switch (event.type) {
 			case "USER_MESSAGE": {
 				const text = messageText(event.payload);
+				if (isMainGreetingText(text)) break;
 				const images = messageImages(event.payload);
 				const files = messageFiles(event.payload);
 				// When a queued follow-up is drained, the reactor emits a real
@@ -1387,6 +1391,38 @@ export default function AgentView({
 	const remoteProviderMissing =
 		isRemoteWorkspaceKey(workspace) && state !== null && state.model === undefined;
 
+	// First-run greeting: whenever the main agent is idle, ask the backend
+	// whether the agent should open with a hello and guided choice cards. The
+	// backend decides — only after SOUL.md was (re)created from the template
+	// (first run, or the user deleted it), with a model and _interact ready.
+	// Fresh session state (incl. silent sidecar reconnects) and window focus
+	// re-check, so deleting SOUL.md while the app is open works. Throttled:
+	// state frames can arrive in bursts.
+	const greetInFlightRef = useRef(false);
+	const greetCheckedAtRef = useRef(0);
+	const [greetingStarted, setGreetingStarted] = useState(false);
+	const canGreet =
+		isMainAgent && sidecarReady && !waitingForWorkspace && !loadingHistory && !!state?.sessionId &&
+		!!state.capabilities?.interactions && !!state.model && !state.isStreaming;
+	const tryGreet = useCallback(() => {
+		if (greetInFlightRef.current || stateRef.current?.isStreaming || Date.now() - greetCheckedAtRef.current < 3000) return;
+		greetInFlightRef.current = true;
+		greetCheckedAtRef.current = Date.now();
+		void sendCommandAwait<MainGreetResult>({ type: "main_greet", locale: i18n.language }, 10000)
+			.then((r) => { if (r.data?.started) setGreetingStarted(true); })
+			.catch(() => { /* Older sidecar or not eligible — keep the normal empty state. */ })
+			.finally(() => { greetInFlightRef.current = false; });
+	}, [i18n.language]);
+	useEffect(() => {
+		if (canGreet) tryGreet();
+	}, [canGreet, state, tryGreet]);
+	useEffect(() => {
+		if (!canGreet) return;
+		window.addEventListener("focus", tryGreet);
+		return () => window.removeEventListener("focus", tryGreet);
+	}, [canGreet, tryGreet]);
+	const greetingInFlight = greetingStarted && items.length === 0 && !error;
+
 	return (
 		<div className="relative flex h-full flex-col">
 			<div
@@ -1450,14 +1486,16 @@ export default function AgentView({
 			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
-						{loadingHistory || waitingForWorkspace ? (
+						{loadingHistory || waitingForWorkspace || greetingInFlight ? (
 							<div className="flex flex-col items-center gap-3">
 								<Spinner />
 								<p className="text-xs text-muted">
 									{t(
 										waitingForWorkspace
 											? "common.switchingWorkspace"
-											: "common.loadingHistory",
+											: greetingInFlight
+												? "agent.mainGreeting"
+												: "common.loadingHistory",
 									)}
 								</p>
 							</div>

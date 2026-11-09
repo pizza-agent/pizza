@@ -74,8 +74,8 @@ export function InteractionCard({
 			{error}
 		</p>
 	) : null;
-	const frame = "my-4 rounded-3xl border border-border bg-surface px-5 py-5 sm:px-6";
-	const markClass = "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-medium";
+	const frame = `my-3 rounded-2xl border border-border bg-surface px-5 py-4 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ${choices || complete ? "max-w-xl" : ""}`;
+	const markClass = "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-medium";
 	const openCustom = () => {
 		setCustomOpen(true);
 		requestAnimationFrame(() => customInput.current?.focus());
@@ -127,7 +127,7 @@ export function InteractionCard({
 							type="button"
 							disabled={!pending || busy}
 							onClick={() => void send(choice.answer)}
-							className="group flex w-full items-start gap-3 rounded-xl py-2.5 text-left outline-none transition-colors hover:bg-surface-2/60 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-60"
+							className="group -mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-xl px-2 py-1.5 text-left outline-none transition-colors hover:bg-surface-2/60 focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.99] disabled:cursor-default disabled:opacity-60"
 						>
 							<span
 								className={`${markClass} border border-border bg-surface-2 text-muted group-hover:border-accent/30 group-hover:text-fg`}
@@ -148,7 +148,7 @@ export function InteractionCard({
 							disabled={busy}
 							aria-expanded={customOpen}
 							onClick={openCustom}
-							className="flex w-full items-center gap-3 rounded-xl py-2.5 text-left text-muted outline-none hover:bg-surface-2/60 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+							className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-xl px-2 py-1.5 text-left text-muted outline-none hover:bg-surface-2/60 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
 						>
 							<span className={`${markClass} border border-border bg-surface-2`}>{choiceMark(choices.length)}</span>
 							<span className="text-sm">{t("interaction.other")}</span>

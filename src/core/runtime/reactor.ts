@@ -25,6 +25,7 @@
  *   [onToolExecutionEnd]  ──→ track count → if all done → emit TOOL_RESULTS_AGGREGATED
  *         ↓
  *   [onToolResultsAggregated]  ──→ emit AGENT_TURN_REQUESTED  ← loop back
+ *       └── pending interaction card → AGENT_TURN_COMPLETED (wait for the user)
  *
  * Other handlers (run in parallel, do not gate the main flow):
  *   onAgentTurnCompleted  — UI notification
@@ -55,6 +56,7 @@ import type { SessionProjection } from "../projection/session-projection.js";
 import type { SessionManager } from "../projection/session-manager.js";
 import type { CompactionPolicy, RetryPolicy } from "./policies.js";
 import { DefaultRetryPolicy, NoopCompactionPolicy } from "./policies.js";
+import { listInteractions } from "../interaction/store.js";
 // ============================================================================
 // Types
 // ============================================================================
@@ -1379,6 +1381,20 @@ export class Reactor {
 			caused_by: event.event_id,
 		});
 
+		// The question is on screen and unanswered. Stop here. A later user
+		// reply starts the next turn; another model round now would keep
+		// working before that reply exists. Terminal prompts resolve the card
+		// before the tool returns, so they do not take this branch.
+		if (this._hasPendingInteraction()) {
+			this._emit({
+				actor_id: "coder_agent",
+				type: "AGENT_TURN_COMPLETED",
+				payload: { reason: "interaction_pending" },
+				caused_by: event.event_id,
+			});
+			return;
+		}
+
 		// Loop detection: if the model has called the exact same set of tools
 		// (by name) in too many consecutive rounds, break the loop by completing
 		// the turn instead of requesting another LLM round.
@@ -1420,6 +1436,13 @@ export class Reactor {
 		if (this.config.refreshSystemPrompt) {
 			this.config.systemPrompt = this.config.refreshSystemPrompt();
 		}
+	}
+
+	/** Unanswered card on the active thread. Expired cards do not hold the turn. */
+	private _hasPendingInteraction(): boolean {
+		const threadId = this.config.projection.getDescriptor().thread_id;
+		if (!threadId) return false;
+		return listInteractions(this.config.store, threadId).some((record) => record.status === "pending");
 	}
 
 	/**

@@ -56,6 +56,10 @@ export function answeredRows(record: InteractionRecord): { label?: string; text:
 	if (actionIndex >= 0) rows.push({ text: record.card.actions![actionIndex].label, mark: choiceMark(actionIndex) });
 	return rows;
 }
+/** App-sent kickoff of the main agent's first-run greeting; never shown as a user bubble. */
+export function isMainGreetingText(text: string): boolean {
+	return text.startsWith("[main_greeting]\n");
+}
 export function interactionResponseId(text: string): string | undefined {
 	if (!text.startsWith("[interaction_response]\n")) return;
 	try {

@@ -13,7 +13,7 @@ _interact show <<'JSON'
 {"title":"Your question","fields":[{"id":"answer","type":"text","label":"Question","required":false}],"allowSkip":true}
 JSON
 The GUI presents single-select questions and action-only cards as one-click choice rows and supplies an Other/free-text entry automatically; do not add a generic Other option yourself. Completed cards show only the selected answer.
-Cards support text/select/multi fields (options are {id,label,description?}) and actions ({id,label,capabilityId?}). Questions, labels and choices are supplied at runtime; no predefined onboarding flow exists. Maximum 6 fields and 8 actions. Cards are persisted in conversation history. In the GUI creation returns immediately: wait for a user reply before continuing dependent work; never retry or answer a card yourself. Users may answer in chat or skip. An action only selects an intent; it does not silently execute tools. Discover capability IDs before referencing them. Do not ask for passwords, tokens or client secrets. Do not put shell scripts, HTML or arbitrary links in cards.`;
+Cards support text/select/multi fields (options are {id,label,description?}) and actions ({id,label,capabilityId?}). Questions, labels and choices are supplied at runtime; no predefined onboarding flow exists. Maximum 6 fields and 8 actions. Cards are persisted in conversation history. In the GUI the card is saved and the turn ends until the user replies; do not batch further tool calls with the question, retry it, or answer it yourself. Users may answer in chat or skip. An action only selects an intent; it does not silently execute tools. Discover capability IDs before referencing them. Do not ask for passwords, tokens or client secrets. Do not put shell scripts, HTML or arbitrary links in cards.`;
 function scope(ctx: ExtensionContext) {
 	const store = ctx.sessionManager.eventStore,
 		descriptor = ctx.sessionManager.projection?.getDescriptor();
@@ -89,7 +89,7 @@ export const createInteractionExtension: ExtensionFactory = (pizza) => {
 					interaction: record,
 					message:
 						record.status === "pending"
-							? "Card is ready. Wait for the user's reply; do not repeat this request or continue dependent actions."
+							? "Card is shown to the user. End your turn now: no further text and no more tool calls (do not run _interact list to check it). The answer arrives as the next message; do not repeat this request or continue dependent actions."
 							: "Use the user's answer to continue.",
 				};
 			} else throw Error("Unknown interaction operation; use _interact --help");

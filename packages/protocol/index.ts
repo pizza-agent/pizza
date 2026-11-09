@@ -308,6 +308,7 @@ export type RpcCommand =
 	| { id?: string; type: "main_document_read"; sourceId: string }
 	| { id?: string; type: "main_document_write"; sourceId: string; content: string; expectedRevision: string }
 	| { id?: string; type: "main_journal_list"; before?: string; limit?: number }
+	| { id?: string; type: "main_greet"; locale?: string }
 
 	// Pet (the app companion)
 	| { id?: string; type: "pet_get" }
@@ -635,6 +636,11 @@ export interface MainJournalPage {
 	entries: MainJournalSummary[];
 	nextBefore?: string;
 }
+/** Result of `main_greet`: whether the first-run greeting turn was started. */
+export interface MainGreetResult {
+	started: boolean;
+	reason?: "soul_defined" | "already_greeted" | "busy" | "no_model" | "interactions_unavailable";
+}
 export interface MainAgentProfile {
 	soul: { initialized: boolean; name?: string; summary: string; sourceId: string };
 	userProfile: { summary: string; sourceId: string } | null;
@@ -844,6 +850,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "main_document_read"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_document_write"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_journal_list"; success: true; data: MainJournalPage }
+	| { id?: string; type: "response"; command: "main_greet"; success: true; data: MainGreetResult }
 
 	// Model
 	| { id?: string; type: "response"; command: "set_model"; success: true; data: ModelInfo }

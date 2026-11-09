@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventSourcedRuntime } from "../src/core/runtime/runtime.js";
+import { answerInteraction, createInteraction } from "../src/core/interaction/store.js";
 import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import { IntentClassifier } from "../src/core/intent/classifier.js";
 import { Reactor } from "../src/core/runtime/reactor.js";
@@ -140,6 +141,120 @@ describe("Reactor (event-driven core)", () => {
 		const completed = runtime.store.query({ types: ["AGENT_TURN_COMPLETED"] })[0];
 		expect((completed.payload as { reason: string }).reason).toBe("stop");
 
+		runtime.dispose();
+	});
+
+	it("ends the turn when a question card is still unanswered", async () => {
+		const cwd = makeTempDir();
+		let runtime: EventSourcedRuntime | undefined;
+		const registry: ToolRegistry = {
+			get(name: string): ToolExecutor | undefined {
+				if (name !== "echo") return undefined;
+				return {
+					async execute() {
+						const threadId = runtime!.getProjection().getDescriptor().thread_id;
+						createInteraction(runtime!.store, threadId, "call_1", {
+							title: "Pick one",
+							fields: [
+								{
+									id: "choice",
+									type: "select",
+									label: "Choice",
+									options: [
+										{ id: "a", label: "A" },
+										{ id: "b", label: "B" },
+									],
+								},
+							],
+						});
+						return { content: [{ type: "text", text: "asked" }], is_error: false };
+					},
+					getMetadata() {
+						return { name: "echo", category: "file_read", defaultRisk: "safe" };
+					},
+				};
+			},
+			list() {
+				return ["echo"];
+			},
+		};
+		const { client, callCount } = makeScriptedClient();
+		runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			classifierConfig: { approve_unknown: false },
+			systemPrompt: "test system",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		await runtime.prompt("ask me");
+
+		expect(callCount()).toBe(1);
+		expect(runtime.store.query({ types: ["AGENT_TURN_REQUESTED"] })).toHaveLength(1);
+		const completed = runtime.store.query({ types: ["AGENT_TURN_COMPLETED"] })[0];
+		expect((completed.payload as { reason: string }).reason).toBe("interaction_pending");
+		runtime.dispose();
+	});
+
+	it("continues after the question card is already answered", async () => {
+		const cwd = makeTempDir();
+		let runtime: EventSourcedRuntime | undefined;
+		const registry: ToolRegistry = {
+			get(name: string): ToolExecutor | undefined {
+				if (name !== "echo") return undefined;
+				return {
+					async execute() {
+						const threadId = runtime!.getProjection().getDescriptor().thread_id;
+						const record = createInteraction(runtime!.store, threadId, "call_1", {
+							title: "Pick one",
+							fields: [
+								{
+									id: "choice",
+									type: "select",
+									label: "Choice",
+									options: [
+										{ id: "a", label: "A" },
+										{ id: "b", label: "B" },
+									],
+								},
+							],
+						});
+						answerInteraction(runtime!.store, threadId, record.id, {
+							kind: "submit",
+							values: { choice: "a" },
+						});
+						return { content: [{ type: "text", text: "answered" }], is_error: false };
+					},
+					getMetadata() {
+						return { name: "echo", category: "file_read", defaultRisk: "safe" };
+					},
+				};
+			},
+			list() {
+				return ["echo"];
+			},
+		};
+		const { client, callCount } = makeScriptedClient();
+		runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			classifierConfig: { approve_unknown: false },
+			systemPrompt: "test system",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		await runtime.prompt("ask me");
+
+		expect(callCount()).toBe(2);
+		expect((runtime.store.query({ types: ["AGENT_TURN_COMPLETED"] })[0].payload as { reason: string }).reason).toBe(
+			"stop",
+		);
 		runtime.dispose();
 	});
 

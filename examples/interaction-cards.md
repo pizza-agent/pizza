@@ -23,10 +23,10 @@ JSON
 ```
 
 Text, single-choice (`select`) and multiple-choice (`multi`) fields are supported.
-The GUI returns a pending record immediately. Stop dependent work and wait for the
-user; do not create repeated cards. The user can submit, skip, or answer normally
-in chat. Terminal clients use sequential prompts. Headless clients receive the
-question JSON and can answer through ordinary input or the RPC below.
+The GUI saves the card and ends the agent turn. The next model round starts only
+after the user submits, skips, or answers in chat; do not create repeated cards.
+Terminal clients wait inside the command until the user answers. Headless clients
+receive the question JSON and can answer through ordinary input or the RPC below.
 
 ## Capabilities
 

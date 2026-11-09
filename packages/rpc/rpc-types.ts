@@ -30,7 +30,7 @@ export {
 
 import type {
 	InteractionRecord,
-	MainAgentProfile, MainAgentDocument, MainJournalPage, RpcPetCatalog,
+	MainAgentProfile, MainAgentDocument, MainGreetResult, MainJournalPage, RpcPetCatalog,
 	RpcSessionState as ProtocolSessionState,
 	RpcHistoryTreeResult,
 	RpcForensicEvent,
@@ -86,6 +86,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "main_document_read"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_document_write"; success: true; data: MainAgentDocument }
 	| { id?: string; type: "response"; command: "main_journal_list"; success: true; data: MainJournalPage }
+	| { id?: string; type: "response"; command: "main_greet"; success: true; data: MainGreetResult }
 	| { id?: string; type: "response"; command: "pet_get"; success: true; data: RpcPetCatalog }
 	| { id?: string; type: "response"; command: "pet_action"; success: true; data: RpcPetCatalog }
 

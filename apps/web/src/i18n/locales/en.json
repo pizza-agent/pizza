@@ -152,6 +152,7 @@
   "agent": {
     "newSession": "New Session",
     "readyPrompt": "Ready. Ask anything about this project.",
+    "mainGreeting": "Saying hello…",
     "remoteProviderMissing": "This remote Pizza has no model configured. Sign in or add an API key on the remote server before sending a message.",
     "sidecarExited": "Sidecar exited (code {{code}})",
     "agentError": "Agent error ({{reason}})",

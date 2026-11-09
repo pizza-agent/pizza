@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	acquireMainLock,
+	buildMainGreetingPrompt,
 	getMainAgentGuidelines,
+	isMainGreetingMessage,
+	isMainGreetingPending,
+	setMainGreetingPending,
 	initializeMainAgent,
 	isSoulUninitialized,
 	loadLongTermMemory,
@@ -229,6 +233,29 @@ describe("main-agent", () => {
 			expect(guidelines.some((g) => g.includes("update your personality"))).toBe(false);
 			// Core persistent-agent guidelines are still present.
 			expect(guidelines.some((g) => g.includes("persistent agent"))).toBe(true);
+		});
+	});
+
+	describe("first-run greeting", () => {
+		test("builds a hidden kickoff message that asks for one choice card at a time", () => {
+			const prompt = buildMainGreetingPrompt("zh-CN");
+			expect(isMainGreetingMessage(prompt)).toBe(true);
+			expect(prompt).toContain('"locale":"zh-CN"');
+			expect(prompt).toContain("_interact show");
+			expect(prompt.indexOf("call you")).toBeLessThan(prompt.indexOf("most want help with"));
+			expect(isMainGreetingMessage("hello")).toBe(false);
+		});
+
+		test("marks a greeting pending only when SOUL.md is created from the template", () => {
+			const mainDir = join(tempDir, "main");
+			initializeMainAgent(mainDir);
+			expect(isMainGreetingPending(mainDir)).toBe(true);
+			setMainGreetingPending(mainDir, false);
+			initializeMainAgent(mainDir);
+			expect(isMainGreetingPending(mainDir)).toBe(false);
+			rmSync(getMainSoulPath(mainDir));
+			expect(initializeMainAgent(mainDir)).toBe(true);
+			expect(isMainGreetingPending(mainDir)).toBe(true);
 		});
 	});
 

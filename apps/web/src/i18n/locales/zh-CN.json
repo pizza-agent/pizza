@@ -153,6 +153,7 @@
   "agent": {
     "newSession": "新会话",
     "readyPrompt": "就绪。可以问关于此项目的任何问题。",
+    "mainGreeting": "正在和你打招呼…",
     "remoteProviderMissing": "这台远程 Pizza 还没有配置模型。请先在远程服务器上登录账号或添加 API Key，再发送消息。",
     "sidecarExited": "Sidecar 已退出 (代码 {{code}})",
     "agentError": "Agent 错误 ({{reason}})",
