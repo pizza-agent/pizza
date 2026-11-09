@@ -1,21 +1,18 @@
 /**
  * PetSettingsPage — the pet's first-class settings page (Settings › Pet).
  * The pet is a core app feature; this page reads and changes it through the
- * pet RPC (`pet_get` / `pet_action`) and lists plugin-contributed species and
- * actions next to the built-ins.
+ * pet RPC (`pet_get` / `pet_action`) and displays its code-rendered character and plugin actions.
  */
 
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Cookie, PenLine, Plus, Puzzle, RefreshCw, Sparkles } from "lucide-react";
+import { Cookie, PenLine, Puzzle, RefreshCw, Sparkles } from "lucide-react";
 import { PetChatPill, petChipStyle } from "./pet-shared";
 import { PetFigure } from "./PetFigure";
 import { sendCommandAwait } from "@/lib/transport";
 import { confirmDialog } from "@/lib/confirm";
-import { invokePetWindow, PET_SCALE_MAX, PET_SCALE_MIN, runPetPluginAction, usePet, type PetMood, type PetOperation, type PetSpecies } from "@/lib/pet";
-import { cn, isTauri, MAIN_CHAT_CWD } from "@/lib/utils";
-import { loadDraft, saveDraft } from "@/lib/composer-drafts";
+import { invokePetWindow, PET_SCALE_MAX, PET_SCALE_MIN, runPetPluginAction, usePet, type PetMood, type PetOperation } from "@/lib/pet";
+import { cn, isTauri } from "@/lib/utils";
 
 function transcribe(audioB64: string, mimeType: string): Promise<string> {
 	return import("@tauri-apps/api/core").then(({ invoke }) =>
@@ -25,10 +22,9 @@ function transcribe(audioB64: string, mimeType: string): Promise<string> {
 
 const chip = "rounded-lg border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-50";
 
-export function PetSettingsPage({ workspace }: { workspace?: string }) {
+export function PetSettingsPage() {
 	const { t } = useTranslation();
-	const navigate = useNavigate();
-	const { pet, activity, species: customArt, loaded, floating, catalog, actions, error: loadError, refresh, act } = usePet();
+	const { pet, activity, loaded, floating, catalog, actions, error: loadError, refresh, act } = usePet();
 	const [actionError, setActionError] = useState("");
 	const [pending, setPending] = useState(false);
 	const [preview, setPreview] = useState<PetMood | null>(null);
@@ -80,17 +76,9 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 		setCustomizeOpen(false);
 		await run({ action: "customize", scale: customScale });
 	};
-	const createCustomPet = () => {
-		const targetWorkspace = workspace || MAIN_CHAT_CWD;
-		const previousDraft = loadDraft(targetWorkspace);
-		const prompt = `/skill:create-pet\n\n${previousDraft.input.trim()}\n\nHelp me create a custom Pizza pet. Ask me for its concept and visual style, then create a valid species JSON in ~/.pizza/agent/pets/. Do not overwrite existing pets. After creating it, explain how I can adopt it.`.trim();
-		saveDraft(targetWorkspace, { ...previousDraft, input: prompt });
-		navigate("/");
-	};
 
 	const mood = activity?.mood ?? pet?.mood ?? "idle";
 	const previewMood = preview ?? mood;
-	const art = (s: PetSpecies) => (s.source === "builtin" ? undefined : s.frames);
 	const error = actionError || (loaded ? "" : loadError);
 
 	return (
@@ -120,7 +108,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 			<div className="pet-stage relative mb-8 flex min-h-[280px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-border bg-surface px-6 py-8">
 				{pet ? (
 					<>
-						<PetFigure species={pet.speciesId} mood={previewMood} scale={pet.scale} size={128} frames={customArt?.frames} />
+						<PetFigure mood={previewMood} scale={pet.scale} size={128} />
 						<div style={petChipStyle}>
 							{t("settings.pet.level", { level: pet.level })} · {t(`pet.moods.${previewMood}`)}
 						</div>
@@ -155,12 +143,11 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 					</>
 				) : (
 					<div className="flex flex-col items-center gap-3 py-6">
-						<PetFigure species="pip" mood={previewMood} size={110} />
+						<PetFigure mood={previewMood} size={110} />
 						<p className="text-sm text-muted">{t("settings.pet.noPet")}</p>
 					</div>
 				)}
 			</div>
-
 
 			<div className="mb-8">
 				<p className="mb-2 text-xs font-medium text-muted">{t("settings.pet.preview")}</p>
@@ -174,7 +161,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 			</div>
 
 			<div className="mb-3 flex items-center justify-between">
-				<h2 className="text-[15px] font-semibold tracking-tight text-fg">{t("settings.pet.myPets")}</h2>
+				<h2 className="text-[15px] font-semibold tracking-tight text-fg">{t("settings.pet.characters")}</h2>
 				<div className="flex items-center gap-1">
 					<button
 						type="button"
@@ -184,14 +171,6 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
 					>
 						<RefreshCw className="h-4 w-4" />
-					</button>
-					<button
-						type="button"
-						onClick={createCustomPet}
-						className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-medium text-fg transition-colors hover:bg-surface-2"
-					>
-						<Plus className="h-3.5 w-3.5" />
-						{t("settings.pet.createPet")}
 					</button>
 				</div>
 			</div>
@@ -223,13 +202,8 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 								active ? "border-accent ring-1 ring-accent/40" : "border-border hover:bg-surface-2/60",
 							)}
 						>
-							{s.source !== "builtin" && (
-								<span className="absolute left-3 top-3 rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted">
-									{t(s.source === "plugin" ? "settings.pet.sourcePlugin" : "settings.pet.sourceUser")}
-								</span>
-							)}
 							<div className="flex h-[96px] items-center justify-center">
-								<PetFigure species={s.id} mood={active ? mood : "idle"} scale={active ? pet!.scale : 1} busy={active && pet!.busy} size={88} frames={art(s)} />
+								<PetFigure mood={active ? mood : "idle"} scale={active ? pet!.scale : 1} size={88} />
 							</div>
 							<span className="text-[13px] font-medium text-fg">{s.name}</span>
 							{active && (
@@ -255,7 +229,7 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 								<h2 id="pet-customize-title" className="text-base font-semibold text-fg">{t("settings.pet.customize")}</h2>
 								<p className="mt-1 text-xs text-muted">{t("settings.pet.customizeHint")}</p>
 							</div>
-							<PetFigure species={pet.speciesId} mood={mood} scale={customScale} size={64} frames={customArt?.frames} />
+							<PetFigure mood={mood} scale={customScale} size={64} />
 						</div>
 						<label className="mb-2 flex items-center justify-between text-[13px] font-medium text-fg" htmlFor="pet-scale">
 							<span>{t("settings.pet.size")}</span>

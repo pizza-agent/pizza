@@ -9,9 +9,9 @@ export interface CharacterDefinition {
 	face: { left: number; right: number; eyeY: number; mouthY: number };
 }
 
-/** Stable save id, entirely new artwork. No baked shapes, images, GIFs or frame assets. */
+/** The Pizza character is entirely code-rendered. No baked shapes, images, GIFs or frame assets. */
 export const CHARACTERS: Record<string, CharacterDefinition> = {
-	pip: {
+	pizza: {
 		label: "Pizza", accent: "#ffae48",
 		body: "M25 19 Q56 9 87 19 Q99 23 92 39 L67 92 Q56 110 45 92 L20 39 Q13 23 25 19Z",
 		crust: "M24 24 Q56 12 88 24",
@@ -44,8 +44,3 @@ export const CHARACTER_EXPRESSIONS: Record<RpcPetMood, CharacterExpression> = {
 	sleepy: { ...base, eyeY: .18, mouth: round, mouthOpen: .3, lean: -7 },
 	eating: { ...base, eyeY: .8, mouth: round, mouthOpen: .8 },
 };
-
-/** Old busy-only hosts can still drive the rig without flattening newer expression states. */
-export function characterMood(mood: RpcPetMood, busy = false): RpcPetMood {
-	return busy && (mood === "idle" || mood === "sleepy") ? "working" : mood;
-}

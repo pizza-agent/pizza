@@ -28,10 +28,10 @@ export function mergePetFrames(frames: ReadonlyMap<string, Frame>, now = Date.no
 	const priority = ["waiting", "working", "speaking", "thinking"];
 	const active = [...frames.values()]
 		.filter((f) => now - f.at < BUSY_STALE_MS)
-		.map((f) => f.snapshot.activity ?? (f.snapshot.pet ? { mood: f.snapshot.pet.mood, busy: f.snapshot.pet.busy } : undefined))
-		.filter((a): a is { mood: PetMood; busy: boolean } => Boolean(a?.busy))
+		.map((f) => f.snapshot.activity)
+		.filter((a) => a.busy)
 		.sort((a, b) => priority.indexOf(a.mood) - priority.indexOf(b.mood))[0];
-	const base = pet?.mood ?? newest.snapshot.activity?.mood ?? "idle";
+	const base = newest.snapshot.activity.mood;
 	const mood: PetMood = active?.mood ?? (priority.includes(base) ? "idle" : base);
 	const busy = Boolean(active);
 	return { ...newest.snapshot, activity: { mood, busy }, pet: pet ? { ...pet, busy, mood } : null };

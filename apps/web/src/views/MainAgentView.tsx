@@ -83,12 +83,11 @@ export default function MainAgentView({ workspace, data, running, connected }: {
 		finally { if (request === journalGeneration.current) setJournalLoading(false); }
 	};
 	const name = profile?.soul.name?.trim() || t("layout.agent");
-	const species = pet?.speciesId ?? (petState.loaded ? undefined : profile?.pet?.speciesId);
 	const editAppearance = t("mainAgent.editAppearance");
 	const avatar = <div className="group/avatar relative h-12 w-12 shrink-0">
 		<button type="button" onClick={() => navigate(PET_SETTINGS_PATH)} aria-label={editAppearance} title={editAppearance}
 			className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-surface-2/60 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-			<PetFigure species={species} mood={petState.activity?.mood ?? pet?.mood ?? (running ? "thinking" : "idle")} busy={running} size={44} frames={petState.species?.frames} halo={false} />
+			<PetFigure mood={petState.activity?.mood ?? pet?.mood ?? (running ? "thinking" : "idle")} size={44} halo={false} />
 		</button>
 		<span aria-hidden="true" className="pointer-events-none absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-surface bg-fg text-bg shadow-sm transition-transform group-hover/avatar:scale-110">
 			<PenLine className="h-2.5 w-2.5" strokeWidth={2.2} />

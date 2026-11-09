@@ -671,9 +671,6 @@ export interface RpcPetSpecies {
 	id: string;
 	name: string;
 	description?: string;
-	/** ASCII frames per mood (the art for non-builtin species). */
-	frames: Partial<Record<RpcPetMood, string[]>>;
-	source: "builtin" | "plugin" | "user";
 }
 
 /** A plugin-contributed pet menu entry; `command` is steered into the session. */
@@ -686,12 +683,10 @@ export interface RpcPetAction {
 
 export interface RpcPetSnapshot {
 	/** Runtime expression is available even before the companion is adopted. */
-	activity?: { mood: RpcPetMood; busy: boolean };
+	activity: { mood: RpcPetMood; busy: boolean };
 	/** Shared-save revision; prevents delayed frames undoing an appearance change. */
 	revision?: number;
 	pet: RpcPetStatus | null;
-	/** Active species definition when it is not a builtin (custom art). */
-	species: RpcPetSpecies | null;
 }
 
 export interface RpcPetCatalog extends RpcPetSnapshot {

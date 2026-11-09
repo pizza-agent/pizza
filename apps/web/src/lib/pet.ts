@@ -60,10 +60,9 @@ async function readSave(): Promise<PetStatus | null | undefined> {
 	if (!isTauri()) return undefined;
 	const { invoke } = await import("@tauri-apps/api/core");
 	const save = await invoke<Record<string, unknown> | null>("get_pet_state");
-	if (!save || typeof save.speciesId !== "string") return null;
+	if (!save || save.speciesId !== "pizza") return null;
 	const xp = typeof save.xp === "number" ? save.xp : 0;
 	return {
-		// Only the backend can distinguish retired builtins from plugin-owned IDs.
 		speciesId: save.speciesId,
 		xp,
 		level: levelForXp(xp),
@@ -90,11 +89,8 @@ export function usePet(enabled = true) {
 		setSnapshot(mergePetFrames(frames.current));
 	}, []);
 	const applyCatalog = useCallback((next: SourcedCatalog) => {
-		apply(next.sourceCwd ?? "local", { pet: next.pet, species: next.species, activity: next.activity, revision: next.revision });
-		// An already-running older backend may still advertise retired builtins.
-		setCatalog(next.catalog
-			.filter((s) => s.source !== "builtin" || s.id === "pip")
-			.map((s) => s.source === "builtin" && s.id === "pip" ? { ...s, name: "Pizza" } : s));
+		apply(next.sourceCwd ?? "local", { pet: next.pet, activity: next.activity, revision: next.revision });
+		setCatalog(next.catalog);
 		setActions(next.actions);
 		setError("");
 	}, [apply]);
@@ -119,12 +115,12 @@ export function usePet(enabled = true) {
 		const cleanups: Array<() => void> = [];
 		const add = (fn: () => void) => { if (disposed) fn(); else cleanups.push(fn); };
 		void readSave()
-			.then((pet) => { if (!disposed && pet !== undefined && frames.current.size === 0) setSnapshot((s) => s ?? { pet, species: null }); })
+			.then((pet) => { if (!disposed && pet !== undefined && frames.current.size === 0) setSnapshot((s) => s ?? { pet, activity: { mood: "idle", busy: false } }); })
 			.catch(() => {});
 		void subscribePetState((frame) => {
 			// A remote workspace reports another machine's save.
 			if (disposed || frame._cwd?.startsWith("remote://")) return;
-			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, species: (frame.species as PetSpecies | null) ?? null, activity: frame.activity as PetSnapshot["activity"], revision: typeof frame.revision === "number" && Number.isFinite(frame.revision) ? frame.revision : undefined });
+			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, activity: frame.activity as PetSnapshot["activity"], revision: typeof frame.revision === "number" && Number.isFinite(frame.revision) ? frame.revision : undefined });
 		}).then(add).catch(() => {});
 		void refresh();
 		const staleTimer = setInterval(() => {
@@ -152,8 +148,6 @@ export function usePet(enabled = true) {
 	return {
 		pet: snapshot?.pet ?? null,
 		activity: snapshot?.activity,
-		/** Active species definition when it has custom (ASCII) art. */
-		species: snapshot?.species ?? null,
 		loaded: snapshot !== undefined,
 		floating,
 		catalog,

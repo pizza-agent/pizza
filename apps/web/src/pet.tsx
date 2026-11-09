@@ -27,8 +27,8 @@ import type { MainAgentProfile } from "./lib/main-agent-profile";
 
 function PetFloat() {
 	const { t } = useTranslation();
-	const { pet, species, loaded, actions, act, activity } = usePet();
-	const [readySpecies, setReadySpecies] = useState<string | null>(null);
+	const { pet, loaded, actions, act, activity } = usePet();
+	const [ready, setReady] = useState(false);
 	const [hover, setHover] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
 	const [input, setInput] = useState("");
@@ -50,8 +50,8 @@ function PetFloat() {
 	}, []);
 	const name = agentName || t("layout.agent");
 	useEffect(() => {
-		if (loaded && readySpecies === (pet?.speciesId ?? "none")) void invoke("pet_window_ready").catch(() => {});
-	}, [loaded, readySpecies, pet?.speciesId]);
+		if (loaded && ready) void invoke("pet_window_ready").catch(() => {});
+	}, [loaded, ready]);
 	useEffect(() => {
 		if (!hover) return;
 		let alive = true;
@@ -67,7 +67,7 @@ function PetFloat() {
 			}).catch(() => {});
 		}, 60);
 		return () => { alive = false; clearInterval(timer); setLook({ x: 0, y: 0 }); };
-	}, [hover, pet?.speciesId]);
+	}, [hover]);
 	const sendPrompt = useCallback(async () => {
 		if (!input.trim() || busy) return;
 		setBusy(true); setError(""); setSent(false);
@@ -104,7 +104,7 @@ function PetFloat() {
 				onClick={() => { if (!justDraggedRef.current) setChatOpen((v) => !v); }}
 				onKeyDown={(e) => { if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left + r.width / 2, y: r.bottom }); } }}
 				onDoubleClick={() => run("dock_pet_window")}>
-				<PetFigure species={pet?.speciesId} mood={activity?.mood ?? pet?.mood} look={look} busy={busy || pet?.busy} scale={pet?.scale} frames={species?.frames} onReady={() => setReadySpecies(pet?.speciesId ?? "none")} />
+				<PetFigure mood={activity?.mood ?? pet?.mood} look={look} scale={pet?.scale} onReady={() => setReady(true)} />
 			</button>
 		</div>
 		{showChat && <div data-nodrag onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{ position: "absolute", top: 96, left: 22, width: 256, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>

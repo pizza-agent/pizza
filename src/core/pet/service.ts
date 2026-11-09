@@ -5,18 +5,12 @@
  * mood/XP state machine and the species catalog. Sessions feed it agent
  * activity (session.ts), RPC serves it to the desktop app (`pet_get`,
  * `pet_action`, `pet_state` frames), and plugins extend it through
- * `pizza.pet` — extra species, menu actions and reactions.
+ * `pizza.pet` — menu actions and reactions.
  */
 
 import { applyEvent, applyReaction, effectiveMood, initialPetState, levelForXp, type PetEventKind, type PetState } from "./state.js";
-import { BUILTIN_SPECIES, DEFAULT_PET_SPECIES, LEGACY_PET_SPECIES, isValidSpecies, PET_MOODS, type PetActivityMood, type PetMood, type PetSpeciesDef } from "./sprites.js";
-import { deletePetSave, listUserSpecies, loadPetRecord, migratePetSpecies, savePet, savePetProgress, savePetProgressAsync, type PetSave } from "./store.js";
-
-export type PetSpeciesSource = "builtin" | "plugin" | "user";
-
-export interface PetSpeciesInfo extends PetSpeciesDef {
-	source: PetSpeciesSource;
-}
+import { BUILTIN_SPECIES, PET_MOODS, type PetActivityMood, type PetMood, type PetSpeciesDef } from "./sprites.js";
+import { deletePetSave, loadPetRecord, savePet, savePetProgress, savePetProgressAsync, type PetSave } from "./store.js";
 
 /** A plugin-contributed entry for the pet's right-click menu and settings page. */
 export interface PetActionDef {
@@ -40,17 +34,16 @@ export interface PetStatus {
 	floating: boolean | null;
 }
 
-/** Live state pushed to UIs. `species` carries frames for custom (non-builtin) art. */
+/** Live runtime expression and the active code character, pushed to every UI. */
 export interface PetSnapshot {
-	activity?: { mood: PetMood; busy: boolean };
+	activity: { mood: PetMood; busy: boolean };
 	/** Shared-save revision orders identity changes across workspace processes. */
 	revision?: number;
 	pet: PetStatus | null;
-	species: PetSpeciesInfo | null;
 }
 
 export interface PetCatalog extends PetSnapshot {
-	catalog: PetSpeciesInfo[];
+	catalog: readonly PetSpeciesDef[];
 	actions: PetActionDef[];
 }
 
@@ -63,7 +56,6 @@ export type PetOperation =
 
 /** Where plugin contributions come from — one per session's extension runner. */
 export interface PetContributionSource {
-	species(): PetSpeciesDef[];
 	actions(): PetActionDef[];
 }
 
@@ -93,19 +85,12 @@ export class PetService {
 		return () => this.sources.delete(source);
 	}
 
-	/** Built-ins, then plugin species, then user packs (later ids override). */
-	listSpecies(): PetSpeciesInfo[] {
-		const byId = new Map<string, PetSpeciesInfo>();
-		for (const s of BUILTIN_SPECIES) byId.set(s.id, { ...s, source: "builtin" });
-		for (const source of this.sources) {
-			for (const s of safe(() => source.species(), [])) if (isValidSpecies(s)) byId.set(s.id, { ...s, source: "plugin" });
-		}
-		for (const s of listUserSpecies()) byId.set(s.id, { ...s, source: "user" });
-		return [...byId.values()];
+	listSpecies(): readonly PetSpeciesDef[] {
+		return BUILTIN_SPECIES;
 	}
 
-	findSpecies(id: string): PetSpeciesInfo | undefined {
-		return this.listSpecies().find((s) => s.id === id);
+	findSpecies(id: string): PetSpeciesDef | undefined {
+		return BUILTIN_SPECIES.find((s) => s.id === id);
 	}
 
 	listActions(): PetActionDef[] {
@@ -125,12 +110,6 @@ export class PetService {
 		const record = loadPetRecord();
 		this.save = record.save;
 		this.revision = record.revision;
-		if (this.save && LEGACY_PET_SPECIES.has(this.save.speciesId) && !this.findSpecies(this.save.speciesId)) {
-			migratePetSpecies(this.save.speciesId, DEFAULT_PET_SPECIES);
-			const migrated = loadPetRecord();
-			this.save = migrated.save;
-			this.revision = migrated.revision;
-		}
 		if (this.save) {
 			this.state.xp = Math.max(this.save.xp, this.pendingXp ?? 0);
 			this.state.level = levelForXp(this.save.xp);
@@ -155,8 +134,7 @@ export class PetService {
 
 	snapshot(): PetSnapshot {
 		const pet = this.status();
-		const species = pet ? this.findSpecies(pet.speciesId) : undefined;
-		return { pet, revision: this.revision, activity: this.activity(), species: species && species.source !== "builtin" ? species : null };
+		return { pet, revision: this.revision, activity: this.activity() };
 	}
 
 	catalog(): PetCatalog {
@@ -251,9 +229,7 @@ export class PetService {
 			case "adopt": {
 				const species = this.findSpecies(op.speciesId);
 				if (!species) throw new Error(`Unknown pet species "${op.speciesId}".`);
-				// The pet shows the main agent's name; `name` stays in the save only
-				// for older app versions that require it.
-				savePet({ ...current, name: current?.name ?? species.name, speciesId: species.id, xp: current?.xp ?? 0, adoptedAt: current?.adoptedAt ?? Date.now() });
+				savePet({ ...current, speciesId: species.id, xp: current?.xp ?? 0, adoptedAt: current?.adoptedAt ?? Date.now() });
 				this.state = applyEvent(this.state, "adopt");
 				break;
 			}

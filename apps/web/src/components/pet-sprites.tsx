@@ -1,14 +1,12 @@
 /** Procedural character: a silhouette, two big eyes and one expressive mouth. */
 import { useEffect, useId, useRef, type CSSProperties } from "react";
 import type { Mood } from "./pet-shared";
-import { CHARACTERS, CHARACTER_EXPRESSIONS, characterMood, type CharacterDefinition, type CharacterExpression } from "@/lib/agent-character";
+import { CHARACTERS, CHARACTER_EXPRESSIONS, type CharacterDefinition, type CharacterExpression } from "@/lib/agent-character";
 import "./pizza-pet.css";
 
 export interface PetSpriteProps {
-	species: string;
 	mood: Mood;
 	look: { x: number; y: number };
-	busy?: boolean;
 	noPet?: boolean;
 	scale?: number;
 	onReady?: () => void;
@@ -17,8 +15,6 @@ export interface PetSpriteProps {
 	expression?: Partial<CharacterExpression>;
 	speechLevel?: number;
 }
-/** Public metadata stays shared by the in-app, settings and desktop surfaces. */
-export const SPECIES = CHARACTERS;
 interface GazeTarget {
 	place(point: { x: number; y: number } | null): void;
 	pause(hidden: boolean): void;
@@ -62,9 +58,9 @@ function followPointer(target: GazeTarget) {
 	};
 }
 const clamp = (n: number) => Math.max(-1, Math.min(1, n));
-export function PetSprite({ species, mood, look, busy, noPet, scale = 1, onReady, character, expression, speechLevel }: PetSpriteProps) {
-	const rig = character ?? CHARACTERS[species] ?? CHARACTERS.pip;
-	const state = characterMood(mood, busy);
+export function PetSprite({ mood, look, noPet, scale = 1, onReady, character, expression, speechLevel }: PetSpriteProps) {
+	const rig = character ?? CHARACTERS.pizza;
+	const state = mood;
 	const pose = { ...CHARACTER_EXPRESSIONS[state], ...expression };
 	const root = useRef<HTMLSpanElement>(null);
 	const latest = useRef({ look, onReady });
@@ -118,7 +114,7 @@ export function PetSprite({ species, mood, look, busy, noPet, scale = 1, onReady
 			clearTimeout(blinkTimer); clearTimeout(openTimer); clearTimeout(pokeTimer);
 			node.removeEventListener("pizza:pet-poke", poke);
 		};
-	}, [species]);
+	}, [rig]);
 	useEffect(() => {
 		root.current?.style.setProperty("--pet-gx", String(clamp(look.x * .12)));
 		root.current?.style.setProperty("--pet-gy", String(clamp(look.y * .12)));

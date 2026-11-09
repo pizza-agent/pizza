@@ -304,8 +304,8 @@ export default function Layout({
 						)}
 						title={t("layout.agentTitle")}
 					>
-						<PetFigure species={agentPet.pet?.speciesId} mood={agentMood} busy={agentBusy}
-							size={38} halo={false} frames={agentPet.species?.frames} />
+						<PetFigure mood={agentMood}
+							size={38} halo={false} />
 						<div className="min-w-0 flex-1 leading-tight">
 							<div className="truncate text-[20px] font-semibold tracking-tight text-fg">{brandTitle}</div>
 							<div className={cn("mt-1 truncate tracking-[-0.015em] text-muted", i18n.resolvedLanguage?.startsWith("zh") ? "text-[11px]" : "text-[10px]")}>{t(`layout.agentStatus.${agentStatus}`)}</div>
