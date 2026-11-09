@@ -321,10 +321,29 @@ function storedMode(id: string): Theme {
 	return id === "light" ? "light" : "dark";
 }
 
+/**
+ * Suppress every CSS transition while the theme flips. Components carry
+ * assorted `transition-*` utilities with different properties/durations, so
+ * letting them animate makes borders, backgrounds and text change color at
+ * different times (and animating hundreds of elements at once janks).
+ * Returns a function that restores transitions after the new styles commit.
+ */
+function suspendTransitions(): () => void {
+	const style = document.createElement("style");
+	style.textContent = "*,*::before,*::after{transition:none!important}";
+	document.head.appendChild(style);
+	return () => {
+		// Force a style recalc so the new colors apply with transitions off.
+		void window.getComputedStyle(document.body).backgroundColor;
+		requestAnimationFrame(() => requestAnimationFrame(() => style.remove()));
+	};
+}
+
 function applyTheme(id: string): void {
 	const root = document.documentElement;
 	const custom = findCustomTheme(id);
 	const mode = custom ? custom.mode : id === "light" || id === "dark" ? id : storedMode(id);
+	const resume = suspendTransitions();
 	root.classList.toggle("dark", mode === "dark");
 	if (custom) {
 		root.dataset.theme = custom.name;
@@ -332,6 +351,7 @@ function applyTheme(id: string): void {
 		delete root.dataset.theme;
 	}
 	applyChrome(custom);
+	resume();
 	void syncWindowBackground(mode, custom?.tokens.bg);
 }
 
@@ -348,8 +368,23 @@ export function getThemeId(): string {
 
 /** Select a theme: "light", "dark", or a custom theme name. */
 export function setTheme(id: string): void {
-	applyTheme(id);
-	persistTheme(id);
+	const commit = () => {
+		applyTheme(id);
+		persistTheme(id);
+	};
+	const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+	if (!document.startViewTransition || reduceMotion || id === getThemeId()) {
+		commit();
+		return;
+	}
+	// Snapshot-based crossfade: the whole page fades as one image, so every
+	// surface changes color in lockstep. The update callback waits a frame-ish
+	// tick so React re-renders driven by the theme MutationObserver (icons,
+	// xterm palette) land in the "new" snapshot too.
+	document.startViewTransition(async () => {
+		commit();
+		await new Promise((resolve) => setTimeout(resolve, 16));
+	});
 }
 
 /** Snapshot the theme into localStorage for the pre-paint script and the launch screen. */
