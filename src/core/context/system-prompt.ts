@@ -134,6 +134,9 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 	/** Soul file placed at the very top of the prompt (main agent only). */
 	soulFile?: { path: string; content: string };
+	/** User profile placed after the soul (main agent only) — stable facts
+	 * about the user, always injected so they need no on-demand read. */
+	userProfile?: { path: string; content: string };
 	/** Long-term memory entries placed after the soul, before the body (main agent only). */
 	longTermMemory?: Array<{ path: string; content: string }>;
 	/**
@@ -148,8 +151,13 @@ export interface BuildSystemPromptOptions {
  * Build the identity/long-term-memory prefix injected at the top of the prompt
  * for the persistent main agent. Returns an empty string for normal workspaces.
  */
+/** Cap on the always-injected user profile — it accumulates over time and
+ * must not grow the prompt unboundedly. Longer profiles stay on disk. */
+const MAX_USER_PROFILE_CHARS = 2048;
+
 function buildMainAgentPrefix(options: {
 	soulFile?: { path: string; content: string };
+	userProfile?: { path: string; content: string };
 	longTermMemory?: Array<{ path: string; content: string }>;
 	mainAgentBanner?: string;
 }): string {
@@ -163,6 +171,14 @@ function buildMainAgentPrefix(options: {
 
 	if (options.soulFile) {
 		prefix += `# Identity\n\n${options.soulFile.content.trim()}\n\n`;
+	}
+
+	if (options.userProfile) {
+		let content = options.userProfile.content.trim();
+		if (content.length > MAX_USER_PROFILE_CHARS) {
+			content = `${content.slice(0, MAX_USER_PROFILE_CHARS).trimEnd()}\n\n…(truncated — the full profile is at ${options.userProfile.path})`;
+		}
+		prefix += `# About the User\n\n## ${options.userProfile.path}\n\n${content}\n\n`;
 	}
 
 	const memory = options.longTermMemory ?? [];
@@ -217,15 +233,16 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
 		soulFile,
+		userProfile,
 		longTermMemory,
 		mainAgentBanner,
 	} = options;
 	const resolvedCwd = cwd;
-	const mainAgentPrefix = buildMainAgentPrefix({ soulFile, longTermMemory, mainAgentBanner });
+	const mainAgentPrefix = buildMainAgentPrefix({ soulFile, userProfile, longTermMemory, mainAgentBanner });
 	// The persistent main assistant is the only agent with a soul file (or a
 	// first-run banner). It is NOT a workspace-bound coding agent — its prompt
 	// describes a home directory and a long-term role instead.
-	const isMainAgent = Boolean(soulFile ?? mainAgentBanner);
+	const isMainAgent = Boolean(soulFile ?? mainAgentBanner ?? userProfile);
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
 
 	const now = new Date();

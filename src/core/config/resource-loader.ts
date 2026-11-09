@@ -11,7 +11,7 @@ import type { ResourceDiagnostic } from "../ops/diagnostics.js";
 export type { ResourceCollision, ResourceDiagnostic } from "../ops/diagnostics.js";
 
 import { isLocalPath } from "../../utils/paths.js";
-import { loadLongTermMemory, loadSoulFile, type MemoryEntry, type SoulFile } from "../agent/main-agent.js";
+import { loadLongTermMemory, loadSoulFile, loadUserProfileFile, type MemoryEntry, type SoulFile } from "../agent/main-agent.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "../extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "../extensions/types.js";
@@ -100,6 +100,8 @@ export interface ResourceLoader {
 	refreshSkillsIfChanged?(): Promise<boolean>;
 	/** Soul file (main agent only). */
 	getSoulFile?(): SoulFile | undefined;
+	/** User profile file (main agent only). */
+	getUserProfile?(): SoulFile | undefined;
 	/** Long-term memory index entries (main agent only). */
 	getLongTermMemory?(): MemoryEntry[];
 	/**
@@ -254,6 +256,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private mainDir?: string;
 	private memoryDir?: string;
 	private soulFile?: SoulFile;
+	private userProfile?: SoulFile;
 	private longTermMemory: MemoryEntry[];
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string[];
@@ -416,6 +419,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return this.soulFile;
 	}
 
+	getUserProfile(): SoulFile | undefined {
+		return this.userProfile;
+	}
+
 	getLongTermMemory(): MemoryEntry[] {
 		return this.longTermMemory;
 	}
@@ -430,12 +437,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private loadMainAgentResources(): void {
 		if (!this.isMainAgent) {
 			this.soulFile = undefined;
+			this.userProfile = undefined;
 			this.longTermMemory = [];
 			return;
 		}
 		const mainDir = this.mainDir ?? getMainDir();
 		const memoryDir = this.memoryDir ?? getMainMemoryDir(mainDir);
 		this.soulFile = loadSoulFile(mainDir);
+		this.userProfile = loadUserProfileFile(memoryDir);
 		this.longTermMemory = loadLongTermMemory(memoryDir);
 	}
 

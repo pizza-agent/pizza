@@ -127,7 +127,12 @@ export async function loadMainProfile(input?: MainAgentRoots): Promise<MainAgent
 		const match = /^\s*[-*]\s+(?:\[[^\]]+\]\(([^/\\]+\.md)\)|`?([^/\\\s`]+\.md)`?)(?:\s*[—–:-]\s*|\s+)?(.*)$/.exec(line);
 		if (match) indexed.set(match[1] || match[2], match[3].trim());
 	}
-	const all = [...new Set([...files.sort(), ...indexed.keys()])].filter((file) => file !== "_index.md");
+	// user-profile.md is a first-class document like SOUL.md: it is shown in
+	// the dedicated "About you" section and injected into the prompt, so it
+	// is excluded from the generic memory list to avoid showing it twice.
+	const all = [...new Set([...files.sort(), ...indexed.keys()])].filter(
+		(file) => file !== "_index.md" && file !== "user-profile.md",
+	);
 	const memories: MainMemorySummary[] = await Promise.all(all.slice(0, MAX_MEMORIES).map(async (file) => {
 		const sourceId = `memory/${file}`;
 		const summary = indexed.get(file) ?? "";

@@ -25,6 +25,7 @@
  *   [onToolExecutionEnd]  ──→ track count → if all done → emit TOOL_RESULTS_AGGREGATED
  *         ↓
  *   [onToolResultsAggregated]  ──→ emit AGENT_TURN_REQUESTED  ← loop back
+ *       └── pending interaction card → AGENT_TURN_COMPLETED (wait for the user)
  *
  * Other handlers (run in parallel, do not gate the main flow):
  *   onAgentTurnCompleted  — UI notification
@@ -55,6 +56,7 @@ import type { SessionProjection } from "../projection/session-projection.js";
 import type { SessionManager } from "../projection/session-manager.js";
 import type { CompactionPolicy, RetryPolicy } from "./policies.js";
 import { DefaultRetryPolicy, NoopCompactionPolicy } from "./policies.js";
+import { listInteractions } from "../interaction/store.js";
 // ============================================================================
 // Types
 // ============================================================================
@@ -1379,6 +1381,20 @@ export class Reactor {
 			caused_by: event.event_id,
 		});
 
+		// The question is on screen and unanswered. Stop here. A later user
+		// reply starts the next turn; another model round now would keep
+		// working before that reply exists. Terminal prompts resolve the card
+		// before the tool returns, so they do not take this branch.
+		if (this._hasPendingInteraction()) {
+			this._emit({
+				actor_id: "coder_agent",
+				type: "AGENT_TURN_COMPLETED",
+				payload: { reason: "interaction_pending" },
+				caused_by: event.event_id,
+			});
+			return;
+		}
+
 		// Loop detection: if the model has called the exact same set of tools
 		// (by name) in too many consecutive rounds, break the loop by completing
 		// the turn instead of requesting another LLM round.
@@ -1420,6 +1436,26 @@ export class Reactor {
 		if (this.config.refreshSystemPrompt) {
 			this.config.systemPrompt = this.config.refreshSystemPrompt();
 		}
+	}
+
+	/**
+	 * Unanswered card on the active thread. A card only holds the turn while
+	 * the user has not replied at all: expired cards never hold it, and a
+	 * newer USER_MESSAGE on the thread means the user moved on — typed an
+	 * unrelated request, or answered the card in chat instead of clicking it.
+	 * Holding the turn past that point would cap every later turn at a single
+	 * tool round until the card expires (default: 24h). An answered card
+	 * cannot re-pend, so any newer user message un-holds regardless of its
+	 * content.
+	 */
+	private _hasPendingInteraction(): boolean {
+		const threadId = this.config.projection.getDescriptor().thread_id;
+		if (!threadId) return false;
+		const pending = listInteractions(this.config.store, threadId).filter((record) => record.status === "pending");
+		if (pending.length === 0) return false;
+		const latestUserMessage = this.config.store.query({ types: ["USER_MESSAGE"], thread_id: threadId, limit: 1, reverse: true })[0];
+		if (!latestUserMessage) return true;
+		return pending.some((record) => record.createdAt > latestUserMessage.timestamp);
 	}
 
 	/**

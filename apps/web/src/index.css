@@ -426,6 +426,13 @@
 	}
 }
 
+/* Theme switch crossfade (document.startViewTransition in lib/theme.ts). */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 220ms;
+	animation-timing-function: ease-out;
+}
+
 /* Markdown-rendered content (agent responses) */
 .md {
 	font-size: 0.875rem;

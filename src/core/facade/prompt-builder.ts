@@ -72,6 +72,7 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 
 		// Main-agent identity + long-term memory index + guidelines.
 		const soulFile = isMainAgent ? resourceLoader.getSoulFile?.() : undefined;
+		const userProfile = isMainAgent ? resourceLoader.getUserProfile?.() : undefined;
 		const longTermMemory = isMainAgent ? resourceLoader.getLongTermMemory?.() : undefined;
 		let mainAgentBanner: string | undefined;
 		if (isMainAgent && memoryDir) {
@@ -105,6 +106,7 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 			toolSnippets,
 			promptGuidelines,
 			soulFile,
+			userProfile,
 			longTermMemory,
 			mainAgentBanner,
 		});

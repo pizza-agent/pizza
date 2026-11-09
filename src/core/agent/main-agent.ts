@@ -101,7 +101,8 @@ const DEFAULT_INDEX_TEMPLATE = `# Memory Index
 This file indexes the long-term memory library. Each entry links a memory file
 to a short summary so the agent knows what exists without loading everything.
 
-- user-profile.md — stable facts about the user (preferences, environment, style)
+user-profile.md is a first-class document (like SOUL.md): its content is always
+in the prompt, so it needs no index entry. List topic memory files here.
 `;
 
 const DEFAULT_USER_PROFILE_TEMPLATE = `# User Profile
@@ -126,6 +127,7 @@ export function initializeMainAgent(mainDir: string, memoryDir?: string): boolea
 
 	if (!existsSync(soulPath)) {
 		writeFileSync(soulPath, buildDefaultSoulTemplate(APP_NAME), "utf-8");
+		setMainGreetingPending(mainDir, true);
 	}
 
 	const indexPath = join(resolvedMemoryDir, "_index.md");
@@ -149,6 +151,23 @@ export function loadSoulFile(mainDir: string): SoulFile | undefined {
 	}
 	try {
 		return { path: soulPath, content: readFileSync(soulPath, "utf-8") };
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Load the user profile file (`<memoryDir>/user-profile.md`) if it exists.
+ * Injected into the prompt as the "About the User" section — stable facts
+ * about the user, kept separate from the agent's own identity in the soul.
+ */
+export function loadUserProfileFile(memoryDir: string): SoulFile | undefined {
+	const profilePath = join(memoryDir, "user-profile.md");
+	if (!existsSync(profilePath)) {
+		return undefined;
+	}
+	try {
+		return { path: profilePath, content: readFileSync(profilePath, "utf-8") };
 	} catch {
 		return undefined;
 	}
@@ -230,7 +249,11 @@ function reconcileIndex(indexContent: string, memoryFiles: string[]): string {
 		listedFiles.add(basename(match[1]));
 	}
 
-	const unindexed = memoryFiles.filter((file) => !listedFiles.has(file));
+	// user-profile.md is not a topic memory — its content is always injected,
+	// so an index entry is optional and its absence must not be flagged.
+	const unindexed = memoryFiles.filter(
+		(file) => file !== "user-profile.md" && !listedFiles.has(file),
+	);
 	const stale = [...listedFiles].filter(
 		(file) => file !== "_index.md" && !memoryFiles.includes(file),
 	);
@@ -273,27 +296,84 @@ export function getMainAgentGuidelines(
 
 	if (options?.soulUninitialized && options?.soulPath) {
 		guidelines.push(
-			`Your soul file (${options.soulPath}) still contains [NOT YET DEFINED]. Offer a short, optional introduction when it fits the conversation; do not interrupt the user's task or require onboarding before helping. Read existing identity and user-profile memories first and ask only for information that is actually missing. If _interact is available, discover its help and use one small, skippable dynamic card with questions suited to this user. Do not use a fixed sequence, repeat answered questions, or insist on a name. Let the user answer in chat or decline. Discover _interact capabilities before suggesting account connections; offer them when relevant to the user's needs, never connect automatically.`,
+			`Your soul file (${options.soulPath}) still contains [NOT YET DEFINED]. Offer a short, optional introduction when it fits the conversation; do not interrupt the user's task or require onboarding before helping. Your identity and the known user facts are already in this prompt (Identity and About the User sections) — ask only for information that is actually missing. If _interact is available, discover its help and use one small, skippable dynamic card with questions suited to this user. Do not use a fixed sequence, repeat answered questions, or insist on a name. Let the user answer in chat or decline. Discover _interact capabilities before suggesting account connections; offer them when relevant to the user's needs, never connect automatically. Exception: after an app-sent ${MAIN_GREETING_PREFIX.trim()} message, follow its guided introduction (one question card at a time) until it finishes or the user moves on.`,
 		);
 	}
 
 	if (options?.soulPath) {
 		guidelines.push(
-			`When the user asks you to remember a preference, save user facts and preferences in the appropriate user memory file. When they ask to update your personality or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. Persist explicit identity changes to the soul and user preferences to user memory; do not mix the two or treat unanswered cards as facts.`,
+			`When the user asks you to remember a preference, save stable user facts to ${join(memoryDir, "user-profile.md")} (the About the User section in this prompt). When they ask to update your personality or change your voice/values, edit your soul file at ${options.soulPath} with the write or edit command. Treat the soul as your self-definition: keep it concise and meaningful. Persist explicit identity changes to the soul and user preferences to the user profile file; do not mix the two or treat unanswered cards as facts.`,
 		);
 	}
 
 	guidelines.push(
-		"You are a persistent agent: your identity lives in the Identity section and your long-term memory index is in the Long-Term Memory section of this prompt.",
+		"You are a persistent agent: your identity lives in the Identity section, stable user facts in the About the User section, and your long-term memory index is in the Long-Term Memory section of this prompt.",
 		"Before starting a new topic, review the relevant long-term memory; the index is in the prompt, read the specific memory file with the read command when you need details.",
-		`When you learn a stable fact about the user, write it to the appropriate file under ${memoryDir} (create a new file for a new topic and add it to _index.md).`,
+		`When you learn a stable fact about the user, write it to ${join(memoryDir, "user-profile.md")} (no index entry needed — it is always in this prompt); for other topics, create a new file under ${memoryDir} and add it to _index.md.`,
 		`When you notice outdated or inaccurate information in memory, update or delete the corresponding file under ${memoryDir} and keep _index.md in sync.`,
 		`At a meaningful milestone or natural session boundary, you may append a short factual entry to ${join(memoryDir, "journal")}/YYYY-MM-DD.md using the user's local calendar date. Read existing entries first; avoid duplicates, raw logs, secrets, invented feelings, or filler just because a day passed. Keep journals separate from the topic index; promote only durable findings into topic memories.`,
-		"Memory you write during a session is loaded into the system prompt at the next session boundary (after _session_split), not immediately.",
+		"Memory you write during a session — including the soul and user profile — is loaded into the system prompt at the next session boundary (after _session_split), not immediately.",
 		"You can delegate a task to a sub-agent in another project directory (workspace) with the built-in `_tell` cli command. Run `_tell list` first to see which workspaces are available — each shows a name (the last path component, e.g. \"web\"), its cwd, and metadata. Then `_tell send --to <name> --message \"...\"` (or a project path) to hand off the task. The target agent runs in its own workspace (kept alive by the gateway) and only its reply enters this conversation — keep other projects' context out of this conversation by delegating instead of handling them inline.",
 	);
 
 	return guidelines;
+}
+
+// ── First-run greeting ─────────────────────────────────────────────────────
+
+/**
+ * Prefix of the app-sent message that kicks off the first-run greeting. The
+ * message is a regular USER_MESSAGE (LLM turns need one) that UIs hide and
+ * session titles skip.
+ */
+export const MAIN_GREETING_PREFIX = "[main_greeting]\n";
+
+export function isMainGreetingMessage(text: unknown): boolean {
+	return typeof text === "string" && text.startsWith(MAIN_GREETING_PREFIX);
+}
+
+function greetingMarkerPath(mainDir: string): string {
+	return join(mainDir, ".greet-pending");
+}
+
+/**
+ * A greeting is pending after SOUL.md was (re)created from the template —
+ * first run, or the user deleted it to start over. Installs whose soul file
+ * predates this marker are never greeted unprompted.
+ */
+export function isMainGreetingPending(mainDir: string): boolean {
+	return existsSync(greetingMarkerPath(mainDir));
+}
+
+export function setMainGreetingPending(mainDir: string, pending: boolean): void {
+	if (pending) writeFileSync(greetingMarkerPath(mainDir), `${new Date().toISOString()}\n`, "utf-8");
+	else rmSync(greetingMarkerPath(mainDir), { force: true });
+}
+
+/**
+ * Build the app-sent message that asks the main agent to greet the user and
+ * walk them through a short, skippable guided introduction with choice cards.
+ */
+export function buildMainGreetingPrompt(locale?: string): string {
+	const language = locale?.trim() || "the user's system language";
+	const product = APP_NAME.charAt(0).toUpperCase() + APP_NAME.slice(1);
+	return `${MAIN_GREETING_PREFIX}${JSON.stringify({ locale: locale?.trim() || undefined })}
+The app sent this message because your identity was just created from scratch — the user is meeting you for the first time, or reset you to start over. This is a fresh start: earlier messages, cards and answers in this conversation do not define who you are now and must not be reused or inspected. The user did not type this message — never quote or mention it.
+Run a short, warm guided introduction in ${language}. Ask these questions in this order, one card per turn — first who you are, then how you will work for them:
+  Q1. What should the user call you? Offer 4–5 short, friendly name suggestions.
+  Q2. What personality / tone should you have? (for example concise and efficient, warm and patient, playful, rigorous and professional)
+  Q3. What do they most want help with? (for example coding, researching and organizing information, writing, planning and reminders, automating repetitive work)
+  Q4. How do they prefer results delivered? Tailor the options to the Q3 answer.
+1. Greet the user in one or two short sentences: say hi, say you are their new personal ${product} agent and do not have a name yet, and lead into Q1. No lists, no feature tour.
+2. In the same turn, ask Q1 with \`_interact show\`: one single-select card whose title and field label are the same short question, with 4–5 concrete options and allowSkip true. Do not add an "Other" option; the app adds it (users type their own answer there).
+3. As soon as the card tool returns, end your turn immediately: no further text, no "waiting for you" filler, and no other tool calls (never run \`_interact list\`). Each answer arrives as an [interaction_response] message. Reply with one short sentence that reflects the choice — once you have a name, speak as that name — then ask the next question with a new card. Never repeat a question.
+4. If the user skips a card or types something unrelated, end the introduction and help with what they said.
+5. After Q4, save your identity to your soul file (Identity: the name, Language: ${language}, Voice/Values: the chosen personality), replacing the [NOT YET DEFINED] sections, and save the user's needs and delivery preference to the user profile. Then summarize in one or two sentences what you will remember and invite their first task.
+Do not read files, browse, or run other tools before the first card.
+Card format:
+_interact show <<'JSON'
+{"title":"<question>","fields":[{"id":"choice","type":"select","label":"<question>","options":[{"id":"a","label":"<option>"}]}],"allowSkip":true}
+JSON`;
 }
 
 // ── Single-instance lockfile ───────────────────────────────────────────────

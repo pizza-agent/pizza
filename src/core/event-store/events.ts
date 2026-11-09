@@ -570,7 +570,7 @@ export interface AgentTurnRequestedEvent extends EventBase {
 export interface AgentTurnCompletedEvent extends EventBase {
 	type: "AGENT_TURN_COMPLETED";
 	payload: {
-		reason: "stop" | "length" | "aborted" | "error";
+		reason: "stop" | "length" | "aborted" | "error" | "loop_detected" | "interaction_pending";
 		error_message?: string;
 	};
 }

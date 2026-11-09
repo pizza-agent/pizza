@@ -101,6 +101,49 @@ describe("buildSystemPrompt", () => {
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
 		});
 	});
+	describe("main agent prefix", () => {
+		test("injects the user profile as an About the User section after Identity", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: [],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+				soulFile: { path: "/main/SOUL.md", content: "You are Nova." },
+				userProfile: { path: "/main/memory/user-profile.md", content: "# User Profile\n- Name: Tom" },
+			});
+
+			expect(prompt).toContain("# Identity\n\nYou are Nova.");
+			expect(prompt).toContain("# About the User\n\n## /main/memory/user-profile.md\n\n# User Profile\n- Name: Tom");
+			expect(prompt.indexOf("# Identity")).toBeLessThan(prompt.indexOf("# About the User"));
+		});
+
+		test("truncates an oversized user profile and points at the full file", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: [],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+				userProfile: { path: "/main/memory/user-profile.md", content: `h${"x".repeat(3000)}t` },
+			});
+
+			expect(prompt).toContain("# About the User");
+			expect(prompt).toContain("truncated — the full profile is at /main/memory/user-profile.md");
+			expect(prompt).not.toContain("x".repeat(2100));
+		});
+
+		test("omits the About the User section when no profile is provided", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: [],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+				soulFile: { path: "/main/SOUL.md", content: "# Identity\nYou are Nova." },
+			});
+
+			expect(prompt).not.toContain("About the User");
+		});
+	});
+
 	describe("event store path", () => {
 		test("surfaces the event store path in the Environment section when provided", () => {
 			const prompt = buildSystemPrompt({

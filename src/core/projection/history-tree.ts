@@ -6,6 +6,7 @@
  * via each session's event_range.
  */
 
+import { isMainGreetingMessage } from "../agent/main-agent.js";
 import type { EventStore } from "../event-store/store.js";
 import type { SessionDescriptor } from "./types.js";
 
@@ -261,7 +262,7 @@ function summarizeSession(store: EventStore, session: SessionDescriptor): Sessio
 		message_count++;
 		if (snippet) continue;
 		const text = extractText(event.payload);
-		if (text) snippet = text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}...` : text;
+		if (text && !isMainGreetingMessage(text)) snippet = text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}...` : text;
 	}
 
 	const tail = store.query({ ...range, limit: 10, reverse: true });

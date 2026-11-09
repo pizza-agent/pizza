@@ -153,6 +153,7 @@
   "agent": {
     "newSession": "新会话",
     "readyPrompt": "就绪。可以问关于此项目的任何问题。",
+    "mainGreeting": "正在和你打招呼…",
     "remoteProviderMissing": "这台远程 Pizza 还没有配置模型。请先在远程服务器上登录账号或添加 API Key，再发送消息。",
     "sidecarExited": "Sidecar 已退出 (代码 {{code}})",
     "agentError": "Agent 错误 ({{reason}})",
@@ -579,6 +580,7 @@
     },
     "skills": {
       "type": "技能",
+      "description": "技能是可复用的指令与工作流，启用后会在对话中按需加载。",
       "search": "搜索技能...",
       "count": "{{count}} 个技能",
       "empty": "未找到技能",
@@ -608,6 +610,7 @@
     },
     "extensions": {
       "comingSoon": "扩展即将推出",
+      "description": "扩展为会话注册自定义工具、命令与界面，可随项目或全局加载。",
       "comingSoonHint": "扩展管理功能将在这里提供。",
       "enabled": "已启用",
       "disabled": "已禁用",
@@ -792,6 +795,7 @@
   },
   "channels": {
     "add": "添加渠道",
+    "description": "把 Discord、飞书、Slack、Telegram 或 Webhook 收到的消息接入到指定工作区，并回发助理的回复。",
     "loading": "正在加载渠道...",
     "error": "错误:{{error}}",
     "empty": "尚未配置渠道",
@@ -800,7 +804,7 @@
       "connected": "已连接",
       "disconnected": "未连接",
       "error": "错误",
-      "configuring": "未配置"
+      "configuring": "连接中"
     },
     "bind": "→ {{workspace}}",
     "bindNone": "未绑定",

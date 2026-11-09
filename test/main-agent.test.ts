@@ -4,11 +4,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	acquireMainLock,
+	buildMainGreetingPrompt,
 	getMainAgentGuidelines,
+	isMainGreetingMessage,
+	isMainGreetingPending,
+	setMainGreetingPending,
 	initializeMainAgent,
 	isSoulUninitialized,
 	loadLongTermMemory,
 	loadSoulFile,
+	loadUserProfileFile,
 } from "../src/core/agent/main-agent.js";
 import { APP_NAME, getMainMemoryDir, getMainSoulPath } from "../src/config.js";
 
@@ -108,6 +113,27 @@ describe("main-agent", () => {
 		});
 	});
 
+	describe("loadUserProfileFile", () => {
+		test("returns undefined when user-profile.md is absent", () => {
+			const memoryDir = join(tempDir, "memory");
+			mkdirSync(memoryDir, { recursive: true });
+
+			expect(loadUserProfileFile(memoryDir)).toBeUndefined();
+		});
+
+		test("returns the profile content when present", () => {
+			const mainDir = join(tempDir, "main");
+			const memoryDir = getMainMemoryDir(mainDir);
+			initializeMainAgent(mainDir, memoryDir);
+
+			const profile = loadUserProfileFile(memoryDir);
+
+			expect(profile).toBeDefined();
+			expect(profile?.path).toBe(join(memoryDir, "user-profile.md"));
+			expect(profile?.content).toContain("# User Profile");
+		});
+	});
+
 	describe("isSoulUninitialized", () => {
 		test("returns true for the freshly-scaffolded placeholder soul", () => {
 			const mainDir = join(tempDir, "main");
@@ -179,6 +205,17 @@ describe("main-agent", () => {
 			expect(guidelines.some((g) => g.includes("NOT YET DEFINED"))).toBe(false);
 		});
 
+		test("points stable user facts at the About the User profile file", () => {
+			const memoryDir = join(tempDir, "mem");
+			const guidelines = getMainAgentGuidelines(memoryDir, {
+				soulPath: join(tempDir, "main", "SOUL.md"),
+				soulUninitialized: false,
+			});
+
+			expect(guidelines.some((g) => g.includes("About the User"))).toBe(true);
+			expect(guidelines.some((g) => g.includes(join(memoryDir, "user-profile.md")))).toBe(true);
+		});
+
 		test("always includes the 'update soul on user request' guideline when soulPath is given", () => {
 			const guidelines = getMainAgentGuidelines(join(tempDir, "mem"), {
 				soulPath: join(tempDir, "main", "SOUL.md"),
@@ -196,6 +233,29 @@ describe("main-agent", () => {
 			expect(guidelines.some((g) => g.includes("update your personality"))).toBe(false);
 			// Core persistent-agent guidelines are still present.
 			expect(guidelines.some((g) => g.includes("persistent agent"))).toBe(true);
+		});
+	});
+
+	describe("first-run greeting", () => {
+		test("builds a hidden kickoff message that asks for one choice card at a time", () => {
+			const prompt = buildMainGreetingPrompt("zh-CN");
+			expect(isMainGreetingMessage(prompt)).toBe(true);
+			expect(prompt).toContain('"locale":"zh-CN"');
+			expect(prompt).toContain("_interact show");
+			expect(prompt.indexOf("call you")).toBeLessThan(prompt.indexOf("most want help with"));
+			expect(isMainGreetingMessage("hello")).toBe(false);
+		});
+
+		test("marks a greeting pending only when SOUL.md is created from the template", () => {
+			const mainDir = join(tempDir, "main");
+			initializeMainAgent(mainDir);
+			expect(isMainGreetingPending(mainDir)).toBe(true);
+			setMainGreetingPending(mainDir, false);
+			initializeMainAgent(mainDir);
+			expect(isMainGreetingPending(mainDir)).toBe(false);
+			rmSync(getMainSoulPath(mainDir));
+			expect(initializeMainAgent(mainDir)).toBe(true);
+			expect(isMainGreetingPending(mainDir)).toBe(true);
 		});
 	});
 
@@ -251,6 +311,28 @@ describe("main-agent", () => {
 			expect(entries[0].content).not.toContain("stale");
 			expect(entries[0].content).not.toContain("unindexed");
 			expect(entries[0].content).not.toContain("consistency check");
+		});
+
+		test("does not flag user-profile.md — it is a first-class document, not a topic memory", () => {
+			const memoryDir = join(tempDir, "memory");
+			mkdirSync(memoryDir, { recursive: true });
+			// Index has no user-profile.md entry (new-style template); the file
+			// exists on disk and must not be reported as unindexed.
+			writeFileSync(join(memoryDir, "_index.md"), "# Memory Index\n\n- topic.md — facts\n", "utf-8");
+			writeFileSync(join(memoryDir, "user-profile.md"), "# User Profile\n", "utf-8");
+			writeFileSync(join(memoryDir, "topic.md"), "# topic\n", "utf-8");
+
+			const entries = loadLongTermMemory(memoryDir);
+
+			expect(entries[0].content).not.toContain("unindexed");
+		});
+
+		test("returns [] when only user-profile.md exists and no index does", () => {
+			const memoryDir = join(tempDir, "memory");
+			mkdirSync(memoryDir, { recursive: true });
+			writeFileSync(join(memoryDir, "user-profile.md"), "# User Profile\n", "utf-8");
+
+			expect(loadLongTermMemory(memoryDir)).toEqual([]);
 		});
 
 		test("flags unindexed files present on disk but missing from the index", () => {

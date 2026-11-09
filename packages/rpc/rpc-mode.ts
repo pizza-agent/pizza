@@ -14,6 +14,7 @@ import { initiativeState } from "../../src/core/interaction/initiative.js";
  */
 
 import { loadMainProfile, readMainDocument, writeMainDocument, listMainJournals } from "../../src/core/agent/main-profile.js";
+import { buildMainGreetingPrompt, initializeMainAgent, isMainGreetingPending, isSoulUninitialized, loadSoulFile, setMainGreetingPending } from "../../src/core/agent/main-agent.js";
 import { listInteractions, answerInteraction } from "../../src/core/interaction/store.js";
 import { petService } from "../../src/core/pet/service.js";
 import * as crypto from "node:crypto";
@@ -54,7 +55,7 @@ import { BrowserFrameServer } from "../../src/core/browser/frame-server.js";
 import { resolveNativeResult, setNativeBridge } from "../../src/core/browser/native-bridge.js";
 import { type Theme, theme, resolveThemeIcon, resolveThemeVideo, getBuiltinWebThemes } from "../../packages/tui/theme/theme.js";
 import { SchedulerEngine, type Dispatcher as SchedulerDispatcher } from "../../src/core/scheduler/index.js";
-import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type ScheduledTaskPatch, type SessionTarget } from "../protocol/index.js";
+import { SCHEDULED_TASK_FIRED, SCHEDULED_TASK_COMPLETED, type MainGreetResult, type ScheduledTaskPatch, type SessionTarget } from "../protocol/index.js";
 import { installCrashHandlers } from "../../src/core/ops/crash-handlers.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
@@ -68,7 +69,7 @@ import type {
 	RpcSkillInfo,
 	RpcThemeInfo,
 } from "./rpc-types.js";
-import { getAgentDir, getThemesDir } from "../../src/config.js";
+import { APP_NAME, getAgentDir, getThemesDir } from "../../src/config.js";
 import type { ImageContent } from "@earendil-works/pi-ai/compat";
 
 // Re-export types for consumers
@@ -1100,6 +1101,16 @@ export async function runRpcModeWithFacade(
 	 */
 	const waitForSessionStructureIdle = (): Promise<void> => facade.waitForIdle();
 
+	/** Rebuild the system prompt from the main agent's files on disk (soul, profile, memory index). */
+	const reloadMainPrompt = (): void => {
+		if (facade.mainAgent) facade.runtime.refreshSystemPromptForCurrentSession();
+	};
+	/** Recreate missing main files (e.g. the user deleted SOUL.md to start over) and load them. */
+	const ensureMainFiles = (): void => {
+		const main = facade.mainAgent;
+		if (main && initializeMainAgent(main.mainDir, main.memoryDir)) reloadMainPrompt();
+	};
+
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
 		const id = command.id;
 
@@ -1145,6 +1156,7 @@ export async function runRpcModeWithFacade(
 				return success(id, "get_state", getFacadeSessionState(facade, ptyServer?.port));
 
 			case "main_profile":
+				ensureMainFiles();
 				return success(id, "main_profile", await loadMainProfile(facade.mainAgent));
 			case "main_initiative": {
 				if (!facade.mainAgent) throw Error("Main agent only");
@@ -1177,19 +1189,54 @@ export async function runRpcModeWithFacade(
 				return success(id, "interaction_respond", result);
 			}
 			case "main_document_read":
+				ensureMainFiles();
 				return success(id, "main_document_read", await readMainDocument(facade.mainAgent, command.sourceId));
-			case "main_document_write":
-				return success(
-					id,
-					"main_document_write",
-					await writeMainDocument(facade.mainAgent, command.sourceId, command.content, command.expectedRevision),
-				);
+			case "main_document_write": {
+				ensureMainFiles();
+				const saved = await writeMainDocument(facade.mainAgent, command.sourceId, command.content, command.expectedRevision);
+				// User edits to the soul / profile / memory apply to the next turn, not the next session.
+				reloadMainPrompt();
+				return success(id, "main_document_write", saved);
+			}
 			case "main_journal_list":
 				return success(
 					id,
 					"main_journal_list",
 					await listMainJournals(facade.mainAgent, command.before, command.limit),
 				);
+			case "main_greet": {
+				const main = facade.mainAgent;
+				if (!main) throw Error("Main agent only");
+				const greet = (reason?: MainGreetResult["reason"]): RpcResponse =>
+					success(id, "main_greet", reason ? { started: false, reason } : { started: true });
+				// A deleted SOUL.md is recreated here, which marks a greeting as pending.
+				ensureMainFiles();
+				const soul = loadSoulFile(main.mainDir);
+				if (!soul || !isSoulUninitialized(soul.content, APP_NAME)) {
+					setMainGreetingPending(main.mainDir, false);
+					return greet("soul_defined");
+				}
+				if (!isMainGreetingPending(main.mainDir)) return greet("already_greeted");
+				if (facade.isRunning) return greet("busy");
+				if (!facade.modelRegistry?.find(facade.model.provider, facade.model.model_id)) return greet("no_model");
+				if (!facade.extensionRunner?.getAllRegisteredCliCommands().some((c) => c.name === "_interact")) {
+					return greet("interactions_unavailable");
+				}
+				setMainGreetingPending(main.mainDir, false);
+				// A reset restarts the introduction: close cards left open by an earlier run (no reply is delivered).
+				const store = facade.extensionRunner.createContext().sessionManager.eventStore;
+				const threadId = facade.runtime.getProjection().getDescriptor().thread_id;
+				if (store) {
+					for (const record of listInteractions(store, threadId).filter((r) => r.status === "pending")) {
+						answerInteraction(store, threadId, record.id, { kind: "skip" });
+					}
+				}
+				// Trusted app-initiated form flow: does not consume the daily initiative allowance.
+				void facade
+					.prompt(buildMainGreetingPrompt(command.locale), undefined, undefined, { source: "rpc", userRequestedForm: true })
+					.catch((e: unknown) => output(error(id, "main_greet", e instanceof Error ? e.message : String(e))));
+				return greet();
+			}
 
 			case "pet_get":
 				return success(id, "pet_get", petService.catalog());
