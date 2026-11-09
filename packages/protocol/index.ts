@@ -654,7 +654,7 @@ export interface MainAgentProfile {
 // Pet (the app companion — a core feature that plugins can extend)
 // ============================================================================
 
-export type RpcPetMood = "idle" | "working" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
+export type RpcPetMood = "idle" | "thinking" | "working" | "speaking" | "waiting" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
 
 export interface RpcPetStatus {
 	speciesId: string;
@@ -685,6 +685,8 @@ export interface RpcPetAction {
 }
 
 export interface RpcPetSnapshot {
+	/** Runtime expression is available even before the companion is adopted. */
+	activity?: { mood: RpcPetMood; busy: boolean };
 	/** Shared-save revision; prevents delayed frames undoing an appearance change. */
 	revision?: number;
 	pet: RpcPetStatus | null;

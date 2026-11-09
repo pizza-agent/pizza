@@ -47,3 +47,26 @@ describe("ordered pet appearance updates", () => {
   expect(mergePetFrames(new Map([["rpc",released],["old",delayed]]))?.pet).toBeNull();
  });
 });
+
+describe("expression frames", () => {
+ it("keeps a specific working expression across an idle identity update", () => {
+  const merged=mergePetFrames(new Map([
+   ["active",frame(status({busy:true,mood:"speaking"}),1000)],
+   ["identity",frame(status({mood:"idle"}),2000)],
+  ]),3000);
+  expect(merged?.pet).toMatchObject({busy:true,mood:"speaking"});
+ });
+ it("prioritizes waiting and retains activity without an adopted pet", () => {
+  const merged=mergePetFrames(new Map([
+   ["active",{snapshot:{pet:null,species:null,activity:{mood:"working",busy:true}} as PetSnapshot,at:1000}],
+   ["waiting",{snapshot:{pet:null,species:null,activity:{mood:"waiting",busy:true}} as PetSnapshot,at:2000}],
+  ]),3000);
+  expect(merged).toMatchObject({pet:null,activity:{mood:"waiting",busy:true}});
+ });
+ it("stops animating a stale sidecar's expression", () => {
+  const merged=mergePetFrames(new Map([
+   ["dead",{snapshot:{pet:status({busy:true,mood:"thinking"}),species:null,activity:{mood:"thinking",busy:true}} as PetSnapshot,at:1000}],
+  ]),10*60_000);
+  expect(merged?.activity).toEqual({busy:false,mood:"idle"});
+ });
+});

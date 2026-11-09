@@ -85,6 +85,37 @@ function preview(content: string, length = 220, keepLines = false): string {
 		.join(keepLines ? "\n" : " ").replace(/<!--([\s\S]*?)-->/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*`]/g, "").replace(keepLines ? /[^\S\n]+/g : /\s+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, length);
 }
 
+function nameField(line: string): RegExpExecArray | null {
+	return /^(?:[-*+]\s+)?(Nickname|Name|昵称|小名|名字|姓名|名称)\s*[:：]\s*(.*?)\s*$/i.exec(line.replace(/\*\*|__|`/g, "").trim());
+}
+
+/** Read a stated name, including the short standalone name used by existing SOUL files. */
+function soulName(content: string): { name: string; line: string } | undefined {
+	const lines = body(content).replace(/<!--[\s\S]*?-->/g, "").replace(/^\s*```[^\n]*\n[\s\S]*?^\s*```[^\n]*$/gm, "").split(/\r?\n/);
+	const identity = lines.findIndex((line) => /^#{1,6}\s+(?:Identity|身份(?:设定)?|我是谁)\s*$/i.test(line.trim()));
+	let section = identity < 0 ? lines : lines.slice(identity + 1);
+	const nextHeading = section.findIndex((line) => /^#{1,6}\s/.test(line));
+	if (identity >= 0 && nextHeading >= 0) section = section.slice(0, nextHeading);
+	const normalize = (value: string) => {
+		const name = value.replace(/\*\*|__|`/g, "").trim().replace(/[（(][^()（）]*[)）]\s*$/, "").trim().replace(/^["'“‘]|["'”’]$/g, "").trim();
+		return !name || name.includes(SOUL_PLACEHOLDER_MARKER) || /^(?:\(empty\)|未设置|未命名|暂无|none|null)$/i.test(name) ? undefined : name.slice(0, 60);
+	};
+	// A nickname takes precedence when a document also contains a formal name.
+	const fields = section.map((line) => ({ line, field: nameField(line) })).filter((entry) => entry.field);
+	fields.sort((a, b) => Number(/^(?:Name|名字|姓名|名称)$/i.test(a.field![1])) - Number(/^(?:Name|名字|姓名|名称)$/i.test(b.field![1])));
+	for (const { line, field } of fields) {
+		const name = normalize(field![2]);
+		if (name) return { name, line };
+	}
+	if (identity < 0) return undefined;
+	const line = section.find((line) => line.trim());
+	const name = line && normalize(line);
+	// Prose, role descriptions and generic headings must not become display names.
+	if (name && /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}_·'-]{0,29}$/u.test(name)
+		&& !/^(?:Identity|身份|我是谁|我是|你是|这是|一个)/i.test(name) && !/(?:助理|助手|搭档|智能体)/.test(name)) return { name, line: line! };
+	return undefined;
+}
+
 async function optionalDocument(roots: MainAgentRoots, id: string): Promise<MainAgentDocument | null> {
 	try { return await readMainDocument(roots, id); } catch (error) { if (missing(error)) return null; throw error; }
 }
@@ -145,11 +176,11 @@ export async function loadMainProfile(input?: MainAgentRoots): Promise<MainAgent
 		}
 	}));
 	const initialized = Boolean(soul?.content.trim()) && !soul!.content.includes(SOUL_PLACEHOLDER_MARKER);
-	// Only an explicitly labelled name is a name; a heading such as Identity isn't.
-	const name = initialized ? /^(?:[-*]\s*)?(?:\*\*)?(?:Name|名字|姓名|名称)(?:\*\*)?\s*[:：]\s*(.+)$/im.exec(body(soul!.content))?.[1]?.replace(/\*\*/g, "").trim().slice(0, 60) : undefined;
+	const identityName = soul ? soulName(soul.content) : undefined;
+	const summarySource = soul?.content.split(/\r?\n/).filter((line) => line !== identityName?.line && !nameField(line)).join("\n") ?? "";
 	const pet = loadPetSave();
 	return {
-		soul: { initialized, name, summary: initialized ? preview(soul!.content.replace(/^(?:[-*]\s*)?(?:\*\*)?(?:Name|名字|姓名|名称)(?:\*\*)?\s*[:：].+$/gim, ""), 220, true) : "", sourceId: "SOUL.md" },
+		soul: { initialized, name: identityName?.name, summary: initialized ? preview(summarySource, 220, true) : "", sourceId: "SOUL.md" },
 		userProfile: user ? { sourceId: user.sourceId, summary: preview(user.content, 220, true) } : null,
 		pet: pet ? { speciesId: pet.speciesId } : null,
 		memories, memoriesTruncated: all.length > MAX_MEMORIES, journal,

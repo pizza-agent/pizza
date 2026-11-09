@@ -9,7 +9,7 @@
  */
 
 import { applyEvent, applyReaction, effectiveMood, initialPetState, levelForXp, type PetEventKind, type PetState } from "./state.js";
-import { BUILTIN_SPECIES, DEFAULT_PET_SPECIES, LEGACY_PET_SPECIES, isValidSpecies, PET_MOODS, type PetMood, type PetSpeciesDef } from "./sprites.js";
+import { BUILTIN_SPECIES, DEFAULT_PET_SPECIES, LEGACY_PET_SPECIES, isValidSpecies, PET_MOODS, type PetActivityMood, type PetMood, type PetSpeciesDef } from "./sprites.js";
 import { deletePetSave, listUserSpecies, loadPetRecord, migratePetSpecies, savePet, savePetProgress, savePetProgressAsync, type PetSave } from "./store.js";
 
 export type PetSpeciesSource = "builtin" | "plugin" | "user";
@@ -42,6 +42,7 @@ export interface PetStatus {
 
 /** Live state pushed to UIs. `species` carries frames for custom (non-builtin) art. */
 export interface PetSnapshot {
+	activity?: { mood: PetMood; busy: boolean };
 	/** Shared-save revision orders identity changes across workspace processes. */
 	revision?: number;
 	pet: PetStatus | null;
@@ -75,7 +76,7 @@ export class PetService {
 	private state: PetState = initialPetState();
 	private save: PetSave | undefined;
 	private revision = 0;
-	private readonly busy = new Set<symbol>();
+	private readonly busy = new Map<symbol, PetActivityMood>();
 	private readonly listeners = new Set<PetListener>();
 	private readonly sources = new Set<PetContributionSource>();
 	private timer: ReturnType<typeof setInterval> | undefined;
@@ -144,7 +145,7 @@ export class PetService {
 			speciesId: save.speciesId,
 			xp: this.state.xp,
 			level: this.state.level,
-			mood: effectiveMood(this.state, { agentBusy: this.busy.size > 0 }),
+			mood: this.activity().mood,
 			busy: this.busy.size > 0,
 			scale: typeof save.scale === "number" ? clamp(save.scale, ...PET_SCALE_RANGE) : 1,
 			adoptedAt: save.adoptedAt,
@@ -155,7 +156,7 @@ export class PetService {
 	snapshot(): PetSnapshot {
 		const pet = this.status();
 		const species = pet ? this.findSpecies(pet.speciesId) : undefined;
-		return { pet, revision: this.revision, species: species && species.source !== "builtin" ? species : null };
+		return { pet, revision: this.revision, activity: this.activity(), species: species && species.source !== "builtin" ? species : null };
 	}
 
 	catalog(): PetCatalog {
@@ -169,7 +170,7 @@ export class PetService {
 		if (!this.timer) {
 			// Picks up time-based moods (reaction expiry, sleepy) and changes
 			// made by other processes sharing the save.
-			this.timer = setInterval(() => this.notify(), TICK_MS);
+			this.timer = setInterval(() => this.notify(this.busy.size > 0), TICK_MS);
 			this.timer.unref?.();
 		}
 		return () => {
@@ -194,15 +195,28 @@ export class PetService {
 	// ── activity ─────────────────────────────────────────────────────────
 
 	setBusy(session: symbol, busy: boolean): void {
-		if (busy) this.busy.add(session);
+		this.setActivity(session, busy ? "working" : null);
+	}
+
+	/** Waiting needs attention; otherwise show the most concrete active work. */
+	private activity(): { mood: PetMood; busy: boolean } {
+		const phases = [...this.busy.values()];
+		const mood = (["waiting", "working", "speaking", "thinking"] as const).find((phase) => phases.includes(phase));
+		return { mood: mood ?? effectiveMood(this.state, { agentBusy: false }), busy: phases.length > 0 };
+	}
+
+	setActivity(session: symbol, mood: PetActivityMood | null): void {
+		if ((this.busy.get(session) ?? null) === mood) return;
+		if (mood) this.busy.set(session, mood);
 		else this.busy.delete(session);
 		this.notify();
 	}
 
 	dispatch(kind: PetEventKind): void {
-		if (!this.sync()) return;
+		const adopted = Boolean(this.sync());
 		this.state = applyEvent(this.state, kind);
-		this.persistProgress();
+		if (adopted) this.persistProgress();
+		else this.notify();
 	}
 
 	/** Extension point: show a mood for a while and optionally grant XP. */

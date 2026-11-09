@@ -6,11 +6,16 @@
  * ~/.pizza/agent/pets/<id>.json (see store.ts).
  */
 
-export type PetMood = "idle" | "working" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
+export type PetMood = "idle" | "thinking" | "working" | "speaking" | "waiting" | "celebrating" | "happy" | "sad" | "sleepy" | "eating";
+
+export type PetActivityMood = Extract<PetMood, "thinking" | "working" | "speaking" | "waiting">;
 
 export const PET_MOODS: readonly PetMood[] = [
 	"idle",
+	"thinking",
 	"working",
+	"speaking",
+	"waiting",
 	"celebrating",
 	"happy",
 	"sad",
@@ -52,9 +57,9 @@ export function framesForMood(species: PetSpeciesDef, mood: PetMood): string[] {
 // Built-in species
 // ---------------------------------------------------------------------------
 
-/** Only the Pizza family is included in the default picker. */
+/** One code-rendered Pizza companion; retired builtins migrate without losing progress. */
 export const DEFAULT_PET_SPECIES = "pip";
-export const LEGACY_PET_SPECIES: ReadonlySet<string> = new Set(["cat", "dog", "slime", "pixel-mochi"]);
+export const LEGACY_PET_SPECIES: ReadonlySet<string> = new Set(["cat", "dog", "slime", "pixel-mochi", "mozz", "pomo", "basi"]);
 
 const pizzaFrames = (body: string): PetSpeciesDef["frames"] => ({
 	idle: [body], working: [body + " ~"], happy: [body + " :)"],
@@ -62,8 +67,5 @@ const pizzaFrames = (body: string): PetSpeciesDef["frames"] => ({
 });
 
 export const BUILTIN_SPECIES: PetSpeciesDef[] = [
-	{ id: "pip", name: "PIP", description: "A little pizza slice. Warm, curious, always ready.", frames: pizzaFrames(" /====\\\n \\ o o /\n  \\___/") },
-	{ id: "mozz", name: "MOZZ", description: "A soft mozzarella cloud with a golden curl.", frames: pizzaFrames("  ~\n (o o)\n (_~_)") },
-	{ id: "pomo", name: "POMO", description: "A cheerful tomato with a tiny basil crown.", frames: pizzaFrames("  v\n (o o)\n (___)") },
-	{ id: "basi", name: "BASI", description: "A quiet basil leaf, folded into a little friend.", frames: pizzaFrames("  /\n /o o)\n \__/") },
+	{ id: "pip", name: "Pizza", description: "A curious little companion. Big eyes, a big smile, and a face for every agent state.", frames: pizzaFrames("( O O )") },
 ];

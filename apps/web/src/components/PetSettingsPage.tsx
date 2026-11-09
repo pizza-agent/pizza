@@ -13,7 +13,7 @@ import { PetChatPill, petChipStyle } from "./pet-shared";
 import { PetFigure } from "./PetFigure";
 import { sendCommandAwait } from "@/lib/transport";
 import { confirmDialog } from "@/lib/confirm";
-import { invokePetWindow, PET_SCALE_MAX, PET_SCALE_MIN, runPetPluginAction, usePet, type PetOperation, type PetSpecies } from "@/lib/pet";
+import { invokePetWindow, PET_SCALE_MAX, PET_SCALE_MIN, runPetPluginAction, usePet, type PetMood, type PetOperation, type PetSpecies } from "@/lib/pet";
 import { cn, isTauri, MAIN_CHAT_CWD } from "@/lib/utils";
 import { loadDraft, saveDraft } from "@/lib/composer-drafts";
 
@@ -28,9 +28,10 @@ const chip = "rounded-lg border border-border px-2.5 py-1 text-xs text-muted tra
 export function PetSettingsPage({ workspace }: { workspace?: string }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	const { pet, species: customArt, loaded, floating, catalog, actions, error: loadError, refresh, act } = usePet();
+	const { pet, activity, species: customArt, loaded, floating, catalog, actions, error: loadError, refresh, act } = usePet();
 	const [actionError, setActionError] = useState("");
 	const [pending, setPending] = useState(false);
+	const [preview, setPreview] = useState<PetMood | null>(null);
 
 	const [input, setInput] = useState("");
 	const [sending, setSending] = useState(false);
@@ -87,7 +88,8 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 		navigate("/");
 	};
 
-	const mood = pet?.mood ?? "idle";
+	const mood = activity?.mood ?? pet?.mood ?? "idle";
+	const previewMood = preview ?? mood;
 	const art = (s: PetSpecies) => (s.source === "builtin" ? undefined : s.frames);
 	const error = actionError || (loaded ? "" : loadError);
 
@@ -118,9 +120,9 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 			<div className="pet-stage relative mb-8 flex min-h-[280px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-border bg-surface px-6 py-8">
 				{pet ? (
 					<>
-						<PetFigure species={pet.speciesId} mood={mood} busy={pet.busy} scale={pet.scale} size={128} frames={customArt?.frames} />
+						<PetFigure species={pet.speciesId} mood={previewMood} scale={pet.scale} size={128} frames={customArt?.frames} />
 						<div style={petChipStyle}>
-							{t("settings.pet.level", { level: pet.level })} · {t(`pet.moods.${mood}`)}
+							{t("settings.pet.level", { level: pet.level })} · {t(`pet.moods.${previewMood}`)}
 						</div>
 						<PetChatPill
 							input={input}
@@ -153,10 +155,22 @@ export function PetSettingsPage({ workspace }: { workspace?: string }) {
 					</>
 				) : (
 					<div className="flex flex-col items-center gap-3 py-6">
-						<div className="opacity-50 grayscale"><PetFigure species="pip" size={110} /></div>
+						<PetFigure species="pip" mood={previewMood} size={110} />
 						<p className="text-sm text-muted">{t("settings.pet.noPet")}</p>
 					</div>
 				)}
+			</div>
+
+
+			<div className="mb-8">
+				<p className="mb-2 text-xs font-medium text-muted">{t("settings.pet.preview")}</p>
+				<div className="flex flex-wrap gap-1.5" role="group" aria-label={t("settings.pet.preview")}>
+					{([null, "idle", "thinking", "working", "speaking", "waiting", "celebrating", "sad"] as const).map((state) =>
+						<button key={state ?? "live"} type="button" aria-pressed={preview === state} onClick={() => setPreview(state)}
+							className={cn(chip, preview === state && "border-accent/50 bg-accent/10 text-accent")}>
+							{t(state ? `pet.moods.${state}` : "settings.pet.followAgent")}
+						</button>)}
+				</div>
 			</div>
 
 			<div className="mb-3 flex items-center justify-between">

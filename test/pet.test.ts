@@ -85,9 +85,7 @@ describe("pet store", () => {
 		const service = new PetService();
 		const all = service.listSpecies();
 		expect(all.map((s) => s.id)).toContain("pip");
-		expect(all.map((s) => s.id)).toContain("mozz");
-		expect(all.map((s) => s.id)).toContain("basi");
-		expect(service.findSpecies("basi")?.frames.idle?.length).toBeGreaterThan(0);
+		expect(all.filter((s) => s.source === "builtin").map((s) => s.id)).toEqual(["pip"]);
 
 		const dir = join(getAgentDir(), "pets");
 		mkdirSync(dir, { recursive: true });
@@ -137,11 +135,10 @@ describe("pet is a core feature", () => {
 		let catalog = service.perform({ action: "adopt", speciesId: "pip" });
 		expect(catalog.pet).toMatchObject({ speciesId: "pip", mood: "happy" });
 		expect(catalog.pet).not.toHaveProperty("name");
-		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["pip", "mozz", "pomo", "basi"]));
-		catalog = service.perform({ action: "adopt", speciesId: "pomo" });
-		expect(catalog.pet?.speciesId).toBe("pomo");
+		expect(catalog.catalog.map((s) => s.id)).toEqual(expect.arrayContaining(["pip"]));
+		expect(() => service.perform({ action: "adopt", speciesId: "pomo" })).toThrow(/Unknown/);
 		// Older app versions require a name in the save; it is kept, never shown.
-		expect(loadPetSave()?.name).toBe("PIP");
+		expect(loadPetSave()?.name).toBe("Pizza");
 		catalog = service.perform({ action: "customize", scale: 9 });
 		expect(catalog.pet).toMatchObject({ scale: 1.5 });
 		service.perform({ action: "feed" });
@@ -152,7 +149,7 @@ describe("pet is a core feature", () => {
 
 	it("follows session activity and notifies only on change", async () => {
 		const service = petService;
-		service.perform({ action: "adopt", speciesId: "mozz" });
+		service.perform({ action: "adopt", speciesId: "pip" });
 		const seen: PetSnapshot[] = [];
 		const stop = service.subscribe((snapshot) => seen.push(snapshot));
 		const handlers = new Set<(event: EventBase) => void>();
@@ -160,7 +157,7 @@ describe("pet is a core feature", () => {
 		const detach = attachPetToSession({ subscribe: (h) => { handlers.add(h); return () => handlers.delete(h); } });
 		try {
 			emit("AGENT_TURN_START");
-			expect(seen.at(-1)?.pet).toMatchObject({ busy: true, mood: "working" });
+			expect(seen.at(-1)?.pet).toMatchObject({ busy: true, mood: "thinking" });
 			const count = seen.length;
 			service.notify();
 			expect(seen).toHaveLength(count);
@@ -199,9 +196,9 @@ describe("pet is a core feature", () => {
 describe("shared pet appearance", () => {
  it("background progress preserves a newer selection, name, size and floating flag", () => {
   savePet({name:"Old",speciesId:"pip",xp:10,adoptedAt:1});
-  savePet({name:"New",speciesId:"pomo",xp:30,adoptedAt:1,scale:1.2,subtitle:"hello"});
+  savePet({name:"New",speciesId:"custom-new",xp:30,adoptedAt:1,scale:1.2,subtitle:"hello"});
   const result=savePetProgress(20);
-  expect(result).toMatchObject({name:"New",speciesId:"pomo",xp:30,scale:1.2,subtitle:"hello"});
+  expect(result).toMatchObject({name:"New",speciesId:"custom-new",xp:30,scale:1.2,subtitle:"hello"});
   deletePetSave();
   expect(savePetProgress(50)).toBeUndefined();
   expect(loadPetSave()).toBeUndefined();
@@ -216,12 +213,12 @@ describe("shared pet appearance", () => {
    savePet({name:"Cat",speciesId:"pip",xp:0,adoptedAt:1});
    service.notify();
    expect(seen.at(-1)?.pet?.speciesId).toBe("pip");
-   savePet({name:"Dog",speciesId:"pomo",xp:15,adoptedAt:1});
+   savePet({name:"Dog",speciesId:"custom-new",xp:15,adoptedAt:1});
    await vi.advanceTimersByTimeAsync(2100);
-   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"pomo",xp:15});
+   expect(seen.at(-1)?.pet).toMatchObject({speciesId:"custom-new",xp:15});
    service.dispatch("turn_end");
    await service.flush();
-   expect(loadPetSave()).toMatchObject({speciesId:"pomo",xp:19});
+   expect(loadPetSave()).toMatchObject({speciesId:"custom-new",xp:19});
    deletePetSave();
    await vi.advanceTimersByTimeAsync(2100);
    expect(seen.at(-1)?.pet).toBeNull();
@@ -233,13 +230,13 @@ describe("shared pet appearance", () => {
 });
 
 
-describe("Pizza family migration", () => {
+describe("Procedural Pizza migration", () => {
  afterEach(() => deletePetSave());
- it("exposes exactly four Pizza defaults", () => {
-  expect(BUILTIN_SPECIES.map(s=>s.id)).toEqual(["pip","mozz","pomo","basi"]);
+ it("exposes exactly one Pizza default", () => {
+  expect(BUILTIN_SPECIES.map(s=>s.id)).toEqual(["pip"]);
  });
- it("moves a retired builtin to PIP and preserves user data", () => {
-  savePet({name:"Wang",speciesId:"dog",xp:180,adoptedAt:123,scale:1.25,subtitle:"hello"});
+ it.each(["dog", "mozz", "pomo", "basi"])("moves retired %s to Pizza and preserves user data", (id) => {
+  savePet({name:"Wang",speciesId:id,xp:180,adoptedAt:123,scale:1.25,subtitle:"hello"});
   const pet = new PetService().status();
   expect(pet).toMatchObject({speciesId:"pip",xp:180,adoptedAt:123,scale:1.25});
   expect(pet).not.toHaveProperty("subtitle");
@@ -252,4 +249,117 @@ describe("Pizza family migration", () => {
   try { expect(service.snapshot()).toMatchObject({pet:{speciesId:"cat"},species:{source:"plugin",frames:{idle:["custom"]}}}); }
   finally { remove(); }
  });
+});
+
+describe("agent-driven character expressions", () => {
+	afterEach(async () => { await petService.flush(); deletePetSave(); vi.useRealTimers(); });
+	function source() {
+		const handlers = new Set<(event: EventBase) => void>();
+		let id = 0;
+		const detach = attachPetToSession({ subscribe: (h) => { handlers.add(h); return () => handlers.delete(h); } });
+		const emit = (type: EventBase["type"], payload: unknown = {}, eventId = `event-${++id}`, causedBy?: string) => {
+			handlers.forEach((h) => h({ event_id: eventId, caused_by: causedBy, type, payload } as EventBase));
+			return eventId;
+		};
+		return { emit, detach };
+	}
+	it("distinguishes thinking, text streaming, parallel tools and actual completion without adoption", () => {
+		deletePetSave();
+		const s = source();
+		try {
+			s.emit("AGENT_TURN_START");
+			expect(petService.snapshot()).toMatchObject({ pet: null, activity: { mood: "thinking", busy: true } });
+			s.emit("AGENT_MESSAGE_CHUNK", { chunk: { kind: "thinking_delta", delta: "hmm" } });
+			expect(petService.snapshot().activity?.mood).toBe("thinking");
+			s.emit("AGENT_MESSAGE_CHUNK", { chunk: { kind: "text_delta", delta: "hello" } });
+			expect(petService.snapshot().activity?.mood).toBe("speaking");
+			s.emit("TOOL_EXECUTION_START", { tool_call_id: "a" });
+			s.emit("TOOL_EXECUTION_START", { tool_call_id: "b" });
+			s.emit("TOOL_EXECUTION_END", { tool_call_id: "a" });
+			expect(petService.snapshot().activity?.mood).toBe("working");
+			s.emit("TOOL_EXECUTION_END", { tool_call_id: "b" });
+			s.emit("AGENT_TURN_END"); // Model/tool loop boundary is not success.
+			expect(petService.snapshot().activity?.mood).toBe("thinking");
+			s.emit("AGENT_TURN_COMPLETED", { reason: "stop" });
+			expect(petService.snapshot().activity).toEqual({ mood: "celebrating", busy: false });
+		} finally { s.detach(); }
+	});
+	it("keeps waiting through parallel tools until all approvals are answered", () => {
+		const s = source();
+		try {
+			s.emit("AGENT_TURN_START");
+			const a = s.emit("INTENT_TOOL_CALL", { requires_approval: true });
+			const b = s.emit("INTENT_TOOL_CALL", { requires_approval: true });
+			s.emit("TOOL_EXECUTION_START", { tool_call_id: "other" });
+			s.emit("USER_APPROVAL", { intent_event_id: a });
+			expect(petService.snapshot().activity?.mood).toBe("waiting");
+			s.emit("USER_REJECTION", { intent_event_id: b });
+			expect(petService.snapshot().activity?.mood).toBe("working");
+			s.emit("USER_INTERRUPT");
+			expect(petService.snapshot().activity).toEqual({ mood: "idle", busy: false });
+		} finally { s.detach(); }
+	});
+	it("preserves interaction waiting after the agent stops, then clears on an answer or expiry", () => {
+		vi.useFakeTimers();
+		const s = source();
+		try {
+			s.emit("AGENT_TURN_START");
+			const requestId = s.emit("INTERACTION_REQUESTED", { card: { title: "Which branch?" }, expiresAt: Date.now() + 1000 });
+			s.emit("AGENT_TURN_COMPLETED", { reason: "interaction_pending" });
+			expect(petService.snapshot().activity?.mood).toBe("waiting");
+			s.emit("INTERACTION_ANSWERED", { requestId });
+			expect(petService.snapshot().activity?.busy).toBe(false);
+			s.emit("INTERACTION_REQUESTED", { card: { title: "Continue?" }, expiresAt: Date.now() + 1000 });
+			vi.advanceTimersByTime(1001);
+			expect(petService.snapshot().activity?.busy).toBe(false);
+		} finally { s.detach(); }
+	});
+	it("prioritizes attention across sessions, preserves active work when one detaches, and reports failure", () => {
+		const a = source(), b = source();
+		try {
+			a.emit("AGENT_TURN_START");
+			a.emit("TOOL_EXECUTION_START", { tool_call_id: "a" });
+			b.emit("AGENT_TURN_START");
+			b.emit("INTENT_TOOL_CALL", { requires_approval: true });
+			expect(petService.snapshot().activity?.mood).toBe("waiting");
+			b.detach();
+			expect(petService.snapshot().activity?.mood).toBe("working");
+			a.emit("AGENT_TURN_COMPLETED", { reason: "error" });
+			expect(petService.snapshot().activity).toEqual({ mood: "sad", busy: false });
+		} finally { a.detach(); b.detach(); }
+	});
+	it("clears an automatically allowed intent when execution starts or rejects without a dialog", () => {
+		const s = source();
+		try {
+			s.emit("AGENT_TURN_START");
+			const allowed = s.emit("INTENT_TOOL_CALL", { requires_approval: true, tool_call_id: "a" });
+			s.emit("TOOL_EXECUTION_START", { tool_call_id: "a" }, "start-a", allowed);
+			expect(petService.snapshot().activity?.mood).toBe("working");
+			s.emit("TOOL_EXECUTION_END", { tool_call_id: "a" }, "end-a", allowed);
+			const rejected = s.emit("INTENT_TOOL_CALL", { requires_approval: true, tool_call_id: "b" });
+			s.emit("TOOL_EXECUTION_END", { tool_call_id: "b", is_error: true }, "end-b", rejected);
+			expect(petService.snapshot().activity?.mood).toBe("thinking");
+		} finally { s.detach(); }
+	});
+	it("refreshes long-running activity so clients can distinguish it from a dead sidecar", () => {
+		vi.useFakeTimers();
+		const service = new PetService();
+		const seen: PetSnapshot[] = [];
+		const stop = service.subscribe((frame) => seen.push(frame));
+		try {
+			service.setActivity(Symbol("long tool"), "working");
+			const count = seen.length;
+			vi.advanceTimersByTime(2100);
+			expect(seen).toHaveLength(count + 1);
+			expect(seen.at(-1)?.activity).toEqual({ mood: "working", busy: true });
+		} finally { stop(); }
+	});
+	it("does not celebrate an aborted turn", () => {
+		const s = source();
+		try {
+			s.emit("AGENT_TURN_START");
+			s.emit("AGENT_TURN_COMPLETED", { reason: "aborted" });
+			expect(petService.snapshot().activity).toEqual({ mood: "idle", busy: false });
+		} finally { s.detach(); }
+	});
 });

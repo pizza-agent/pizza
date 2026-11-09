@@ -79,6 +79,17 @@
     "brandTagline": "Create together.",
     "agent": "Agent",
     "agentSubtitle": "Always-on agent",
+    "openAgent": "Open {{name}} assistant",
+    "agentStatus": {
+      "idle": "Assistant on standby",
+      "thinking": "Assistant is thinking",
+      "working": "Assistant is working",
+      "speaking": "Assistant is replying",
+      "waiting": "Waiting for you",
+      "completed": "Task completed",
+      "error": "Something went wrong",
+      "offline": "Assistant offline"
+    },
     "agentTitle": "Persistent agent at ~/.pizza/main",
     "workspaces": "Workspaces",
     "newWorkspace": "New Workspace",
@@ -104,8 +115,8 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "timeDaysAgo": "{{count}}d ago",
-    "plugins": "Plugins",
-    "pluginsSubtitle": "Skills · Channels"
+    "plugins": "Capabilities & integrations",
+    "pluginsSubtitle": "Plugins · Skills · Links · Chat"
   },
   "remoteWorkspace": {
     "title": "Connect remote server",
@@ -882,6 +893,8 @@
       "showMini": "Show mini",
       "hideMini": "Hide mini",
       "customize": "Customize",
+      "preview": "Expressions",
+      "followAgent": "Follow agent",
       "customizeHint": "Adjust how large your pet appears.",
       "size": "Pet size",
       "save": "Save",
@@ -1103,6 +1116,9 @@
       "adopt": "Choose a pet"
     },
     "moods": {
+      "thinking": "Thinking",
+      "speaking": "Replying",
+      "waiting": "Waiting for you",
       "idle": "Idle",
       "working": "Working",
       "celebrating": "Celebrating",

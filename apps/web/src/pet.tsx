@@ -27,7 +27,7 @@ import type { MainAgentProfile } from "./lib/main-agent-profile";
 
 function PetFloat() {
 	const { t } = useTranslation();
-	const { pet, species, loaded, actions, act } = usePet();
+	const { pet, species, loaded, actions, act, activity } = usePet();
 	const [readySpecies, setReadySpecies] = useState<string | null>(null);
 	const [hover, setHover] = useState(false);
 	const [chatOpen, setChatOpen] = useState(false);
@@ -43,7 +43,7 @@ function PetFloat() {
 	const dismissMenu = useCallback(() => setMenu(null), []);
 	const [agentName, setAgentName] = useState("");
 	useEffect(() => {
-		const load = () => { void sendCommandAwait<MainAgentProfile>({ type: "main_profile" }, 8000, true).then((r) => setAgentName(r.data?.soul.name ?? "")).catch(() => {}); };
+		const load = () => { void sendCommandAwait<MainAgentProfile>({ type: "main_profile" }, 8000, true).then((r) => setAgentName(r.data?.soul.name?.trim() ?? "")).catch(() => {}); };
 		load();
 		window.addEventListener("focus", load);
 		return () => window.removeEventListener("focus", load);
@@ -53,7 +53,7 @@ function PetFloat() {
 		if (loaded && readySpecies === (pet?.speciesId ?? "none")) void invoke("pet_window_ready").catch(() => {});
 	}, [loaded, readySpecies, pet?.speciesId]);
 	useEffect(() => {
-		if (!hover || pet?.speciesId === "pixel-mochi") return;
+		if (!hover) return;
 		let alive = true;
 		const win = getCurrentWindow();
 		const timer = setInterval(() => {
@@ -104,7 +104,7 @@ function PetFloat() {
 				onClick={() => { if (!justDraggedRef.current) setChatOpen((v) => !v); }}
 				onKeyDown={(e) => { if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left + r.width / 2, y: r.bottom }); } }}
 				onDoubleClick={() => run("dock_pet_window")}>
-				<PetFigure species={pet?.speciesId} mood={pet?.mood} look={look} busy={busy || pet?.busy} scale={pet?.scale} frames={species?.frames} onReady={() => setReadySpecies(pet?.speciesId ?? "none")} />
+				<PetFigure species={pet?.speciesId} mood={activity?.mood ?? pet?.mood} look={look} busy={busy || pet?.busy} scale={pet?.scale} frames={species?.frames} onReady={() => setReadySpecies(pet?.speciesId ?? "none")} />
 			</button>
 		</div>
 		{showChat && <div data-nodrag onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} style={{ position: "absolute", top: 96, left: 22, width: 256, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>

@@ -79,6 +79,17 @@
     "brandTagline": "一起创造。",
     "agent": "助理",
     "agentSubtitle": "常驻助理",
+    "openAgent": "打开 {{name}} 助理",
+    "agentStatus": {
+      "idle": "助理正在待命",
+      "thinking": "助理正在思考",
+      "working": "助理正在执行",
+      "speaking": "助理正在回复",
+      "waiting": "助理等你确认",
+      "completed": "助理已完成",
+      "error": "助理遇到问题",
+      "offline": "助理暂未连接"
+    },
     "agentTitle": "常驻助理,位于 ~/.pizza/main",
     "workspaces": "工作区",
     "newWorkspace": "新建工作区",
@@ -105,8 +116,8 @@
     "timeMinutesAgo": "{{count}}分钟前",
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前",
-    "plugins": "插件",
-    "pluginsSubtitle": "技能 · 渠道"
+    "plugins": "能力与集成",
+    "pluginsSubtitle": "插件 · 技能 · 连接 · 通讯"
   },
   "remoteWorkspace": {
     "title": "连接远程服务器",
@@ -882,6 +893,8 @@
       "showMini": "显示迷你宠物",
       "hideMini": "收起迷你宠物",
       "customize": "自定义",
+      "preview": "表情预览",
+      "followAgent": "跟随助理",
       "customizeHint": "调整 pet 的显示大小。",
       "size": "宠物大小",
       "save": "保存",
@@ -1103,6 +1116,9 @@
       "adopt": "选择形象"
     },
     "moods": {
+      "thinking": "思考中",
+      "speaking": "回复中",
+      "waiting": "等你确认",
       "idle": "待命",
       "working": "工作中",
       "celebrating": "庆祝",

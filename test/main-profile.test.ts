@@ -45,6 +45,25 @@ describe("main agent profile", () => {
 		expect(result.userProfile?.summary).toBe("");
 		expect(result).not.toHaveProperty("since");
 	});
+	it("reads a standalone nickname and omits its pronunciation aliases", async () => {
+		writeFileSync(join(roots.mainDir, "SOUL.md"), "# Identity\n\n豆豆（Dodo / dou-dou）\n用户的技术搭档，回答直接。\n\n# Language\n中文\n");
+		const result = await loadMainProfile(roots);
+		expect(result.soul.name).toBe("豆豆");
+		expect(result.soul.summary).not.toContain("dou-dou");
+		expect(result.soul.summary).toContain("用户的技术搭档");
+	});
+	it.each(["昵称", "小名", "Nickname"])("prefers the explicit %s to a formal name", async (label) => {
+		writeFileSync(join(roots.mainDir, "SOUL.md"), `# Identity\nName: Pizza\n- **${label}：** 豆豆\n`);
+		expect((await loadMainProfile(roots)).soul.name).toBe("豆豆");
+	});
+	it("keeps a real name when other identity sections are still placeholders", async () => {
+		writeFileSync(join(roots.mainDir, "SOUL.md"), "# Identity\n名字：豆豆\n# Values\n[NOT YET DEFINED]\n");
+		expect((await loadMainProfile(roots)).soul).toMatchObject({ name: "豆豆", initialized: false });
+	});
+	it.each(["Be direct and curious.", "一个乐于助人的技术搭档", "[NOT YET DEFINED]"])("does not infer a name from %s", async (line) => {
+		writeFileSync(join(roots.mainDir, "SOUL.md"), `---\nname: Metadata name\n---\n# Identity\n${line}\n# Voice\nName: An example, not identity\n`);
+		expect((await loadMainProfile(roots)).soul.name).toBeUndefined();
+	});
 	it("blocks traversal, absolute paths, non-markdown files and symlink escapes", async () => {
 		writeFileSync(join(dir, "outside.md"), "private");
 		symlinkSync(join(dir, "outside.md"), join(roots.memoryDir, "escape.md"));

@@ -26,7 +26,7 @@ function AsciiPet({ frames, mood, size }: { frames: Frames; mood: Mood; size: nu
 }
 
 /** The same compact character and soft local halo inside and outside the app. */
-export function PetFigure({ species, mood = 'idle', look = { x: 0, y: 0 }, busy = false, scale = 1, size = 64, frames, halo = true, onReady }: {
+export function PetFigure({ species = 'pip', mood = 'idle', look = { x: 0, y: 0 }, busy = false, scale = 1, size = 64, frames, halo = true, onReady }: {
  species?: string; mood?: Mood; look?: {x:number;y:number}; busy?: boolean; scale?: number; size?: number;
  /** Art for non-builtin species. */
  frames?: Frames | null;

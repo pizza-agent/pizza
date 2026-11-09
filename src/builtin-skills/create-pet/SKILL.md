@@ -16,7 +16,7 @@ Help the user design a companion that can be adopted in Pizza. Keep the collabor
 
 ## Species file format
 
-The top-level object must contain `id`, `name`, optional `description`, and `frames`. `frames` is an object whose keys can only be `idle`, `working`, `celebrating`, `happy`, `sad`, `sleepy`, or `eating`. Every mood value must be a non-empty array of strings. Each string is one multiline ASCII frame. Do not add unsupported metadata inside `frames`.
+The top-level object must contain `id`, `name`, optional `description`, and `frames`. `frames` is an object whose keys can only be `idle`, `thinking`, `working`, `speaking`, `waiting`, `celebrating`, `happy`, `sad`, `sleepy`, or `eating`. Every mood value must be a non-empty array of strings. New activity moods are optional; missing moods fall back to `idle`. Each string is one multiline ASCII frame. Do not add unsupported metadata inside `frames`.
 
 Example shape:
 
