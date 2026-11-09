@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Mic, Square } from "lucide-react";
 
-export { PetSprite, SPECIES, type PetSpriteProps } from "./pet-sprites";
+export { PetSprite, type PetSpriteProps } from "./pet-sprites";
 
 export type { PetMood as Mood } from "@/lib/pet";
 

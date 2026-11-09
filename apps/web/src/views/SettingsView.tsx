@@ -1674,7 +1674,7 @@ export default function SettingsView({
 							<ProviderTab isSetupMode={isSetupMode} onConfigured={handleConfigured} />
 						) : null}
 						{page === "plugins" && <PluginsContent />}
-						{page === "pet" && <PetSettingsPage workspace={workspace} />}
+						{page === "pet" && <PetSettingsPage />}
 						{activeExtMenu && <ExtensionMenuPage menu={activeExtMenu} onAction={refreshExtMenus} />}
 					</div>
 				</div>

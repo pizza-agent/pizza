@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import { mergePetFrames, type PetSnapshot, type PetStatus } from "../apps/web/src/lib/pet-frames";
 
 const status = (over: Partial<PetStatus> = {}): PetStatus => ({
-	speciesId: "dog", xp: 40, level: 3, mood: "idle", busy: false,
+	speciesId: "pizza", xp: 40, level: 3, mood: "idle", busy: false,
 	scale: 1, adoptedAt: 1, floating: null, ...over,
 });
-const frame = (pet: PetStatus | null, at: number) => ({ snapshot: { pet, species: null } as PetSnapshot, at });
+const frame = (pet: PetStatus | null, at: number) => ({ snapshot: { pet, activity: { mood: pet?.mood ?? "idle", busy: pet?.busy ?? false } } as PetSnapshot, at });
 
 describe("pet frames from several workspace sidecars", () => {
 	it("takes identity from the newest frame", () => {
 		const merged = mergePetFrames(new Map([
-			["/a", frame(status({ speciesId: "cat" }), 1)],
-			["/b", frame(status({ speciesId: "dog", mood: "happy" }), 2)],
+			["/a", frame(status({ speciesId: "pizza" }), 1)],
+			["/b", frame(status({ speciesId: "pizza", mood: "happy" }), 2)],
 		]), 3);
-		expect(merged?.pet).toMatchObject({ speciesId: "dog", mood: "happy", busy: false });
+		expect(merged?.pet).toMatchObject({ speciesId: "pizza", mood: "happy", busy: false });
 	});
 
 	it("works while any workspace is busy, until that flag goes stale", () => {
@@ -36,14 +36,37 @@ describe("pet frames from several workspace sidecars", () => {
 
 
 describe("ordered pet appearance updates", () => {
- it("keeps a newer selection even when an old workspace frame arrives later", () => {
-  const selected={snapshot:{pet:status({speciesId:"pip"}),species:null,revision:200},at:10};
-  const delayed={snapshot:{pet:status({speciesId:"mozz"}),species:null,revision:100},at:20};
-  expect(mergePetFrames(new Map([["rpc",selected],["old",delayed]]))?.pet?.speciesId).toBe("pip");
+ it("keeps newer appearance settings when an old workspace frame arrives later", () => {
+  const selected={snapshot:{activity:{mood:"idle" as const,busy:false},pet:status({scale:1.3}),revision:200},at:10};
+  const delayed={snapshot:{activity:{mood:"idle" as const,busy:false},pet:status({scale:.8}),revision:100},at:20};
+  expect(mergePetFrames(new Map([["rpc",selected],["old",delayed]]))?.pet?.scale).toBe(1.3);
  });
  it("does not resurrect a released pet from an in-flight frame", () => {
-  const released={snapshot:{pet:null,species:null,revision:300},at:10};
-  const delayed={snapshot:{pet:status(),species:null,revision:200},at:20};
+  const released={snapshot:{activity:{mood:"idle" as const,busy:false},pet:null,revision:300},at:10};
+  const delayed={snapshot:{activity:{mood:"idle" as const,busy:false},pet:status(),revision:200},at:20};
   expect(mergePetFrames(new Map([["rpc",released],["old",delayed]]))?.pet).toBeNull();
+ });
+});
+
+describe("expression frames", () => {
+ it("keeps a specific working expression across an idle identity update", () => {
+  const merged=mergePetFrames(new Map([
+   ["active",frame(status({busy:true,mood:"speaking"}),1000)],
+   ["identity",frame(status({mood:"idle"}),2000)],
+  ]),3000);
+  expect(merged?.pet).toMatchObject({busy:true,mood:"speaking"});
+ });
+ it("prioritizes waiting and retains activity without an adopted pet", () => {
+  const merged=mergePetFrames(new Map([
+   ["active",{snapshot:{pet:null,activity:{mood:"working",busy:true}} as PetSnapshot,at:1000}],
+   ["waiting",{snapshot:{pet:null,activity:{mood:"waiting",busy:true}} as PetSnapshot,at:2000}],
+  ]),3000);
+  expect(merged).toMatchObject({pet:null,activity:{mood:"waiting",busy:true}});
+ });
+ it("stops animating a stale sidecar's expression", () => {
+  const merged=mergePetFrames(new Map([
+   ["dead",{snapshot:{pet:status({busy:true,mood:"thinking"}),activity:{mood:"thinking",busy:true}} as PetSnapshot,at:1000}],
+  ]),10*60_000);
+  expect(merged?.activity).toEqual({busy:false,mood:"idle"});
  });
 });

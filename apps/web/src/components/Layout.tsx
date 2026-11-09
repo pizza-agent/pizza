@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Settings as SettingsIcon, Plus, Folder, MessageSquare, MoreHorizontal, Pin, FolderOpen, Trash2, PanelLeft, Puzzle, Server } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Folder, MoreHorizontal, Pin, FolderOpen, Trash2, PanelLeft, Puzzle, Server, ChevronRight } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { StatusDot, ThemeToggle, Button, MoreMenu, type ContextMenuItem } from "./ui";
 import { confirmDialog, alertDialog } from "@/lib/confirm";
-import { BrandIcon } from "./BrandIcon";
+import { PetFigure } from "./PetFigure";
+import { usePet } from "@/lib/pet";
 import WorkspacePane from "./WorkspacePane";
 import { UpdateBanner } from "./UpdateBanner";
 import { cn, isTauri, hasMacTrafficLights, isMainChatCwd, samePath, MAIN_CHAT_CWD, pathBasename } from "@/lib/utils";
@@ -102,11 +103,12 @@ export default function Layout({
 	onDeleteWorkspace?: (workspaceId: string, phase?: "before" | "after" | "failed") => void;
 	streamingCwds?: Set<string>;
 }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	// Settings takes over the whole window (Codex-style): the app sidebar and
 	// docks are hidden and the settings view provides its own "back to app".
 	const location = useLocation();
 	const isSettingsRoute = location.pathname.startsWith("/settings");
+	const agentPet = usePet(!isSettingsRoute);
 	const isPluginsActive =
 		location.pathname === "/settings" &&
 		new URLSearchParams(location.search).get("page") === "plugins";
@@ -123,9 +125,16 @@ export default function Layout({
 	const online = sidecarReady && sidecarExitCode === null;
 	const isMainChat = isMainChatCwd(workspace);
 	const highlightedWorkspace = pendingWorkspace ?? workspace;
-	// Themes can rebrand the app: web.title/web.icon replace the sidebar brand mark.
+	// Keep the theme wordmark while the assistant character owns the single brand entry.
 	const themeId = useThemeId();
 	const brandTheme = useCustomThemes().find((ct) => ct.name === themeId);
+	const brandTitle = brandTheme?.title ?? "Pizza";
+	const agentMood = agentPet.activity?.mood ?? agentPet.pet?.mood ?? "idle";
+	const agentBusy = Boolean(agentPet.activity?.busy || (isMainChat && state?.isStreaming) || (streamingCwds && [...streamingCwds].some(isMainChatCwd)));
+	const agentStatus = !online ? "offline" : ({
+		thinking: "thinking", working: "working", speaking: "speaking", waiting: "waiting",
+		celebrating: "completed", sad: "error",
+	} as Partial<Record<typeof agentMood, string>>)[agentMood] ?? (agentBusy ? "working" : "idle");
 	const [pinned, setPinned] = useState<Set<string>>(getPinnedWorkspaces);
 	const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 	const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -282,74 +291,34 @@ export default function Layout({
 						<PanelLeft className="h-4 w-4" />
 					</button>
 				</div>
-				<div
-					data-tauri-drag-region="deep"
-					className="flex items-center gap-3 px-5 pb-2 pt-1"
-				>
-					{brandTheme?.icon ? (
-						<img
-							src={brandTheme.icon}
-							alt=""
-							width={26}
-							height={26}
-							className="shrink-0 rounded-md object-contain"
-						/>
-					) : (
-						<BrandIcon size={26} className="shrink-0 text-fg" />
-					)}
-					<div className="leading-tight">
-						<div className="text-[15px] font-semibold tracking-tight text-fg">
-							{brandTheme?.title ?? "Pizza"}
-						</div>
-						<div className="text-[11px] text-muted">
-							{t("layout.brandTagline")}
-						</div>
-					</div>
-				</div>
-				{/* Main agent — persistent */}
-				<div className="px-3 pt-2 pb-1">
+				{/* Brand and global assistant share one home entry. */}
+				<div className="px-3 pb-4 pt-2">
 					<button
+						type="button"
 						onClick={() => onSelectWorkspace?.(MAIN_CHAT_CWD)}
+						aria-label={t("layout.openAgent", { name: brandTitle })}
+						aria-current={isMainChat ? "page" : undefined}
 						className={cn(
-							"flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
-							isMainChat
-								? "bg-surface-2"
-								: "hover:bg-surface-2/60",
+							"flex w-full items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+							isMainChat ? "bg-surface-2" : "hover:bg-surface-2/60",
 						)}
 						title={t("layout.agentTitle")}
 					>
-						<MessageSquare
-							className={cn(
-								"h-4 w-4 shrink-0",
-								isMainChat ? "text-accent" : "text-muted",
-							)}
-						/>
-						<div className="min-w-0 flex-1">
-							<div
-								className={cn(
-									"truncate text-[13px] font-medium",
-									isMainChat ? "text-fg" : "text-fg/90",
-								)}
-							>
-								{t("layout.agent")}
-							</div>
-							<div className="truncate text-[11px] text-muted">
-								{t("layout.agentSubtitle")}
-							</div>
+						<PetFigure mood={agentMood}
+							size={38} halo={false} />
+						<div className="min-w-0 flex-1 leading-tight">
+							<div className="truncate text-[20px] font-semibold tracking-tight text-fg">{brandTitle}</div>
+							<div className={cn("mt-1 truncate tracking-[-0.015em] text-muted", i18n.resolvedLanguage?.startsWith("zh") ? "text-[11px]" : "text-[10px]")}>{t(`layout.agentStatus.${agentStatus}`)}</div>
 						</div>
-						{isMainChat && online && (
-							<span
-								className={cn(
-									"h-1.5 w-1.5 shrink-0 rounded-full",
-									state?.isStreaming || (streamingCwds && [...streamingCwds].some(isMainChatCwd)) ? "bg-accent animate-pulse" : "bg-success",
-								)}
-							/>
-						)}
+						<span aria-hidden="true" className={cn("h-1.5 w-1.5 shrink-0 rounded-full",
+							!online ? "bg-muted" : agentStatus === "error" ? "bg-danger" : agentBusy ? "bg-accent" : "bg-success",
+							agentBusy && agentMood !== "waiting" && "animate-pulse motion-reduce:animate-none")} />
+						<ChevronRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted/50" />
 					</button>
 				</div>
 
 				{/* Workspaces section */}
-				<div className="flex-1 overflow-y-auto px-3 py-2">
+				<div className="scrollbar-hide flex-1 overflow-y-auto px-3 py-2">
 					<div className="mb-1 flex items-center justify-between px-2">
 						<span className="text-[11px] font-medium text-muted">
 							{t("layout.workspaces")}
@@ -467,14 +436,14 @@ export default function Layout({
 								? "bg-surface-2"
 								: "hover:bg-surface-2/60",
 						)}
-						title={t("plugins.title")}
+						title={t("layout.plugins")}
 					>
 						<Puzzle className={cn("h-4 w-4 shrink-0", isPluginsActive ? "text-accent" : "text-muted")} />
 						<div className="min-w-0 flex-1">
-							<div className={cn("truncate text-[13px]", isPluginsActive ? "font-medium text-fg" : "font-medium text-fg/90")}>
+							<div className={cn("truncate", i18n.resolvedLanguage?.startsWith("zh") ? "text-[13px]" : "text-[11px]", isPluginsActive ? "font-medium text-fg" : "font-medium text-fg/90")}>
 								{t("layout.plugins")}
 							</div>
-							<div className="truncate text-[11px] text-muted">
+							<div className={cn("whitespace-nowrap tracking-[-0.025em] text-muted [word-spacing:-0.08em]", i18n.resolvedLanguage?.startsWith("zh") ? "text-[11px]" : "text-[10px]")}>
 								{t("layout.pluginsSubtitle")}
 							</div>
 						</div>

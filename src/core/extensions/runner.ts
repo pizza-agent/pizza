@@ -802,10 +802,9 @@ export class ExtensionRunner {
 		return menus;
 	}
 
-	/** Pet species and actions contributed by loaded extensions (`pizza.pet`). */
+	/** Pet actions contributed by loaded extensions (`pizza.pet`). */
 	getPetContributions(): PetContributionSource {
 		return {
-			species: () => this.extensions.flatMap((ext) => [...(ext.petSpecies?.values() ?? [])]),
 			actions: () => this.extensions.flatMap((ext) => [...(ext.petActions?.values() ?? [])]),
 		};
 	}

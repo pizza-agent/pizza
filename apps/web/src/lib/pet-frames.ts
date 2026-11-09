@@ -23,9 +23,16 @@ export function mergePetFrames(frames: ReadonlyMap<string, Frame>, now = Date.no
 		const previous = newest?.snapshot.revision ?? 0;
 		if (!newest || revision > previous || (revision === previous && frame.at >= newest.at)) newest = frame;
 	}
-	const pet = newest?.snapshot.pet;
-	if (!newest || !pet) return newest?.snapshot;
-	const busy = [...frames.values()].some((f) => f.snapshot.pet?.busy && now - f.at < BUSY_STALE_MS);
-	const mood: PetMood = busy ? "working" : pet.mood === "working" ? "idle" : pet.mood;
-	return { ...newest.snapshot, pet: { ...pet, busy, mood } };
+	if (!newest) return undefined;
+	const pet = newest.snapshot.pet;
+	const priority = ["waiting", "working", "speaking", "thinking"];
+	const active = [...frames.values()]
+		.filter((f) => now - f.at < BUSY_STALE_MS)
+		.map((f) => f.snapshot.activity)
+		.filter((a) => a.busy)
+		.sort((a, b) => priority.indexOf(a.mood) - priority.indexOf(b.mood))[0];
+	const base = newest.snapshot.activity.mood;
+	const mood: PetMood = active?.mood ?? (priority.includes(base) ? "idle" : base);
+	const busy = Boolean(active);
+	return { ...newest.snapshot, activity: { mood, busy }, pet: pet ? { ...pet, busy, mood } : null };
 }

@@ -34,7 +34,6 @@ interface BuiltinSkillDef {
 const BUILTIN_SKILLS: readonly BuiltinSkillDef[] = [
 	{ id: "pizza-self-optimization" },
 	{ id: "pizza-customization", enabledByDefault: true },
-	{ id: "create-pet", enabledByDefault: true },
 ];
 
 export interface BuiltinSkillInfo {

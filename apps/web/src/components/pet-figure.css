@@ -1,7 +1,6 @@
 .pet-figure { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; isolation: isolate; overflow: visible; }
 .pet-figure__aura { position:absolute; inset:-9px; z-index:-1; border-radius:50%; pointer-events:none; background:radial-gradient(ellipse at 50% 62%, color-mix(in srgb,var(--pet-accent) 11%,transparent), color-mix(in srgb,var(--bg,#fff) 18%,transparent) 34%,transparent 70%); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); mask-image:radial-gradient(ellipse,#000 15%,transparent 72%); -webkit-mask-image:radial-gradient(ellipse,#000 15%,transparent 72%); }
 .pet-figure__art { display:flex; align-items:center; justify-content:center; filter:drop-shadow(0 2px 2px rgba(31,24,35,.14)); }
-.pet-figure__ascii { margin:0; line-height:1.15; white-space:pre; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:#7d8a9b; text-shadow:0 0 10px color-mix(in srgb,var(--pet-accent) 55%,transparent), 0 0 24px color-mix(in srgb,var(--pet-accent) 30%,transparent); }
 @media (prefers-reduced-motion:reduce) { .pet-figure *, .pet-figure svg * { animation:none !important; transition:none !important; } }
 
 /* In-app home: the pet sits in a small glass bubble; dragged out to the desktop it roams free. */

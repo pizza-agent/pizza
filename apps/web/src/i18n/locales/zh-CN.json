@@ -79,6 +79,17 @@
     "brandTagline": "一起创造。",
     "agent": "助理",
     "agentSubtitle": "常驻助理",
+    "openAgent": "打开 {{name}} 助理",
+    "agentStatus": {
+      "idle": "助理正在待命",
+      "thinking": "助理正在思考",
+      "working": "助理正在执行",
+      "speaking": "助理正在回复",
+      "waiting": "助理等你确认",
+      "completed": "助理已完成",
+      "error": "助理遇到问题",
+      "offline": "助理暂未连接"
+    },
     "agentTitle": "常驻助理,位于 ~/.pizza/main",
     "workspaces": "工作区",
     "newWorkspace": "新建工作区",
@@ -105,8 +116,8 @@
     "timeMinutesAgo": "{{count}}分钟前",
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前",
-    "plugins": "插件",
-    "pluginsSubtitle": "技能 · 渠道"
+    "plugins": "能力与集成",
+    "pluginsSubtitle": "插件 · 技能 · 连接 · 通讯"
   },
   "remoteWorkspace": {
     "title": "连接远程服务器",
@@ -878,18 +889,19 @@
       "pet": "形象"
     },
     "pet": {
-      "subtitle": "助理的形象，会跟随它的工作状态变化。插件也可以为它添加新形象和动作。",
+      "subtitle": "助理的形象，会跟随它的工作状态变化。",
       "showMini": "显示迷你宠物",
       "hideMini": "收起迷你宠物",
       "customize": "自定义",
+      "characters": "角色",
+      "preview": "表情预览",
+      "followAgent": "跟随助理",
       "customizeHint": "调整 pet 的显示大小。",
       "size": "宠物大小",
       "save": "保存",
       "cancel": "取消",
-      "myPets": "我的宠物",
-      "createPet": "创作宠物",
       "refresh": "刷新",
-      "noPet": "还没有宠物，在下面挑一只吧。",
+      "noPet": "启用 Pizza 角色，即可调整大小或显示桌面悬浮角色。",
       "adoptCta": "领养宠物",
       "none": "无",
       "noneDescription": "放走当前宠物",
@@ -897,8 +909,6 @@
       "release": "放走",
       "releaseConfirm": "确定放走 {{name}} 吗？存档会被清除。",
       "pluginActions": "插件动作",
-      "sourcePlugin": "插件",
-      "sourceUser": "自定义",
       "actionError": "操作失败：{{error}}",
       "level": "Lv.{{level}}"
     },
@@ -1103,6 +1113,9 @@
       "adopt": "选择形象"
     },
     "moods": {
+      "thinking": "思考中",
+      "speaking": "回复中",
+      "waiting": "等你确认",
       "idle": "待命",
       "working": "工作中",
       "celebrating": "庆祝",

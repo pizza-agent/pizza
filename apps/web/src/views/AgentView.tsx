@@ -1483,7 +1483,7 @@ export default function AgentView({
 					{t("agent.remoteProviderMissing")}
 				</div>
 			)}
-			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
+			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade scrollbar-hide min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
 						{loadingHistory || waitingForWorkspace || greetingInFlight ? (
