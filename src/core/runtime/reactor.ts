@@ -1438,11 +1438,24 @@ export class Reactor {
 		}
 	}
 
-	/** Unanswered card on the active thread. Expired cards do not hold the turn. */
+	/**
+	 * Unanswered card on the active thread. A card only holds the turn while
+	 * the user has not replied at all: expired cards never hold it, and a
+	 * newer USER_MESSAGE on the thread means the user moved on — typed an
+	 * unrelated request, or answered the card in chat instead of clicking it.
+	 * Holding the turn past that point would cap every later turn at a single
+	 * tool round until the card expires (default: 24h). An answered card
+	 * cannot re-pend, so any newer user message un-holds regardless of its
+	 * content.
+	 */
 	private _hasPendingInteraction(): boolean {
 		const threadId = this.config.projection.getDescriptor().thread_id;
 		if (!threadId) return false;
-		return listInteractions(this.config.store, threadId).some((record) => record.status === "pending");
+		const pending = listInteractions(this.config.store, threadId).filter((record) => record.status === "pending");
+		if (pending.length === 0) return false;
+		const latestUserMessage = this.config.store.query({ types: ["USER_MESSAGE"], thread_id: threadId, limit: 1, reverse: true })[0];
+		if (!latestUserMessage) return true;
+		return pending.some((record) => record.createdAt > latestUserMessage.timestamp);
 	}
 
 	/**

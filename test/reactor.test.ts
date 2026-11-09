@@ -199,6 +199,75 @@ describe("Reactor (event-driven core)", () => {
 		runtime.dispose();
 	});
 
+	it("does not hold the turn once the user replies in chat", async () => {
+		// A pending card only blocks the tool loop while it is the latest
+		// user-facing thing. If the user types a normal message instead of
+		// answering, later turns must not be capped at one tool round.
+		const cwd = makeTempDir();
+		let runtime: EventSourcedRuntime | undefined;
+		const registry: ToolRegistry = {
+			get(name: string): ToolExecutor | undefined {
+				if (name !== "echo") return undefined;
+				return {
+					async execute() {
+						const threadId = runtime!.getProjection().getDescriptor().thread_id;
+						createInteraction(runtime!.store, threadId, "call_1", {
+							title: "Pick one",
+							fields: [
+								{
+									id: "choice",
+									type: "select",
+									label: "Choice",
+									options: [
+										{ id: "a", label: "A" },
+										{ id: "b", label: "B" },
+									],
+								},
+							],
+						});
+						// The user replies in chat while the card is on screen — the
+						// message lands mid-turn as a queued follow-up.
+						runtime!.store.append({
+							actor_id: "user",
+							type: "USER_MESSAGE",
+							thread_id: threadId,
+							payload: { content: "never mind, do something else" },
+						});
+						return { content: [{ type: "text", text: "asked" }], is_error: false };
+					},
+					getMetadata() {
+						return { name: "echo", category: "file_read", defaultRisk: "safe" };
+					},
+				};
+			},
+			list() {
+				return ["echo"];
+			},
+		};
+		const { client, callCount } = makeScriptedClient();
+		runtime = new EventSourcedRuntime({
+			cwd,
+			agentDir: cwd,
+			toolRegistry: registry,
+			llmClient: client,
+			classifierConfig: { approve_unknown: false },
+			systemPrompt: "test system",
+			model: { provider: "test", model_id: "test" },
+			tools: [],
+		});
+
+		await runtime.prompt("ask me");
+
+		// Tool loop continued past the pending card (call 2), then the queued
+		// follow-up message drove a third call. No interaction_pending hold.
+		expect(callCount()).toBe(3);
+		const reasons = runtime.store
+			.query({ types: ["AGENT_TURN_COMPLETED"] })
+			.map((e) => (e.payload as { reason: string }).reason);
+		expect(reasons).not.toContain("interaction_pending");
+		runtime.dispose();
+	});
+
 	it("continues after the question card is already answered", async () => {
 		const cwd = makeTempDir();
 		let runtime: EventSourcedRuntime | undefined;
