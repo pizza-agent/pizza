@@ -114,7 +114,7 @@ export default function WorkspacePane({
 				<div className="relative min-w-0 flex-1 overflow-hidden">
 					{!rightOpen && <div className={cn("absolute right-2 top-2 flex items-center gap-1", Z.chrome)}>{dockControls}</div>}
 					{children}
-					{isMain && <MainAgentPet profile={mainAgent.profile} pet={mainAgent.pet} running={running} onOpen={openAgent} onShowProfile={showAgent} topInset={-8} />}
+					{isMain && <MainAgentPet profile={mainAgent.profile} pet={mainAgent.pet} running={running} onOpen={openAgent} onShowProfile={showAgent} />}
 				</div>
 				{rightOpen && (
 					<>
