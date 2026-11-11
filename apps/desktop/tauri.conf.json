@@ -9,7 +9,7 @@
 		},
 		"devUrl": "http://127.0.0.1:1420",
 		"beforeBuildCommand": {
-			"script": "bun run build",
+			"script": "bun run build && node ../../scripts/prepare-macos-binary.mjs",
 			"cwd": "../web"
 		},
 		"frontendDist": "../web/dist"

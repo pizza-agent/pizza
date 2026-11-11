@@ -662,6 +662,19 @@ pub fn ensure_gateway(
 	cmd.stdin(Stdio::null());
 	cmd.stdout(Stdio::null());
 	cmd.stderr(Stdio::null());
+	// Capture the daemon's output so a failed boot is diagnosable — the
+	// process is detached, so nothing else retains it.
+	let log_path = gateway_log_path(socket_path);
+	if let Ok(file) = std::fs::OpenOptions::new()
+		.create(true)
+		.append(true)
+		.open(&log_path)
+	{
+		if let Ok(out) = file.try_clone() {
+			cmd.stdout(Stdio::from(out));
+		}
+		cmd.stderr(Stdio::from(file));
+	}
 	// On Windows, detach the child from this console so it survives exit.
 	#[cfg(windows)]
 	{
@@ -669,26 +682,85 @@ pub fn ensure_gateway(
 		// DETACHED_PROCESS = 0x00000008; CREATE_NEW_PROCESS_GROUP = 0x00000200.
 		cmd.creation_flags(0x00000008 | 0x00000200);
 	}
-	let child = cmd
+	let mut child = cmd
 		.spawn()
 		.map_err(|e| format!("Failed to spawn gateway: {e}"))?;
-	// Run outside the gateway's JS event loop: an in-process timer cannot
-	// recover a native spin or blocked event loop. Child::kill targets only
-	// this child (no PID lookup/reuse); its RPC children shut down on stdin EOF.
-	let monitored_path = socket_path.clone();
-	thread::spawn(move || supervise_gateway_child(child, monitored_path, Duration::from_secs(5)));
-	// Wait for the socket/pipe to respond.
+	// Wait for the socket/pipe to respond. Also watch the child: when the
+	// daemon dies before binding (invalid code signature, missing module),
+	// its exit status is far more useful than a bare timeout.
 	let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
 	while std::time::Instant::now() < deadline {
 		std::thread::sleep(std::time::Duration::from_millis(100));
 		if gateway_ready(socket_path) {
+			// Run outside the gateway's JS event loop: an in-process timer
+			// cannot recover a native spin or blocked event loop.
+			// Child::kill targets only this child (no PID lookup/reuse); its
+			// RPC children shut down on stdin EOF.
+			let monitored_path = socket_path.clone();
+			thread::spawn(move || {
+				supervise_gateway_child(child, monitored_path, Duration::from_secs(5))
+			});
 			return Ok(());
 		}
+		match child.try_wait() {
+			Ok(Some(status)) => {
+				return Err(format!(
+					"Gateway process exited before binding {} ({}). Daemon log: {}",
+					socket_path.display(),
+					describe_exit_status(status),
+					log_path.display()
+				));
+			}
+			Ok(None) => {}
+			Err(e) => return Err(format!("Failed to monitor gateway process: {e}")),
+		}
 	}
+	// Timed out but still alive — it may bind late and serve the next
+	// ensure_gateway, so hand it to the supervisor rather than killing it.
+	let monitored_path = socket_path.clone();
+	thread::spawn(move || supervise_gateway_child(child, monitored_path, Duration::from_secs(5)));
 	Err(format!(
-		"Gateway failed to start within 15s (socket: {})",
-		socket_path.display()
+		"Gateway failed to start within 15s (socket: {}). Daemon log: {}",
+		socket_path.display(),
+		log_path.display()
 	))
+}
+
+/// Log file capturing a spawned gateway's stdout/stderr. Lives next to the
+/// socket on Unix (`gateway.sock` → `gateway.log`); Windows named pipes have
+/// no filesystem sibling, so it goes to the temp dir.
+#[cfg(unix)]
+fn gateway_log_path(socket_path: &PathBuf) -> PathBuf {
+	socket_path.with_extension("log")
+}
+
+#[cfg(windows)]
+fn gateway_log_path(_socket_path: &PathBuf) -> PathBuf {
+	std::env::temp_dir().join("pizza-gateway.log")
+}
+
+/// Human-readable process exit for gateway boot errors. The signal case
+/// matters most: a binary macOS refuses to run (e.g. an invalid adhoc code
+/// signature on a Bun-compiled `pizza`) is SIGKILLed before it can print
+/// anything, leaving the log empty.
+#[cfg(any(unix, windows))]
+fn describe_exit_status(status: std::process::ExitStatus) -> String {
+	#[cfg(unix)]
+	{
+		use std::os::unix::process::ExitStatusExt;
+		if let Some(sig) = status.signal() {
+			let hint = if sig == 9 {
+				" — SIGKILL on macOS often means an invalid code signature; run `codesign -v` on the binary"
+			} else {
+				""
+			};
+			return format!("terminated by signal {sig}{hint}");
+		}
+	}
+	match status.code() {
+		Some(code) => format!("exited with code {code}"),
+		None => format!("{status}"),
+	}
 }
 
 /// Supervise only the child we spawned. A replacement owning the socket

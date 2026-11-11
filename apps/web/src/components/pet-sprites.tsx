@@ -135,16 +135,17 @@ export function PetSprite({ mood, look, noPet, scale = 1, onReady, character, ex
 			<g className="pizza-pet__motion"><g className="pizza-pet__attention">
 				<path d={rig.body} fill={rig.accent} />
 				{rig.crust && <path d={rig.crust} fill="none" stroke="#ee8134" strokeWidth="12" strokeLinecap="round" />}
-				<g className="pizza-pet__gaze" fill="#302420">
+				<g className="pizza-pet__gaze" fill="#493126">
+					{[left - 8, right + 8].map((x) => <ellipse key={x} cx={x} cy={eyeY + 15} rx="7" ry="3.5" fill="#ed8773" opacity=".28" />)}
 					{[left, right].map((x, i) => <g key={i} transform={`translate(${x} ${eyeY}) rotate(${pose.eyeTilt * (i ? -1 : 1)})`}>
 						<g className="pizza-pet__expression"><g className="pizza-pet__blink">
-							<g className="pizza-pet__eye"><ellipse rx="10" ry="14" /><ellipse cx="3" cy="-5" rx="3.2" ry="4" fill="#fff" /></g>
-							<path className="pizza-pet__smile" d="M-9 2 Q0 -12 9 2" fill="none" stroke="#302420" strokeWidth="5" strokeLinecap="round" />
+							<g className="pizza-pet__eye"><ellipse rx="9" ry="12" /><ellipse cx="-2.5" cy="-4" rx="3" ry="3.5" fill="#fff9ef" /><circle cx="3" cy="4" r="1.5" fill="#fff9ef" opacity=".8" /></g>
+							<path className="pizza-pet__smile" d="M-9 2 Q0 -12 9 2" fill="none" stroke="#493126" strokeWidth="5" strokeLinecap="round" />
 						</g></g>
 					</g>)}
 					<g transform={`translate(${(left + right) / 2} ${mouthY})`}>
 						<g className="pizza-pet__mouth">
-							<path d={pose.mouth} fill={pose.mouthOpen ? "#302420" : "none"} stroke="#302420" strokeWidth={pose.mouthOpen ? 0 : 4} strokeLinecap="round" />
+							<path d={pose.mouth} fill={pose.mouthOpen ? "#493126" : "none"} stroke="#493126" strokeWidth={pose.mouthOpen ? 0 : 4} strokeLinecap="round" />
 							{pose.mouthOpen > 0 && <ellipse cx="1" cy="16" rx="9" ry="6" fill="#f28c8b" clipPath={`url(#${clip})`} />}
 						</g>
 					</g>

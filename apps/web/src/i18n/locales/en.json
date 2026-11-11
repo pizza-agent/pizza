@@ -116,7 +116,7 @@
     "timeHoursAgo": "{{count}}h ago",
     "timeDaysAgo": "{{count}}d ago",
     "plugins": "Capabilities & integrations",
-    "pluginsSubtitle": "Plugins · Skills · Links · Chat"
+    "pluginsSubtitle": "Skills · MCP · Extensions · Channels"
   },
   "remoteWorkspace": {
     "title": "Connect remote server",

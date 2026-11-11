@@ -31,7 +31,7 @@ export interface CharacterExpression {
 }
 const smile = "M-13 0 Q0 6 13 0 Q10 17 0 17 Q-10 17 -13 0Z";
 const round = "M-8 5 C-8 -5 8 -5 8 5 C8 17 -8 17 -8 5Z";
-const base: CharacterExpression = { eyeX: 1, eyeY: 1, eyeTilt: 0, smileEyes: false, mouth: smile, mouthOpen: .7, lean: 0 };
+const base: CharacterExpression = { eyeX: 1, eyeY: 1.06, eyeTilt: 0, smileEyes: false, mouth: smile, mouthOpen: .45, lean: 0 };
 export const CHARACTER_EXPRESSIONS: Record<RpcPetMood, CharacterExpression> = {
 	idle: base,
 	thinking: { ...base, eyeY: .88, eyeTilt: -8, mouth: round, mouthOpen: .45, lean: -5 },
@@ -41,6 +41,6 @@ export const CHARACTER_EXPRESSIONS: Record<RpcPetMood, CharacterExpression> = {
 	celebrating: { ...base, smileEyes: true, mouthOpen: 1, lean: -3 },
 	happy: { ...base, smileEyes: true, mouthOpen: .9, lean: 3 },
 	sad: { ...base, eyeY: .8, eyeTilt: 13, mouth: "M-11 8 Q0 -3 11 8", mouthOpen: 0, lean: -6 },
-	sleepy: { ...base, eyeY: .18, mouth: round, mouthOpen: .3, lean: -7 },
+	sleepy: { ...base, eyeY: .72, eyeTilt: 0, mouth: smile, mouthOpen: .3, lean: -3 },
 	eating: { ...base, eyeY: .8, mouth: round, mouthOpen: .8 },
 };

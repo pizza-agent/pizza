@@ -117,7 +117,7 @@
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前",
     "plugins": "能力与集成",
-    "pluginsSubtitle": "插件 · 技能 · 连接 · 通讯"
+    "pluginsSubtitle": "技能 · MCP · 扩展 · 渠道"
   },
   "remoteWorkspace": {
     "title": "连接远程服务器",
