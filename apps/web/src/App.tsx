@@ -298,7 +298,11 @@ function AppInner() {
 	}, [startWithWorkspace, t]);
 
 	const handleSelectWorkspace = useCallback(async (cwd: string) => {
-		if (samePath(workspace, cwd) && sidecarReady) return;
+		const sameWorkspace = samePath(workspace, cwd) || (isMainChatCwd(workspace) && isMainChatCwd(cwd));
+		if (sameWorkspace && sidecarReady) {
+			if (window.location.pathname !== "/") navigate("/");
+			return;
+		}
 		// Navigate back to agent page when selecting a workspace.
 		navigate("/");
 		// startWithWorkspace sets workspace AFTER initSidecar completes,

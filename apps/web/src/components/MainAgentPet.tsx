@@ -7,7 +7,7 @@ import { PET_SETTINGS_PATH, type PetState } from "@/lib/pet";
 import { Z } from "@/lib/z-index";
 import { cn, isTauri } from "@/lib/utils";
 import { PetFigure } from "./PetFigure";
-import { SPECIES } from "./pet-shared";
+import { CHARACTERS } from "@/lib/agent-character";
 import { PetMenu, petPluginItems, type PetMenuItem } from "./PetMenu";
 
 type Position = { x: number; y: number };
@@ -16,7 +16,7 @@ const KEY = "pizza:main-agent-pet-position:v2";
 const BOX_W = 84;
 
 /** Overlay only. Dragging never updates parent state or message measurements. */
-export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState, running, onOpen, onShowProfile, topInset = -8 }: {
+export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState, running, onOpen, onShowProfile, topInset = 12 }: {
 	profile: MainAgentProfile | null;
 	pet: PetState;
 	running: boolean;
@@ -28,7 +28,7 @@ export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState,
 }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	const { pet, species, floating, actions, act } = petState;
+	const { pet, floating, actions, act } = petState;
 	const layer = useRef<HTMLDivElement>(null);
 	const box = useRef<HTMLDivElement>(null);
 	const position = useRef<Position | null>(null);
@@ -119,8 +119,7 @@ export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState,
 		box.current?.removeAttribute("data-dragging");
 		setMenu({ x: clientX, y: clientY, screenX, screenY });
 	};
-	const speciesId = pet?.speciesId ?? (petState.loaded ? undefined : profile?.pet?.speciesId);
-	const name = profile?.soul.name || t("layout.agent");
+	const name = profile?.soul.name?.trim() || t("layout.agent");
 	const fail = (e: unknown) => setError(String(e));
 	const items: PetMenuItem[] = menu ? [
 		{ id: "profile", label: t("pet.menu.profile"), icon: <UserRound strokeWidth={1.8} />, onSelect: onShowProfile },
@@ -156,7 +155,7 @@ export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState,
 						}
 					}}
 					className="flex items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent motion-reduce:transition-none">
-					<span className="pet-orb pointer-events-none" style={{ "--pet-accent": SPECIES[speciesId ?? ""]?.accent ?? "#abb9c8" } as CSSProperties}><PetFigure species={speciesId} mood={running ? "working" : pet?.mood ?? "idle"} look={look} busy={running} scale={pet?.scale ?? 1} size={56} halo={false} frames={species?.frames} /></span>
+					<span className="pet-orb pointer-events-none" style={{ "--pet-accent": CHARACTERS.pizza.accent } as CSSProperties}><PetFigure mood={petState.activity?.mood ?? pet?.mood ?? (running ? "thinking" : "idle")} look={look} scale={pet?.scale ?? 1} size={56} halo={false} /></span>
 				</div>
 				<div className="absolute top-full -mt-1.5 flex max-w-[140px] translate-y-0.5 items-center gap-0.5 pointer-events-auto rounded-full border border-border/60 bg-bg/95 py-0.5 pl-2 pr-1 text-[10px] font-medium text-fg/80 shadow-sm backdrop-blur-sm opacity-0 transition-[opacity,transform] duration-200 group-hover/pet:translate-y-0 group-hover/pet:opacity-100 group-focus-within/pet:translate-y-0 group-focus-within/pet:opacity-100 group-data-[dragging=true]/pet:opacity-0">
 					<span className="truncate">{name}</span>

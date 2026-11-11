@@ -7,6 +7,8 @@ export interface ToolExecutionRequest {
 	tool_call_id: string;
 	tool_name: string;
 	arguments: Record<string, unknown>;
+	arguments_prepared?: boolean;
+	execution_mode?: "sequential" | "parallel";
 	caused_by?: string;
 	signal?: AbortSignal;
 	onUpdate?: (partial: ToolExecutionUpdate) => void;

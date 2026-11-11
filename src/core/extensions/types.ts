@@ -48,7 +48,7 @@ import type { KeybindingsManager } from "../commands/keybindings.js";
 import type { CustomMessage } from "../context/messages.js";
 import type { ModelRegistry } from "../models/model-registry.js";
 import type { PetActionDef, PetStatus } from "../pet/service.js";
-import type { PetMood, PetSpeciesDef } from "../pet/sprites.js";
+import type { PetMood } from "../pet/sprites.js";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -91,8 +91,7 @@ export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
 	/** Optional structured metadata attached to the widget frame (serialized
 	 * over RPC alongside widgetLines; ignored by the TUI). Lets rich frontends
-	 * render non-text representations — e.g. the desktop floating pet window
-	 * reads species/mood from meta instead of parsing ASCII frames. */
+	 * render non-text representations of the widget. */
 	meta?: Record<string, unknown>;
 }
 
@@ -846,10 +845,10 @@ export interface CustomToolCallEvent extends ToolCallEventBase {
 /**
  * Fired before a tool executes. Can block.
  *
- * `event.input` is mutable. Mutate it in place to patch tool arguments before execution.
- * Later `tool_call` handlers see earlier mutations. No re-validation is performed after mutation.
- * Runs after any approval and before execution; returning `{ block: true }` or throwing
- * rejects the call (fail closed). Mutations affect execution only, not the logged intent.
+ * Runs after any approval and before execution; returning `{ block: true }` or
+ * throwing rejects the call (fail closed). Changing input or parsed command
+ * parameters also rejects the call, because those changes were not approved.
+ * Use prepareArguments for normalization before validation and approval.
  */
 export type ToolCallEvent = CliToolCallEvent | CustomToolCallEvent;
 
@@ -937,7 +936,7 @@ export interface ContextEventResult {
 export type BeforeProviderRequestEventResult = unknown;
 
 export interface ToolCallEventResult {
-	/** Block tool execution. To modify arguments, mutate `event.input` in place instead. */
+	/** Block tool execution. Approved arguments must not be changed by this gate. */
 	block?: boolean;
 	reason?: string;
 }
@@ -1379,6 +1378,8 @@ export interface CliCommandParseMeta {
  * ExtensionContext.
  */
 export interface CliCommandDefinition<P = any> {
+	/** Serial commands run exclusively with respect to other tool calls. */
+	executionMode?: ToolExecutionMode;
 	/** Command token including the underscore prefix, e.g. `_computer_use`. */
 	name: string;
 	/** One-line summary, shown in the cli tool description and the system prompt command table. */
@@ -1597,20 +1598,12 @@ export interface Extension {
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	settingsItems: Map<string, RegisteredExtensionSettingsItem>;
 	menus: Map<string, RegisteredExtensionMenu>;
-	/** Pet species contributed through `pizza.pet.registerSpecies`. */
-	petSpecies?: Map<string, PetSpeciesDef>;
 	/** Pet menu actions contributed through `pizza.pet.registerAction`. */
 	petActions?: Map<string, PetActionDef>;
 }
 
 /** Extension points of the app pet (see `ExtensionAPI.pet`). */
 export interface ExtensionPetAPI {
-	/**
-	 * Add a species to the adoption catalog. Frames are ASCII art per mood
-	 * (same shape as ~/.pizza/agent/pets/<id>.json); user packs with the same
-	 * id take precedence. Re-registering an id replaces it.
-	 */
-	registerSpecies(species: PetSpeciesDef): void;
 	/** Add an entry to the pet's right-click menu and settings page. */
 	registerAction(action: PetActionDef): void;
 	/** Make the pet show a mood for a while, optionally granting XP. No-op without a pet. */

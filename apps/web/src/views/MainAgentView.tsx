@@ -82,13 +82,12 @@ export default function MainAgentView({ workspace, data, running, connected }: {
 		} catch (e) { if (request === journalGeneration.current) setJournalError(String(e)); }
 		finally { if (request === journalGeneration.current) setJournalLoading(false); }
 	};
-	const name = profile?.soul.name || t("layout.agent");
-	const species = pet?.speciesId ?? (petState.loaded ? undefined : profile?.pet?.speciesId);
+	const name = profile?.soul.name?.trim() || t("layout.agent");
 	const editAppearance = t("mainAgent.editAppearance");
 	const avatar = <div className="group/avatar relative h-12 w-12 shrink-0">
 		<button type="button" onClick={() => navigate(PET_SETTINGS_PATH)} aria-label={editAppearance} title={editAppearance}
 			className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-surface-2/60 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-			<PetFigure species={species} mood={running ? "working" : pet?.mood ?? "idle"} busy={running} size={44} frames={petState.species?.frames} halo={false} />
+			<PetFigure mood={petState.activity?.mood ?? pet?.mood ?? (running ? "thinking" : "idle")} size={44} halo={false} />
 		</button>
 		<span aria-hidden="true" className="pointer-events-none absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-surface bg-fg text-bg shadow-sm transition-transform group-hover/avatar:scale-110">
 			<PenLine className="h-2.5 w-2.5" strokeWidth={2.2} />
@@ -112,7 +111,7 @@ export default function MainAgentView({ workspace, data, running, connected }: {
 				<button className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-accent" aria-label={t("mainAgent.refresh")} title={t("mainAgent.refresh")} onClick={() => { void refresh(); if (sourceId) setDocumentVersion((v) => v + 1); }}><RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin motion-reduce:animate-none")} /></button>
 			</div>
 			{error && <div role="alert" className="mx-5 mb-3 rounded-lg border border-danger/20 bg-danger/5 p-3 text-[11px] text-danger"><p>{t("mainAgent.loadError")}</p><p className="mt-1 break-words opacity-80">{error}</p><button className="mt-2 underline" onClick={() => { void refresh(); }}>{t("mainAgent.retry")}</button></div>}
-			<div ref={scroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6">
+			<div ref={scroll} className="scrollbar-hide min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6">
 				{sourceId ? <div>
 					<div className="mb-4 flex flex-wrap items-center gap-2"><span className="min-w-0 flex-1 break-all text-[10px] text-muted">{sourceId}</span>{document && editingId !== sourceId && <button className={action} onClick={() => setEditingId(sourceId)}><PenLine className="h-3 w-3" />{t("mainAgent.edit")}</button>}</div>
 					{editingId === sourceId ? editor(sourceId, t("mainAgent.documentContent")) : documentLoading ? <div className="flex justify-center py-10"><Spinner /></div> : documentError ? <div role="alert" className="break-words text-xs text-danger">{documentError}<button className="ml-2 underline" onClick={() => setDocumentVersion((v) => v + 1)}>{t("mainAgent.retry")}</button></div> : document && <div className="break-words text-xs"><Markdown>{document.content}</Markdown></div>}

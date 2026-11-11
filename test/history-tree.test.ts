@@ -410,26 +410,9 @@ describe("history_tree", () => {
 			const toolDef = createHistoryTreeToolDefinition();
 			const ctx = { sessionManager: extManager } as any;
 
-			const missing = await toolDef.execute("t1", { action: "jump" }, undefined, undefined, ctx);
-			expect((missing.content[0] as any).text).toContain("jump requires session_id");
-
-			const unknown = await toolDef.execute(
-				"t2",
-				{ action: "jump", session_id: "sess_missing" },
-				undefined,
-				undefined,
-				ctx,
-			);
-			expect((unknown.content[0] as any).text).toContain("failed");
-
-			const noManager = await toolDef.execute(
-				"t3",
-				{ action: "list" },
-				undefined,
-				undefined,
-				{ sessionManager: undefined } as any,
-			);
-			expect((noManager.content[0] as any).text).toContain("not available");
+			await expect(toolDef.execute("t1", { action: "jump" }, undefined, undefined, ctx)).rejects.toThrow("jump requires session_id");
+			await expect(toolDef.execute("t2", { action: "jump", session_id: "sess_missing" }, undefined, undefined, ctx)).rejects.toThrow("failed");
+			await expect(toolDef.execute("t3", { action: "list" }, undefined, undefined, { sessionManager: undefined } as any)).rejects.toThrow("not available");
 
 			sessionManager.dispose();
 			store.close();

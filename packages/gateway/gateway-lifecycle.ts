@@ -18,10 +18,10 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, openSync, unlinkSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { serializeJsonLine } from "./jsonl.js";
 import { gatewaySocketPath } from "./gateway-server.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
@@ -132,12 +132,13 @@ async function shutdownGateway(socketPath: string): Promise<boolean> {
 
 /**
  * Spawn the gateway as a detached background process. Returns the
- * ChildProcess; the caller does not wait for it.
+ * ChildProcess plus the path of the log file capturing its stdout/stderr;
+ * the caller does not wait for it.
  *
  * The gateway inherits PIZZA_AGENT_DIR from the environment so spawned
  * sub-agents share the caller's auth/models.
  */
-function spawnGateway(socketPath: string, agentDir: string, cliPathOverride?: string): ChildProcess {
+function spawnGateway(socketPath: string, agentDir: string, cliPathOverride?: string): { child: ChildProcess; logPath: string } {
 	// When the caller is not the pizza CLI itself (a channel adapter process
 	// whose argv[1] is its own entry script), an explicit cliPath is required —
 	// resolveCliSpawn() would otherwise spawn the channel again as "gateway".
@@ -155,14 +156,33 @@ function spawnGateway(socketPath: string, agentDir: string, cliPathOverride?: st
 	const command = binary ? cliPath : "node";
 	const commandArgs = binary ? args : [cliPath, ...args];
 
+	// Capture the daemon's output so a failed boot is diagnosable — the
+	// process is detached, so nothing else retains it. Unix sockets get a
+	// sibling log (`gateway.sock` → `gateway.log`); Windows named pipes have
+	// no filesystem location, so the log goes to the temp dir.
+	const logPath = socketPath.endsWith(".sock")
+		? `${socketPath.slice(0, -".sock".length)}.log`
+		: join(tmpdir(), "pizza-gateway.log");
+	let stdio: "ignore" | ["ignore", number, number] = "ignore";
+	let logFd: number | undefined;
+	try {
+		logFd = openSync(logPath, "a");
+		stdio = ["ignore", logFd, logFd];
+	} catch {
+		// Log file unavailable — keep silent stdio.
+	}
+
 	const child = spawn(command, commandArgs, {
 		detached: true,
-		stdio: "ignore",
+		stdio,
 		env,
 	});
+	if (logFd !== undefined) {
+		try { closeSync(logFd); } catch { /* ignore */ }
+	}
 	// Detach so the gateway outlives the parent process.
 	child.unref();
-	return child;
+	return { child, logPath };
 }
 
 /** Remove a stale socket file (Unix only — Windows named pipes have no file). */
@@ -222,8 +242,10 @@ export async function ensureGateway(agentDir: string, socketPath?: string, expec
 	// Clean up stale socket if any.
 	cleanStaleSocket(sock);
 
-	// Spawn the daemon and wait for it to bind.
-	spawnGateway(sock, agentDir, cliPath);
+	// Spawn the daemon and wait for it to bind. Also watch the child: when
+	// the daemon dies before binding (invalid code signature, missing
+	// module), its exit status is far more useful than a bare timeout.
+	const { child, logPath } = spawnGateway(sock, agentDir, cliPath);
 
 	const deadline = Date.now() + GATEWAY_BOOT_TIMEOUT;
 	while (Date.now() < deadline) {
@@ -231,10 +253,21 @@ export async function ensureGateway(agentDir: string, socketPath?: string, expec
 		if (existsSync(sock) && (await pingGateway(sock))) {
 			return sock;
 		}
+		if (child.exitCode !== null || child.signalCode !== null) {
+			const how = child.signalCode
+				? `terminated by ${child.signalCode}` +
+					(child.signalCode === "SIGKILL"
+						? " — on macOS this often means an invalid code signature; run `codesign -v` on the binary"
+						: "")
+				: `exited with code ${child.exitCode}`;
+			throw new Error(
+				`Gateway process exited before binding ${sock} (${how}). Daemon log: ${logPath}`,
+			);
+		}
 	}
 
 	throw new Error(
 		`Gateway failed to start within ${GATEWAY_BOOT_TIMEOUT / 1000}s (socket: ${sock}). ` +
-			"Try running `pizza --mode gateway` manually to see the error.",
+			`Daemon log: ${logPath}. Try running \`pizza --mode gateway\` manually to see the error.`,
 	);
 }

@@ -209,13 +209,22 @@ async function cmdStart(socketPath: string): Promise<void> {
 		},
 	});
 	child.unref();
-	// Wait for the socket to appear and respond to ping.
+	// Wait for the socket to appear and respond to ping. Bail out early if
+	// the daemon dies before binding (e.g. SIGKILL from an invalid code
+	// signature on macOS) instead of burning the full timeout.
 	const deadline = Date.now() + 15_000;
 	while (Date.now() < deadline) {
 		await new Promise((r) => setTimeout(r, 200));
 		if (existsSync(socketPath) && (await pingGateway(socketPath))) {
 			console.log(chalk.green("Gateway started."));
 			console.log(chalk.dim(`  Socket: ${socketPath}`));
+			return;
+		}
+		if (child.exitCode !== null || child.signalCode !== null) {
+			const how = child.signalCode ? `terminated by ${child.signalCode}` : `exited with code ${child.exitCode}`;
+			console.log(chalk.red(`Gateway process ${how} before binding the socket.`));
+			console.log(chalk.dim("Try running: pizza --mode gateway"));
+			process.exitCode = 1;
 			return;
 		}
 	}

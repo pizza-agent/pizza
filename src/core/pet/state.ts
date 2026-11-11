@@ -10,6 +10,7 @@ import type { PetMood } from "./sprites.js";
 
 export type PetEventKind =
 	| "turn_start"
+	| "turn_cancel"
 	| "turn_end"
 	| "tool_error"
 	| "compaction"
@@ -32,6 +33,7 @@ export const SLEEPY_AFTER_MS = 90_000;
 
 const XP_PER_EVENT: Partial<Record<PetEventKind, number>> = {
 	turn_start: 0,
+	turn_cancel: 0,
 	turn_end: 4,
 	feed: 2,
 	play: 2,
@@ -62,6 +64,10 @@ export function applyEvent(state: PetState, kind: PetEventKind, now: number = Da
 	switch (kind) {
 		case "turn_start":
 			// "working" is driven by agentBusy in effectiveMood, not stored.
+			break;
+		case "turn_cancel":
+			next.mood = "idle";
+			next.moodSince = now;
 			break;
 		case "turn_end":
 			next.mood = "celebrating";

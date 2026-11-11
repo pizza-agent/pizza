@@ -176,49 +176,49 @@ export function createSkillToolDefinition(options: SkillToolOptions): ToolDefini
 
 			if (action === "load") {
 				if (!name) {
-					return textResult("skill load: --name is required. Use `_skill list` to see available skills.");
+					throw new Error("skill load: --name is required. Use `_skill list` to see available skills.");
 				}
 				const skill = skills.find((s) => s.name === name && !s.disableModelInvocation);
 				if (!skill) {
-					return textResult(`Skill "${name}" not found. Use \`_skill list\` to see available skills.`);
+					throw new Error(`Skill "${name}" not found. Use \`_skill list\` to see available skills.`);
 				}
 				try {
 					const content = await readFile(skill.filePath, "utf-8");
 					return textResult(content);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					return textResult(`Error loading skill "${name}": ${message}`);
+					throw new Error(`Error loading skill "${name}": ${message}`);
 				}
 			}
 
 			if (action === "read") {
 				if (!name) {
-					return textResult("skill read: --name is required. Use `_skill list` to see available skills.");
+					throw new Error("skill read: --name is required. Use `_skill list` to see available skills.");
 				}
 				if (!file) {
-					return textResult("skill read: --file is required. Specify a relative path within the skill's directory.");
+					throw new Error("skill read: --file is required. Specify a relative path within the skill's directory.");
 				}
 				const skill = skills.find((s) => s.name === name && !s.disableModelInvocation);
 				if (!skill) {
-					return textResult(`Skill "${name}" not found. Use \`_skill list\` to see available skills.`);
+					throw new Error(`Skill "${name}" not found. Use \`_skill list\` to see available skills.`);
 				}
 				const resolved = resolveSkillFile(skill, file);
 				if (typeof resolved !== "string") {
-					return textResult(resolved.error);
+					throw new Error(resolved.error);
 				}
 				if (!existsSync(resolved)) {
-					return textResult(`File not found: ${file} (resolved to ${resolved})`);
+					throw new Error(`File not found: ${file} (resolved to ${resolved})`);
 				}
 				try {
 					const content = await readFile(resolved, "utf-8");
 					return textResult(content);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
-					return textResult(`Error reading file "${file}" from skill "${name}": ${message}`);
+					throw new Error(`Error reading file "${file}" from skill "${name}": ${message}`);
 				}
 			}
 
-			return textResult(`skill: unknown action "${action}". Valid actions: ${SKILL_ACTIONS.join(", ")}`);
+			throw new Error(`skill: unknown action "${action}". Valid actions: ${SKILL_ACTIONS.join(", ")}`);
 		},
 	});
 }

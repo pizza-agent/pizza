@@ -36,16 +36,18 @@ export const PET_SCALE_MAX = 1.5;
 /** The pet lives with the local main agent, whatever workspace is open. */
 const targetMain = () => isTauri();
 
-export async function getPetCatalog(): Promise<PetCatalog> {
+type SourcedCatalog = PetCatalog & { sourceCwd?: string };
+
+export async function getPetCatalog(): Promise<SourcedCatalog> {
 	const r = await sendCommandAwait<PetCatalog>({ type: "pet_get" }, 8000, targetMain());
 	if (!r.data) throw new Error("Missing pet response");
-	return r.data;
+	return { ...r.data, sourceCwd: (r as typeof r & { _cwd?: string })._cwd };
 }
 
-export async function runPetAction(op: PetOperation): Promise<PetCatalog> {
+export async function runPetAction(op: PetOperation): Promise<SourcedCatalog> {
 	const r = await sendCommandAwait<PetCatalog>({ type: "pet_action", op }, 8000, targetMain());
 	if (!r.data) throw new Error("Missing pet response");
-	return r.data;
+	return { ...r.data, sourceCwd: (r as typeof r & { _cwd?: string })._cwd };
 }
 
 /** Plugin pet actions are slash commands steered into the main session. */
@@ -58,7 +60,7 @@ async function readSave(): Promise<PetStatus | null | undefined> {
 	if (!isTauri()) return undefined;
 	const { invoke } = await import("@tauri-apps/api/core");
 	const save = await invoke<Record<string, unknown> | null>("get_pet_state");
-	if (!save || typeof save.speciesId !== "string") return null;
+	if (!save || save.speciesId !== "pizza") return null;
 	const xp = typeof save.xp === "number" ? save.xp : 0;
 	return {
 		speciesId: save.speciesId,
@@ -86,8 +88,8 @@ export function usePet(enabled = true) {
 		frames.current.set(source, { snapshot: next, at: Date.now() });
 		setSnapshot(mergePetFrames(frames.current));
 	}, []);
-	const applyCatalog = useCallback((next: PetCatalog) => {
-		apply("rpc", { pet: next.pet, species: next.species, revision: next.revision });
+	const applyCatalog = useCallback((next: SourcedCatalog) => {
+		apply(next.sourceCwd ?? "local", { pet: next.pet, activity: next.activity, revision: next.revision });
 		setCatalog(next.catalog);
 		setActions(next.actions);
 		setError("");
@@ -113,14 +115,22 @@ export function usePet(enabled = true) {
 		const cleanups: Array<() => void> = [];
 		const add = (fn: () => void) => { if (disposed) fn(); else cleanups.push(fn); };
 		void readSave()
-			.then((pet) => { if (!disposed && pet !== undefined && frames.current.size === 0) setSnapshot((s) => s ?? { pet, species: null }); })
+			.then((pet) => { if (!disposed && pet !== undefined && frames.current.size === 0) setSnapshot((s) => s ?? { pet, activity: { mood: "idle", busy: false } }); })
 			.catch(() => {});
 		void subscribePetState((frame) => {
 			// A remote workspace reports another machine's save.
 			if (disposed || frame._cwd?.startsWith("remote://")) return;
-			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, species: (frame.species as PetSpecies | null) ?? null, revision: typeof frame.revision === "number" && Number.isFinite(frame.revision) ? frame.revision : undefined });
+			apply(frame._cwd ?? "local", { pet: (frame.pet as PetStatus | null) ?? null, activity: frame.activity as PetSnapshot["activity"], revision: typeof frame.revision === "number" && Number.isFinite(frame.revision) ? frame.revision : undefined });
 		}).then(add).catch(() => {});
 		void refresh();
+		const staleTimer = setInterval(() => {
+			if (disposed || !frames.current.size) return;
+			setSnapshot((previous) => {
+				const next = mergePetFrames(frames.current);
+				return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+			});
+		}, 2000);
+		cleanups.push(() => clearInterval(staleTimer));
 		const onFocus = () => { void refresh(); };
 		window.addEventListener("focus", onFocus);
 		cleanups.push(() => window.removeEventListener("focus", onFocus));
@@ -137,8 +147,7 @@ export function usePet(enabled = true) {
 
 	return {
 		pet: snapshot?.pet ?? null,
-		/** Active species definition when it has custom (ASCII) art. */
-		species: snapshot?.species ?? null,
+		activity: snapshot?.activity,
 		loaded: snapshot !== undefined,
 		floating,
 		catalog,

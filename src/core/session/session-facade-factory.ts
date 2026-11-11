@@ -146,10 +146,9 @@ export interface CreateSessionFacadeOptions {
 	contextBudget?: number;
 
 	/**
-	 * Default safe-mode when settings.json does not set one. "auto" (default)
-	 * gates writes/edits/unknown via per-category approvals; false restores
-	 * unconditional auto-run. Modes without an approval UI (print) pass false
-	 * so one-shot automation is not blocked.
+	 * Default safe-mode when settings.json does not set one. False (default)
+	 * auto-runs tools; "auto" uses per-category approval gates; true requires
+	 * approval for every risky tool call.
 	 */
 	safeModeDefault?: boolean | "auto";
 	/**
@@ -428,14 +427,10 @@ export async function createSessionFacade(
 		systemPrompt: toolAssembly.systemPrompt,
 		model: toModelConfig(model ?? ({ provider: "none", id: "none" } as Model<any>), thinkingLevel),
 		tools: toolAssembly.runtimeToolDefinitions,
-		// Safe mode is the master toggle for tool approval. Unset defaults to
-		// "auto" (per-category gates below decide; getSafeModeSettingWithDefault
-		// returns undefined for auto). Explicit true gates every risky call;
-		// explicit false auto-runs everything. Print mode passes
-		// safeModeDefault: false — a one-shot user-invoked command must not
-		// block on approvals it has no UI to answer.
+		// CLI and desktop default to automatic execution. Explicit settings or a
+		// caller-supplied default can enable per-category or strict approvals.
 		classifierConfig: {
-			safe_mode: settingsManager.getSafeModeSettingWithDefault(options.safeModeDefault ?? "auto"),
+			safe_mode: settingsManager.getSafeModeSettingWithDefault(options.safeModeDefault ?? false),
 			require_approval_writes: approvalSettings.writes,
 			require_approval_edits: approvalSettings.edits,
 			require_approval_shell_moderate: approvalSettings.shellModerate,

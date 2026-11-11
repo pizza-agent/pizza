@@ -290,17 +290,18 @@ describe("EventStoreExtensionSessionManager", () => {
 			runtime.dispose();
 		});
 
-		it("executes the handler's in-place input mutation without rewriting the logged intent", async () => {
+		it("rejects post-approval input mutations without rewriting the logged intent", async () => {
 			const { runtime, executed, unbind } = setup(async (event) => {
 				event.input.text = "rewritten";
 			});
 			await runtime.prompt("run echo");
 			unbind();
-			expect(executed).toEqual([{ text: "rewritten" }]);
+			expect(executed).toEqual([]);
 			const intent = runtime.store.query({ types: ["INTENT_TOOL_CALL"] })[0]!.payload as any;
 			expect(intent.arguments).toEqual({ text: "hello" });
 			const start = runtime.store.query({ types: ["TOOL_EXECUTION_START"] })[0]!.payload as any;
-			expect(start.arguments).toEqual({ text: "rewritten" });
+			expect(start.arguments).toEqual({}); // synthetic rejected-call START, not an executed tool
+			expect(JSON.stringify(runtime.store.query({ types: ["TOOL_EXECUTION_END"] })[0]!.payload)).toContain("changed arguments after approval");
 			runtime.dispose();
 		});
 

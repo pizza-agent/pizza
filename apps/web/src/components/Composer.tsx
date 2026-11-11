@@ -756,10 +756,10 @@ export function Composer({
 
 	// Approval policy for the current session (two states). Selected inline in
 	// the composer so the user can choose per-session without visiting Settings.
-	// "off" (自动 "automatic") auto-runs everything; "auto" (审批 "approval",
-	// default) gates only unknown tools and dangerous commands. Legacy "on"
+	// "off" (自动 "automatic", default) auto-runs everything; "auto" (审批
+	// "approval") gates only unknown tools and dangerous commands. Legacy "on"
 	// (strict) settings map to 审批 ("approval") in the UI.
-	const approvalPolicy = state?.approvalPolicy ?? (state?.safeMode ? "on" : "auto");
+	const approvalPolicy = state?.approvalPolicy ?? (state?.safeMode ? "on" : "off");
 	const gated = approvalPolicy !== "off";
 	const handleApprovalPolicyChange = useCallback(async (policy: "auto" | "off") => {
 		setApprovalMenuOpen(false);
@@ -1527,8 +1527,8 @@ ${insert}`;
 		sidecarReady && !recording && !transcribing && (!!input.trim() || images.length > 0 || files.length > 0);
 
 	return (
-		<div className="bg-bg px-6 py-4">
-			<div className="mx-auto max-w-3xl">
+		<div className="bg-bg py-4">
+			<div className="chat-column">
 				<div
 					className={cn(
 						"relative rounded-2xl border border-border bg-bg px-4 pt-3 pb-2 shadow-[0_1px_6px_rgb(0_0_0/0.04)] transition-colors focus-within:border-muted/70",
@@ -2025,8 +2025,8 @@ ${insert}`;
 									className={cn(
 										"flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors disabled:opacity-40",
 										gated
-											? "text-warning hover:bg-surface"
-											: "text-muted hover:bg-surface hover:text-fg",
+											? "text-muted hover:bg-surface hover:text-fg"
+											: "text-warning hover:bg-surface",
 									)}
 									title={t("composer.approvalPolicy")}
 								>
@@ -2041,8 +2041,8 @@ ${insert}`;
 								{approvalMenuOpen && (
 									<div className={cn("absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-border bg-surface p-1 shadow-lg", Z.menu)}>
 										{([
-											{ policy: "auto" as const, icon: ShieldCheck, label: t("composer.approvalGated"), hint: t("composer.approvalGatedHint"), active: gated },
 											{ policy: "off" as const, icon: Shield, label: t("composer.approvalOff"), hint: t("composer.approvalOffHint"), active: !gated },
+											{ policy: "auto" as const, icon: ShieldCheck, label: t("composer.approvalGated"), hint: t("composer.approvalGatedHint"), active: gated },
 										] as const).map(({ policy, icon: Icon, label, hint, active }) => (
 											<button
 												key={policy}

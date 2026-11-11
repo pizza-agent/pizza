@@ -79,6 +79,17 @@
     "brandTagline": "Create together.",
     "agent": "Agent",
     "agentSubtitle": "Always-on agent",
+    "openAgent": "Open {{name}} assistant",
+    "agentStatus": {
+      "idle": "Assistant on standby",
+      "thinking": "Assistant is thinking",
+      "working": "Assistant is working",
+      "speaking": "Assistant is replying",
+      "waiting": "Waiting for you",
+      "completed": "Task completed",
+      "error": "Something went wrong",
+      "offline": "Assistant offline"
+    },
     "agentTitle": "Persistent agent at ~/.pizza/main",
     "workspaces": "Workspaces",
     "newWorkspace": "New Workspace",
@@ -104,8 +115,8 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "timeDaysAgo": "{{count}}d ago",
-    "plugins": "Plugins",
-    "pluginsSubtitle": "Skills · Channels"
+    "plugins": "Capabilities & integrations",
+    "pluginsSubtitle": "Skills · MCP · Extensions · Channels"
   },
   "remoteWorkspace": {
     "title": "Connect remote server",
@@ -878,18 +889,19 @@
       "pet": "Pet"
     },
     "pet": {
-      "subtitle": "Your agent’s companion. It reacts to the agent’s work, and plugins can add new looks and actions.",
+      "subtitle": "Your agent’s companion. Its expression follows the agent’s work.",
       "showMini": "Show mini",
       "hideMini": "Hide mini",
       "customize": "Customize",
+      "characters": "Characters",
+      "preview": "Expressions",
+      "followAgent": "Follow agent",
       "customizeHint": "Adjust how large your pet appears.",
       "size": "Pet size",
       "save": "Save",
       "cancel": "Cancel",
-      "myPets": "My pets",
-      "createPet": "Create pet",
       "refresh": "Refresh",
-      "noPet": "No pet yet. Pick a companion below.",
+      "noPet": "Enable Pizza below to adjust its size or show it on your desktop.",
       "adoptCta": "Adopt a pet",
       "none": "None",
       "noneDescription": "Release your companion",
@@ -897,8 +909,6 @@
       "release": "Release",
       "releaseConfirm": "Release {{name}}? Its save will be deleted.",
       "pluginActions": "Plugin actions",
-      "sourcePlugin": "Plugin",
-      "sourceUser": "Custom",
       "actionError": "Action failed: {{error}}",
       "level": "Lv.{{level}}"
     },
@@ -1103,6 +1113,9 @@
       "adopt": "Choose a pet"
     },
     "moods": {
+      "thinking": "Thinking",
+      "speaking": "Replying",
+      "waiting": "Waiting for you",
       "idle": "Idle",
       "working": "Working",
       "celebrating": "Celebrating",

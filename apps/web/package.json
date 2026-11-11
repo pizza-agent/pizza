@@ -1,14 +1,12 @@
 {
 	"name": "pizza-web",
 	"private": true,
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/free-port.mjs && vite",
 		"build": "tsc -b && vite build",
 		"preview": "vite preview",
-		"pets:bake": "node scripts/generate-pet-shapes.mjs",
-		"pets:check": "node scripts/generate-pet-shapes.mjs --check",
 		"tauri": "tauri",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix"

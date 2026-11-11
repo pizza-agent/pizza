@@ -1,24 +1,20 @@
-/** Original soft volumes baked into SVG layers; no runtime GPU renderer. */
+/** Procedural character: a silhouette, two big eyes and one expressive mouth. */
 import { useEffect, useId, useRef, type CSSProperties } from "react";
 import type { Mood } from "./pet-shared";
-import { PET_SHAPES } from "./pet-shapes";
+import { CHARACTERS, CHARACTER_EXPRESSIONS, type CharacterDefinition, type CharacterExpression } from "@/lib/agent-character";
 import "./pizza-pet.css";
 
 export interface PetSpriteProps {
-	species: string;
 	mood: Mood;
 	look: { x: number; y: number };
-	busy?: boolean;
 	noPet?: boolean;
 	scale?: number;
 	onReady?: () => void;
+	/** Extension points for another code-defined rig, expression or live audio envelope. */
+	character?: CharacterDefinition;
+	expression?: Partial<CharacterExpression>;
+	speechLevel?: number;
 }
-export const SPECIES: Record<string, { accent: string; label: string }> = {
-	pip: { accent: "#FF9024", label: "PIP · Pizza slice" },
-	mozz: { accent: "#F0C975", label: "MOZZ · Mozzarella" },
-	pomo: { accent: "#EE4D43", label: "POMO · Tomato" },
-	basi: { accent: "#49AF69", label: "BASI · Basil" },
-};
 interface GazeTarget {
 	place(point: { x: number; y: number } | null): void;
 	pause(hidden: boolean): void;
@@ -62,166 +58,99 @@ function followPointer(target: GazeTarget) {
 	};
 }
 const clamp = (n: number) => Math.max(-1, Math.min(1, n));
-export function PetSprite({ species, mood, look, busy, noPet, scale = 1, onReady }: PetSpriteProps) {
-	const shape = PET_SHAPES[species] ?? PET_SHAPES.pip;
-	const root = useRef<HTMLSpanElement>(null),
-		latest = useRef({ look, onReady });
+export function PetSprite({ mood, look, noPet, scale = 1, onReady, character, expression, speechLevel }: PetSpriteProps) {
+	const rig = character ?? CHARACTERS.pizza;
+	const state = mood;
+	const pose = { ...CHARACTER_EXPRESSIONS[state], ...expression };
+	const root = useRef<HTMLSpanElement>(null);
+	const latest = useRef({ look, onReady });
 	latest.current = { look, onReady };
-	const instance = useId().replace(/:/g, ""),
-		clip = `pizza-clip-${instance}`;
-	const seed = [...(instance + species)].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
-	const down = useRef<{ x: number; y: number } | null>(null);
+	const instance = useId().replace(/:/g, "");
+	const clip = `pizza-mouth-${instance}`;
 	useEffect(() => {
 		const node = root.current;
 		if (!node) return;
-		let visible = true,
-			hidden = document.hidden;
-		const pause = () => {
-			node.dataset.animate = String(visible && !hidden);
+		let visible = true, hidden = document.hidden;
+		let blinkTimer: ReturnType<typeof setTimeout>;
+		let openTimer: ReturnType<typeof setTimeout>;
+		let pokeTimer: ReturnType<typeof setTimeout>;
+		const blink = () => {
+			blinkTimer = setTimeout(() => {
+				if (visible && !hidden) {
+					node.dataset.blink = "true";
+					openTimer = setTimeout(() => { delete node.dataset.blink; }, 140);
+				}
+				blink();
+			}, 2800 + Math.random() * 4200);
 		};
+		blink();
 		const target: GazeTarget = {
-			pause(value) {
-				hidden = value;
-				pause();
-			},
+			pause(value) { hidden = value; node.dataset.animate = String(visible && !hidden); },
 			place(point) {
 				if (!visible || hidden) return;
-				const r = node.getBoundingClientRect(),
-					dx = point ? point.x - r.left - r.width / 2 : 0,
-					dy = point ? point.y - r.top - r.height / 2 : 0,
-					near = point && Math.hypot(dx, dy) < 420;
-				node.style.setProperty("--pet-gx", String(clamp((near ? dx / 180 : 0) + latest.current.look.x * 0.12)));
-				node.style.setProperty("--pet-gy", String(clamp((near ? dy / 200 : 0) + latest.current.look.y * 0.12)));
-				node.dataset.petted = String(Boolean(point && Math.abs(dx) < r.width * 0.6 && Math.abs(dy) < r.height * 0.6));
+				const r = node.getBoundingClientRect();
+				const dx = point ? point.x - r.left - r.width / 2 : 0;
+				const dy = point ? point.y - r.top - r.height / 2 : 0;
+				const near = point && Math.hypot(dx, dy) < 420;
+				node.style.setProperty("--pet-gx", String(clamp((near ? dx / 180 : 0) + latest.current.look.x * .12)));
+				node.style.setProperty("--pet-gy", String(clamp((near ? dy / 200 : 0) + latest.current.look.y * .12)));
 			},
 		};
 		const stop = followPointer(target);
 		const poke = () => {
-			if (node.dataset.poked !== "true") node.dataset.poked = "true";
+			clearTimeout(pokeTimer);
+			node.dataset.poked = "true";
+			pokeTimer = setTimeout(() => { delete node.dataset.poked; }, 650);
 		};
 		node.addEventListener("pizza:pet-poke", poke);
 		const observer = new IntersectionObserver(([entry]) => {
 			visible = entry.isIntersecting;
-			pause();
+			node.dataset.animate = String(visible && !hidden);
 		});
 		observer.observe(node);
-		// Inline SVG is ready even while the native floating window is hidden.
 		latest.current.onReady?.();
 		return () => {
-			stop();
-			observer.disconnect();
+			stop(); observer.disconnect();
+			clearTimeout(blinkTimer); clearTimeout(openTimer); clearTimeout(pokeTimer);
 			node.removeEventListener("pizza:pet-poke", poke);
 		};
-	}, [species]);
+	}, [rig]);
 	useEffect(() => {
-		root.current?.style.setProperty("--pet-gx", String(clamp(look.x * 0.12)));
-		root.current?.style.setProperty("--pet-gy", String(clamp(look.y * 0.12)));
+		root.current?.style.setProperty("--pet-gx", String(clamp(look.x * .12)));
+		root.current?.style.setProperty("--pet-gy", String(clamp(look.y * .12)));
 	}, [look.x, look.y]);
+	const mouthOpen = speechLevel === undefined ? pose.mouthOpen : .2 + Math.max(0, Math.min(1, speechLevel)) * .95;
 	const style = {
-		width: 112,
-		height: 112,
-		transform: `scale(${scale})`,
-		transformOrigin: "center",
-		margin: (112 * (scale - 1)) / 2,
-		opacity: noPet ? 0.45 : 1,
-		filter: noPet ? "grayscale(.65)" : undefined,
-		"--pet-delay": `${-(seed % 520) / 100}s`,
-		"--pet-fidget-delay": `${-(seed % 1000) / 100}s`,
-		"--pet-eye": shape.eye,
+		width: 112 * scale, height: 112 * scale,
+		opacity: noPet ? .45 : 1,
+		"--pet-lean": `${pose.lean}deg`, "--pet-mouth-open": mouthOpen,
+		"--pet-eye-x": pose.eyeX, "--pet-eye-y": pose.eyeY,
 	} as CSSProperties;
-	return (
-		<span
-			ref={root}
-			className="pizza-pet"
-			role="img"
-			aria-label={(SPECIES[species] ?? SPECIES.pip).label}
-			data-renderer="layered-svg"
-			data-mood={busy ? "working" : mood}
-			data-fidget={seed % 2 ? "sway" : "stretch"}
-			style={style}
-			onPointerDown={(e) => {
-				down.current = { x: e.clientX, y: e.clientY };
-			}}
-			onPointerUp={(e) => {
-				if (!down.current || Math.hypot(e.clientX - down.current.x, e.clientY - down.current.y) > 6) {
-					down.current = null;
-					return;
-				}
-				down.current = null;
-				const node = root.current;
-				if (node && e.button === 0 && node.dataset.poked !== "true") node.dataset.poked = "true";
-			}}
-			onAnimationEnd={(e) => {
-				if (e.animationName === "pizzaPoke" && root.current) delete root.current.dataset.poked;
-			}}
-		>
-			<svg viewBox="0 0 112 112" width="112" height="112" aria-hidden="true">
-				<defs>
-					<clipPath id={clip}>
-						<path d={shape.body} />
-					</clipPath>
-				</defs>
-				<g className="pizza-pet__motion">
-					<g className="pizza-pet__attention">
-						<path d={shape.body} fill={shape.color} />
-						<g clipPath={`url(#${clip})`}>
-							{shape.paints.map((paint, i) => (
-								<path key={i} d={paint.path} fill={paint.color} />
-							))}
-							<path d={shape.shade} fill="#29190f" opacity=".18" />
-							<path d={shape.light} fill="#fff8dd" opacity=".22" />
-							{shape.eyes.map((eye, i) => (
-								<ellipse
-									key={i}
-									className="pizza-pet__cheek"
-									cx={eye.x + (i ? 1 : -1) * eye.width * 0.62}
-									cy={eye.y + eye.height / 2 + 2.6}
-									rx={eye.width * 0.42}
-									ry={eye.width * 0.26}
-									fill={shape.cheek}
-								/>
-							))}
-						</g>
-						<g className="pizza-pet__gaze" fill={shape.eye}>
-							{shape.eyes.map((eye, i) => (
-								<g key={i} transform={`translate(${eye.x} ${eye.y}) rotate(${eye.tilt})`}>
-									<g className="pizza-pet__expression">
-										<g className="pizza-pet__blink">
-											<g className="pizza-pet__eye">
-												<ellipse rx={eye.width / 2} ry={eye.height / 2} />
-												<circle cx={eye.width * 0.17} cy={-eye.height * 0.2} r={eye.width * 0.2} fill="#fff" />
-												<circle cx={-eye.width * 0.16} cy={eye.height * 0.2} r={eye.width * 0.085} fill="#fff" opacity=".85" />
-											</g>
-										</g>
-									</g>
-									<path
-										className="pizza-pet__smile"
-										d={`M${-eye.width * 0.5},1.5 Q0,${-eye.height * 0.42} ${eye.width * 0.5},1.5`}
-										fill="none"
-										stroke={shape.eye}
-										strokeWidth={eye.width * 0.26}
-										strokeLinecap="round"
-									/>
-								</g>
-							))}
-							{(() => {
-								const [a, b] = shape.eyes, w = (a.width + b.width) / 2;
-								return (
-									<path
-										className="pizza-pet__mouth"
-										transform={`translate(${(a.x + b.x) / 2} ${(a.y + b.y) / 2 + a.height / 2 + 1.6}) rotate(${a.tilt})`}
-										d={`M${-w * 0.26},0 Q0,${w * 0.26} ${w * 0.26},0`}
-										fill="none"
-										stroke={shape.eye}
-										strokeWidth={w * 0.15}
-										strokeLinecap="round"
-									/>
-								);
-							})()}
+	const { left, right, eyeY, mouthY } = rig.face;
+	return <span ref={root} className="pizza-pet" role="img" aria-label={`${rig.label}: ${state}`}
+		data-renderer="procedural-svg" data-mood={state} data-smile-eyes={pose.smileEyes}
+		data-audio-driven={speechLevel !== undefined || undefined} style={style}>
+		<svg viewBox="0 0 112 112" aria-hidden="true">
+			<defs><clipPath id={clip}><path d={pose.mouth} /></clipPath></defs>
+			<g className="pizza-pet__motion"><g className="pizza-pet__attention">
+				<path d={rig.body} fill={rig.accent} />
+				{rig.crust && <path d={rig.crust} fill="none" stroke="#ee8134" strokeWidth="12" strokeLinecap="round" />}
+				<g className="pizza-pet__gaze" fill="#493126">
+					{[left - 8, right + 8].map((x) => <ellipse key={x} cx={x} cy={eyeY + 15} rx="7" ry="3.5" fill="#ed8773" opacity=".28" />)}
+					{[left, right].map((x, i) => <g key={i} transform={`translate(${x} ${eyeY}) rotate(${pose.eyeTilt * (i ? -1 : 1)})`}>
+						<g className="pizza-pet__expression"><g className="pizza-pet__blink">
+							<g className="pizza-pet__eye"><ellipse rx="9" ry="12" /><ellipse cx="-2.5" cy="-4" rx="3" ry="3.5" fill="#fff9ef" /><circle cx="3" cy="4" r="1.5" fill="#fff9ef" opacity=".8" /></g>
+							<path className="pizza-pet__smile" d="M-9 2 Q0 -12 9 2" fill="none" stroke="#493126" strokeWidth="5" strokeLinecap="round" />
+						</g></g>
+					</g>)}
+					<g transform={`translate(${(left + right) / 2} ${mouthY})`}>
+						<g className="pizza-pet__mouth">
+							<path d={pose.mouth} fill={pose.mouthOpen ? "#493126" : "none"} stroke="#493126" strokeWidth={pose.mouthOpen ? 0 : 4} strokeLinecap="round" />
+							{pose.mouthOpen > 0 && <ellipse cx="1" cy="16" rx="9" ry="6" fill="#f28c8b" clipPath={`url(#${clip})`} />}
 						</g>
 					</g>
 				</g>
-			</svg>
-		</span>
-	);
+			</g></g>
+		</svg>
+	</span>;
 }

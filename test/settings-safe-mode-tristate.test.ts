@@ -40,22 +40,25 @@ describe("SettingsManager — safeMode tri-state", () => {
 		writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 	}
 
-	it("defaults to \"auto\" (per-category gates) when safeMode is unset", () => {
+	it("defaults to automatic execution when safeMode is unset", () => {
 		writeSettings({});
 		const manager = SettingsManager.create(projectDir, agentDir);
 		// Binary UI toggle: not explicitly on.
 		expect(manager.getSafeMode()).toBe(false);
-		// Classifier receives undefined (= defer to per-category approvals).
-		// SECURITY: the old default was false — auto-run EVERYTHING including
-		// dangerous shell. An unset safeMode now gates writes/edits/unknown.
-		expect(manager.getSafeModeSetting()).toBeUndefined();
+		expect(manager.getSafeModeSetting()).toBe(false);
+
+		const classifier = new IntentClassifier({ safe_mode: manager.getSafeModeSetting() });
+		expect(classifier.classify("write", { path: "a.txt" }).requires_approval).toBe(false);
+		expect(classifier.classify("unrecognized_tool", {}).requires_approval).toBe(false);
+		expect(classifier.classify("cli", { command: "rm -rf /tmp/example" }).requires_approval).toBe(false);
 	});
 
-	it("headless callers can keep the legacy auto-run default explicitly", () => {
+	it("callers can choose an approval default explicitly", () => {
 		writeSettings({});
 		const manager = SettingsManager.create(projectDir, agentDir);
 		expect(manager.getSafeModeSettingWithDefault(false)).toBe(false);
 		expect(manager.getSafeModeSettingWithDefault("auto")).toBeUndefined();
+		expect(manager.getSafeModeSettingWithDefault(true)).toBe(true);
 	});
 
 	it("an explicit settings.json value beats any caller default", () => {
@@ -76,6 +79,7 @@ describe("SettingsManager — safeMode tri-state", () => {
 		expect(manager.getSafeMode()).toBe(false);
 		// ...but the classifier receives undefined, i.e. "defer".
 		expect(manager.getSafeModeSetting()).toBeUndefined();
+		expect(manager.getSafeModeSettingWithDefault(false)).toBeUndefined();
 	});
 
 	it("keeps explicit true/false distinct from auto", () => {

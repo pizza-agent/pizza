@@ -2,39 +2,31 @@
  * Pet persistence.
  *
  * Save file:  <agentDir>/pet.json           (which pet you have + progress)
- * User packs: <agentDir>/pets/<id>.json     (custom species, PetSpeciesDef shape)
  *
  * agentDir is normally ~/.pizza/agent (PIZZA_CODING_AGENT_DIR overridable).
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync, fstatSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync, fstatSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import lockfile from "proper-lockfile";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "../../config.js";
-import { isValidSpecies, type PetSpeciesDef } from "./sprites.js";
+import { BUILTIN_SPECIES } from "./sprites.js";
 
 export interface PetSave {
-	/** Legacy display name, kept for older app versions; the UI uses the agent name. */
-	name?: string;
 	speciesId: string;
 	xp: number;
 	adoptedAt: number;
 	/** Written by the desktop app: floating window open across restarts. */
 	floating?: boolean;
-	[key: string]: unknown;
+	scale?: number;
 }
 
 const PET_SAVE_FILE = "pet.json";
-const USER_PACKS_DIR = "pets";
 
 function petSavePath(): string {
 	return join(getAgentDir(), PET_SAVE_FILE);
-}
-
-function userPacksDir(): string {
-	return join(getAgentDir(), USER_PACKS_DIR);
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +50,7 @@ export function loadPetRecord(): PetRecord {
 		if (cachedRecord?.key === key) return cloneRecord(cachedRecord.record);
 		const data = JSON.parse(readFileSync(fd, "utf-8")) as Partial<PetSave> | null;
 		const revision = stat.mtimeMs;
-		const record: PetRecord = !data || typeof data.speciesId !== "string" ? { revision } : { revision, save: { ...data, speciesId: data.speciesId,
+		const record: PetRecord = !data || typeof data.speciesId !== "string" || !BUILTIN_SPECIES.some((s) => s.id === data.speciesId) ? { revision } : { revision, save: { speciesId: data.speciesId, scale: data.scale, floating: data.floating,
 			xp: typeof data.xp === "number" ? data.xp : 0,
 			adoptedAt: typeof data.adoptedAt === "number" ? data.adoptedAt : Date.now() } };
 		cachedRecord = { key, record };
@@ -126,44 +118,6 @@ export function savePetProgressAsync(xp: number): Promise<PetSave | undefined> {
 	return updatePetSaveAsync(progress(xp));
 }
 
-/** Change only a still-selected legacy builtin, preserving all user progress. */
-export function migratePetSpecies(expectedId: string, speciesId: string): PetSave | undefined {
-	return updatePetSave(current => current?.speciesId === expectedId ? { ...current, speciesId } : current);
-}
-
 export function deletePetSave(): void {
 	updatePetSave(() => undefined);
-}
-
-// ---------------------------------------------------------------------------
-// Species lookup (built-ins + user packs)
-// ---------------------------------------------------------------------------
-
-let cachedPacks: { key: string; species: PetSpeciesDef[] } | undefined;
-
-/**
- * Load user-defined species from <agentDir>/pets/*.json. Invalid files are
- * skipped. Polled by every process, so files are only re-read when the
- * directory listing or a file's size/mtime changes.
- */
-export function listUserSpecies(): PetSpeciesDef[] {
-	const dir = userPacksDir();
-	if (!existsSync(dir)) return [];
-	const files = readdirSync(dir).filter((file) => file.endsWith(".json")).sort();
-	const key = files.map((file) => {
-		try { const stat = statSync(join(dir, file)); return `${file}:${stat.size}:${stat.mtimeMs}`; }
-		catch { return `${file}:missing`; }
-	}).join("|");
-	if (cachedPacks?.key === key) return [...cachedPacks.species];
-	const species: PetSpeciesDef[] = [];
-	for (const file of files) {
-		try {
-			const data = JSON.parse(readFileSync(join(dir, file), "utf-8"));
-			if (isValidSpecies(data)) species.push({ ...data, id: data.id || file.replace(/\.json$/, "") });
-		} catch {
-			/* skip broken packs */
-		}
-	}
-	cachedPacks = { key, species };
-	return [...species];
 }

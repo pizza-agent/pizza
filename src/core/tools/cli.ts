@@ -20,7 +20,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js"
 
 const cliSchema = Type.Object({
 	command: Type.String({ description: "Command to execute: an underscore command or (when enabled) a shell command" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in milliseconds (e.g. 1000 = 1 second; optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Integer({ minimum: 0, maximum: 2147483647, description: "Timeout in milliseconds (e.g. 1000 = 1 second; optional, no default timeout; 0 disables timeout)" })),
 });
 
 export type CliToolInput = Static<typeof cliSchema>;
@@ -186,7 +186,7 @@ async function runWithTimeout<T>(
 		timer = setTimeout(() => {
 			controller.abort();
 			// Commands that ignore the signal may still finish their side effects.
-			reject(new Error(`Command timed out after ${timeout}ms`));
+			reject(new Error(`Command timed out after ${timeout}ms. Cancellation requested; the operation may still complete. Verify its state before retrying.`));
 		}, timeout);
 	});
 	try {
@@ -240,8 +240,10 @@ export function createCliToolDefinition(
 	const takeResolved = (toolCallId: string, command: string): ResolvedCliCommand => {
 		const cached = resolvedCache.get(toolCallId);
 		resolvedCache.delete(toolCallId);
-		// A tool_call hook may rewrite the command after approval: resolve the new text.
-		return cached && cached.raw === command.trim() ? cached : resolveCliCommand(command, resolveContext);
+		if (cached && cached.raw !== command.trim()) {
+			throw new Error("Command changed after approval. Reissue the changed call for approval.");
+		}
+		return cached ?? resolveCliCommand(command, resolveContext);
 	};
 
 	return {
@@ -284,8 +286,15 @@ export function createCliToolDefinition(
 							`${resolved.name} changed in the command table after this call was approved. Reissue the command.`,
 						);
 					}
+					if (!(resolved.spec.isAvailable?.() ?? true)) {
+						throw new Error(resolved.spec.unavailableReason ?? `${resolved.name} is no longer available. Reissue the command.`);
+					}
 					const result: AgentToolResult<any> = await runWithTimeout(
-						(commandSignal) => resolved.spec.execute(toolCallId, resolved.params, commandSignal, undefined, ctx),
+						(commandSignal) => resolved.spec.execute(toolCallId, resolved.params, commandSignal, onUpdate ? (partial) => {
+							if (!commandSignal?.aborted) onUpdate({ content: partial.content, details: {
+								command: { source: resolved.source, name: resolved.name, args: resolved.params, details: partial.details },
+							} });
+						} : undefined, ctx),
 						signal,
 						timeout,
 					);

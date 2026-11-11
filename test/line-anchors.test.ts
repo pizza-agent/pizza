@@ -65,8 +65,8 @@ describe("line-anchors", () => {
 			expect(() => parseRange("0#ab")).toThrow(/Invalid range/);
 		});
 
-		it("rejects a hash with the wrong length", () => {
-			expect(() => parseRange("5#abc")).toThrow(/Invalid range/);
+		it.each(["5#a", "5#abc", "5#abcd", "5#abcde"])("rejects a hash with the wrong length: %s", (range) => {
+			expect(() => parseRange(range)).toThrow(/Invalid range/);
 		});
 
 		it("rejects a reversed range (start line after end line)", () => {
@@ -154,6 +154,12 @@ describe("line-anchors", () => {
 			const resolved = resolveRange(content, anchor, "f.txt");
 			expect(resolved.startLine).toBe(2);
 			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("lists candidate locations in the ambiguous error", () => {
+			const content = "alpha\nbeta\nalpha\nbeta\nalpha";
+			const wrongLine = `1#${hashLine("beta")}`; // "beta" lives on 2 and 4
+			expect(() => resolveRange(content, wrongLine, "f.txt")).toThrow(/ambiguous.*2#[0-9a-f]{2}.*4#[0-9a-f]{2}/);
 		});
 
 		it("throws a stale error when no candidate matches", () => {

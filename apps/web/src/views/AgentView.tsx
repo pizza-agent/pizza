@@ -1483,7 +1483,7 @@ export default function AgentView({
 					{t("agent.remoteProviderMissing")}
 				</div>
 			)}
-			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
+			<div ref={scrollRef} data-chat-scroll className={cn("chat-scroll-fade scrollbar-hide min-h-0 flex-1 overflow-y-auto", isMainAgent && "mt-8")}>
 				{items.length === 0 ? (
 					<div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
 						{loadingHistory || waitingForWorkspace || greetingInFlight ? (
@@ -1525,7 +1525,7 @@ export default function AgentView({
 				)}
 			</div>
 			{error && (
-				<div className="mx-auto max-w-3xl px-6 pb-2">
+				<div className="chat-column pb-2">
 					<div className="relative select-text rounded-md border border-danger/30 bg-danger/5 px-4 py-2 pr-10 text-sm text-danger">
 						{error.split("\n").map((line, i) => (
 							<div key={i} className={i === 0 ? "" : "mt-0.5 text-xs opacity-70"}>
@@ -1545,7 +1545,7 @@ export default function AgentView({
 				</div>
 			)}
 			{queuedMsgs.length > 0 && (
-				<div className="mx-auto w-full max-w-3xl px-6 pb-1.5">
+				<div className="chat-column pb-1.5">
 					<div className="flex flex-col gap-1">
 						{queuedMsgs.map((q) => (
 							<div

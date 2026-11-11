@@ -23,6 +23,7 @@ import type {
 } from "./types.js";
 import type { FileMutation } from "../event-store/types.js";
 import type { CliToolDetails } from "../tools/cli.js";
+import { validateToolArguments } from "../tools/argument-validation.js";
 
 // ============================================================================
 // File Mutation Detection
@@ -79,6 +80,7 @@ function inferRisk(category: IntentCategory): IntentRisk {
  */
 export class AgentToolAdapter implements ToolExecutor {
 	private metadata: ToolMetadata;
+	private preparedCalls = new Map<string, { raw: string; normalized: string; args: Record<string, unknown> }>();
 
 	constructor(private tool: AgentTool<any, any>) {
 		const category = inferCategory(tool.name);
@@ -87,15 +89,17 @@ export class AgentToolAdapter implements ToolExecutor {
 			description: tool.description,
 			category,
 			defaultRisk: inferRisk(category),
+			...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
 		};
 	}
 
 	async execute(args: Record<string, unknown>, options?: ToolExecutionOptions): Promise<ToolExecutionResult> {
 		const toolCallId = options?.tool_call_id ?? `tc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-		// Prepare arguments if the tool has a prepareArguments hook
-		const prepared = this.tool.prepareArguments ? this.tool.prepareArguments(args) : args;
-
 		try {
+			if (options?.signal?.aborted) throw new Error("Operation aborted before execution");
+			const prepared = options?.arguments_prepared ? args : this.prepareArguments(args, toolCallId);
+			if (options?.arguments_prepared) validateToolArguments(this.tool.parameters, prepared);
+			this.preparedCalls.delete(toolCallId);
 			const result = await this.tool.execute(toolCallId, prepared, options?.signal, options?.onUpdate);
 
 			const executionResult: ToolExecutionResult = {
@@ -112,6 +116,7 @@ export class AgentToolAdapter implements ToolExecutor {
 
 			return executionResult;
 		} catch (err) {
+			this.preparedCalls.delete(toolCallId);
 			const msg = err instanceof Error ? err.message : String(err);
 			return {
 				content: [{ type: "text", text: msg }],
@@ -121,8 +126,19 @@ export class AgentToolAdapter implements ToolExecutor {
 		}
 	}
 
+	prepareArguments(args: Record<string, unknown>, toolCallId: string): Record<string, unknown> {
+		const raw = JSON.stringify(args);
+		const cached = this.preparedCalls.get(toolCallId);
+		if (cached && (raw === cached.raw || raw === cached.normalized)) return structuredClone(cached.args);
+		const prepared = this.tool.prepareArguments ? this.tool.prepareArguments(structuredClone(args)) : args;
+		validateToolArguments(this.tool.parameters, prepared);
+		this.preparedCalls.set(toolCallId, { raw, normalized: JSON.stringify(prepared), args: structuredClone(prepared) });
+		if (this.preparedCalls.size > 256) this.preparedCalls.delete(this.preparedCalls.keys().next().value!);
+		return structuredClone(prepared);
+	}
+
 	resolve(args: Record<string, unknown>, toolCallId: string): ResolvedToolCall | undefined {
-		return this.tool.resolve?.(args, toolCallId);
+		return this.tool.resolve?.(this.prepareArguments(args, toolCallId), toolCallId);
 	}
 
 	getMetadata(): ToolMetadata {

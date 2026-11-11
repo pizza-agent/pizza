@@ -31,6 +31,7 @@ export type HistoryTreeToolInput = Static<typeof historyTreeSchema>;
 export function createHistoryTreeToolDefinition(): ToolDefinition<typeof historyTreeSchema, undefined> {
 	return defineTool({
 		name: "history_tree",
+		executionMode: "sequential",
 		label: "history_tree",
 		description:
 			"Browse and navigate the session history tree. Every past session is a node; use 'list' to see the tree, " +
@@ -48,7 +49,7 @@ export function createHistoryTreeToolDefinition(): ToolDefinition<typeof history
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const historyTree = ctx?.sessionManager?.historyTree;
 			if (!historyTree) {
-				return textResult("History tree is not available in this runtime configuration.");
+				throw new Error("History tree is not available in this runtime configuration.");
 			}
 
 			try {
@@ -78,9 +79,9 @@ export function createHistoryTreeToolDefinition(): ToolDefinition<typeof history
 						);
 					}
 					case "view": {
-						if (!params.session_id) return textResult("view requires session_id.");
+						if (!params.session_id) throw new Error("view requires session_id.");
 						const view = historyTree.view(params.session_id, { maxMessages: params.max_messages });
-						if (!view) return textResult(`Session not found: ${params.session_id}`);
+						if (!view) throw new Error(`Session not found: ${params.session_id}`);
 						const desc = view.descriptor;
 						const header = [
 							`Session ${desc.session_id}${desc.name ? ` "${desc.name}"` : ""}`,
@@ -95,7 +96,7 @@ export function createHistoryTreeToolDefinition(): ToolDefinition<typeof history
 						return textResult(`${header}${shown}\n${body}`);
 					}
 					case "jump": {
-						if (!params.session_id) return textResult("jump requires session_id.");
+						if (!params.session_id) throw new Error("jump requires session_id.");
 						const result = historyTree.jump(params.session_id, params.reason);
 						const note = result.reopened
 							? `The target session was closed, so it was reopened as new session ${result.session_id} with its history preserved.`
@@ -106,7 +107,7 @@ export function createHistoryTreeToolDefinition(): ToolDefinition<typeof history
 						);
 					}
 					case "fork": {
-						if (!params.session_id) return textResult("fork requires session_id.");
+						if (!params.session_id) throw new Error("fork requires session_id.");
 						const result = historyTree.fork(params.session_id);
 						return textResult(
 							`Forked session ${params.session_id} into new branch ${result.session_id}. ` +
@@ -116,7 +117,7 @@ export function createHistoryTreeToolDefinition(): ToolDefinition<typeof history
 				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				return textResult(`history_tree ${params.action} failed: ${message}`);
+				throw new Error(`history_tree ${params.action} failed: ${message}`);
 			}
 		},
 		renderCall(args, _theme) {

@@ -18,6 +18,7 @@ import { createSessionSplitToolDefinition } from "./session-split.js";
 import { createSkillToolDefinition, type SkillToolOptions } from "./skill.js";
 import { createTellToolDefinition, type TellToolOptions } from "./tell.js";
 import { createWriteToolDefinition, type WriteToolOptions } from "./write.js";
+import { validateToolArguments } from "./argument-validation.js";
 
 export { BUILTIN_COMMANDS, type BuiltinCommand };
 
@@ -112,12 +113,15 @@ function toCliCommand(
 		usage: meta.usage,
 		help: getBuiltinCommandHelp(name),
 		promptGuidelines: definition?.promptGuidelines,
+		executionMode: definition?.executionMode,
 		isAvailable: () => definition !== undefined && isAvailable(),
 		unavailableReason: UNAVAILABLE[name] ?? `${name} is not available in this session.`,
 		parseArguments: (args, heredoc, parseMeta) => {
 			const parsed = parseBuiltinToolInput(name, args, heredoc, parseMeta);
 			if (!parsed) throw new Error(`Unknown built-in command: ${name}`);
-			return definition?.prepareArguments ? definition.prepareArguments(parsed.input) : parsed.input;
+			const params = definition?.prepareArguments ? definition.prepareArguments(parsed.input) : parsed.input;
+			if (definition) validateToolArguments(definition.parameters, params);
+			return params;
 		},
 		classify: meta.classify,
 		execute: (toolCallId, params, signal, onUpdate, ctx) => {
