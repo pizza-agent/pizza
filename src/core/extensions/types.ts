@@ -845,10 +845,10 @@ export interface CustomToolCallEvent extends ToolCallEventBase {
 /**
  * Fired before a tool executes. Can block.
  *
- * `event.input` is mutable. Mutate it in place to patch tool arguments before execution.
- * Later `tool_call` handlers see earlier mutations. No re-validation is performed after mutation.
- * Runs after any approval and before execution; returning `{ block: true }` or throwing
- * rejects the call (fail closed). Mutations affect execution only, not the logged intent.
+ * Runs after any approval and before execution; returning `{ block: true }` or
+ * throwing rejects the call (fail closed). Changing input or parsed command
+ * parameters also rejects the call, because those changes were not approved.
+ * Use prepareArguments for normalization before validation and approval.
  */
 export type ToolCallEvent = CliToolCallEvent | CustomToolCallEvent;
 
@@ -936,7 +936,7 @@ export interface ContextEventResult {
 export type BeforeProviderRequestEventResult = unknown;
 
 export interface ToolCallEventResult {
-	/** Block tool execution. To modify arguments, mutate `event.input` in place instead. */
+	/** Block tool execution. Approved arguments must not be changed by this gate. */
 	block?: boolean;
 	reason?: string;
 }
@@ -1378,6 +1378,8 @@ export interface CliCommandParseMeta {
  * ExtensionContext.
  */
 export interface CliCommandDefinition<P = any> {
+	/** Serial commands run exclusively with respect to other tool calls. */
+	executionMode?: ToolExecutionMode;
 	/** Command token including the underscore prefix, e.g. `_computer_use`. */
 	name: string;
 	/** One-line summary, shown in the cli tool description and the system prompt command table. */

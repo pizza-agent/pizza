@@ -120,7 +120,7 @@ API surface (methods on `pizza`):
   `after_provider_response`, `turn_start` / `turn_end`,
   `message_start` / `message_update` / `message_end`,
   `tool_execution_start` / `tool_execution_update` / `tool_execution_end`,
-  `model_select`, `tool_call` (block or mutate `event.input`), `tool_result`,
+  `model_select`, `tool_call` (block; approved arguments cannot be mutated), `tool_result`,
   `input` (transform user input), `user_bash`.
 - `pizza.registerTool` — TypeBox `parameters`; `promptSnippet` /
   `promptGuidelines` inject into the system prompt; `renderCall` /

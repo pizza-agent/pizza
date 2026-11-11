@@ -35,6 +35,7 @@
  */
 
 import { compactWithDeadline } from "./compaction-deadline.js";
+import { isDeepStrictEqual } from "node:util";
 
 import type { EventBase, EventType } from "../event-store/types.js";
 import { generateRunId, TurnState, type FollowUpEntry, type TurnTracker } from "./turn-state.js";
@@ -92,7 +93,8 @@ export interface ReactorConfig {
 	resolveToolCall?: (toolName: string, args: Record<string, unknown>, toolCallId: string) => ResolvedToolCall | undefined;
 	/** Authoritative pre-execution gate (e.g. extension `tool_call` handlers).
 	 * Runs after approval and before TOOL_EXECUTION_START. It receives a private
-	 * copy of the arguments; in-place mutations are what the tool executes.
+	 * copy of the arguments. Mutating an approved call rejects it; issue a new
+	 * call so the changed arguments are classified and approved afresh.
 	 * Returning `{ block: true }` or throwing rejects the call (fail closed). */
 	beforeToolCall?: ToolCallGate;
 	runtimeAdapter: RuntimeAdapter;
@@ -267,6 +269,7 @@ export class Reactor {
 	private _lastToolUpdateAt = new Map<string, number>();
 	/** Resolutions made at classification time, consumed when the call executes. */
 	private readonly _resolvedToolCalls = new Map<string, ResolvedToolCall>();
+	private readonly _toolPreparationErrors = new Map<string, string>();
 	private static readonly TOOL_UPDATE_MIN_INTERVAL_MS = 120;
 	constructor(config: ReactorConfig) {
 		this.config = config;
@@ -348,6 +351,8 @@ export class Reactor {
 		// reactor restarts (this instance is discarded after each prompt cycle).
 		this.turnTrackers.clear();
 		this._lastToolUpdateAt.clear();
+		this._resolvedToolCalls.clear();
+		this._toolPreparationErrors.clear();
 		for (const unsub of this.unsubscribers) unsub();
 		this.unsubscribers = [];
 	}
@@ -1035,15 +1040,24 @@ export class Reactor {
 
 		// Emit one INTENT_TOOL_CALL per tool call
 		for (const toolCall of toolCalls) {
-			const resolved = this._resolveToolCall(toolCall.name, toolCall.arguments, toolCall.id);
-			const classification = this.config.classifier.classify(toolCall.name, toolCall.arguments, resolved);
+			let args = toolCall.arguments;
+			let resolved: ResolvedToolCall | undefined;
+			try {
+				args = this.config.toolRegistry.get(toolCall.name)?.prepareArguments?.(args, toolCall.id) ?? args;
+				resolved = this._resolveToolCall(toolCall.name, args, toolCall.id);
+			} catch (error) {
+				this._toolPreparationErrors.set(toolCall.id, error instanceof Error ? error.message : String(error));
+			}
+			const classification = this._toolPreparationErrors.has(toolCall.id)
+				? { risk: "safe" as const, requires_approval: false, category: "shell_safe" as const, description: "Invalid tool arguments" }
+				: this.config.classifier.classify(toolCall.name, args, resolved);
 			this._emit({
 				actor_id: "coder_agent",
 				type: "INTENT_TOOL_CALL",
 				payload: {
 					tool_call_id: toolCall.id,
 					tool_name: toolCall.name,
-					arguments: toolCall.arguments,
+					arguments: args,
 					assistant_message_event_id: event.event_id,
 					requires_approval: classification.requires_approval,
 					classification,
@@ -1102,6 +1116,15 @@ export class Reactor {
 			classification?: IntentClassification;
 		};
 
+		const preparationError = this._toolPreparationErrors.get(payload.tool_call_id);
+		this._toolPreparationErrors.delete(payload.tool_call_id);
+		if (preparationError) {
+			this._emitToolExecutionRejected(payload.tool_call_id, payload.tool_name, {
+				content: [{ type: "text", text: preparationError }], is_error: true, error_message: preparationError,
+			}, event.event_id);
+			return;
+		}
+
 		// Session-scoped "always allow": a category the user approved for
 		// this session skips the dialog entirely (TurnState.allowedCategories
 		// is memory-only; nothing is persisted). Local flag — payload is the
@@ -1150,15 +1173,20 @@ export class Reactor {
 		const args = structuredClone(payload.arguments ?? {});
 		const resolved = this._resolvedToolCalls.get(payload.tool_call_id);
 		this._resolvedToolCalls.delete(payload.tool_call_id);
+		const callSignal = this.abortController?.signal;
 		if (this.config.beforeToolCall) {
+			const command = structuredClone(resolved?.command);
 			let decision: { block?: boolean; reason?: string } | undefined | void;
 			try {
 				decision = await this.config.beforeToolCall({
 					tool_call_id: payload.tool_call_id,
 					tool_name: payload.tool_name,
 					arguments: args,
-					command: resolved?.command,
+					command,
 				});
+				if (!isDeepStrictEqual(args, payload.arguments ?? {}) || !isDeepStrictEqual(command, resolved?.command)) {
+					decision = { block: true, reason: "tool_call hook changed arguments after approval. Reissue the changed call for approval." };
+				}
 			} catch (err) {
 				decision = { block: true, reason: `tool_call hook failed: ${err instanceof Error ? err.message : String(err)}` };
 			}
@@ -1173,12 +1201,15 @@ export class Reactor {
 			}
 		}
 
+		// The hook may have awaited while the user cancelled the turn.
+		if (callSignal?.aborted || this._shouldInterrupt()) return;
 		// Execute the tool
-		await this._executeTool(event.event_id, payload.tool_call_id, payload.tool_name, args);
+		await this._executeTool(event.event_id, payload.tool_call_id, payload.tool_name, args, resolved?.executionMode);
 	}
 
-	private async _executeTool(causedBy: string, tool_call_id: string, tool_name: string, args: Record<string, unknown>): Promise<void> {
+	private async _executeTool(causedBy: string, tool_call_id: string, tool_name: string, args: Record<string, unknown>, executionMode?: "sequential" | "parallel"): Promise<void> {
 		const startTime = Date.now();
+		const signal = this.abortController?.signal;
 
 		this._emit({
 			actor_id: "runtime",
@@ -1189,12 +1220,15 @@ export class Reactor {
 
 		try {
 			if (this.config.store.flush) await this.config.store.flush();
+			if (signal?.aborted) throw new Error("Operation aborted before execution");
 			const result = await this.config.runtimeAdapter.executeTool({
 				tool_call_id,
 				tool_name,
 				arguments: args,
 				caused_by: causedBy,
-				signal: this.abortController?.signal,
+				arguments_prepared: true,
+				execution_mode: executionMode,
+				signal,
 				onUpdate: (partial) => {
 					this._emitToolExecutionUpdate(tool_call_id, partial, causedBy);
 				},

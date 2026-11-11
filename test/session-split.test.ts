@@ -261,7 +261,7 @@ describe("session_split", () => {
 			store.close();
 		});
 
-		it("returns error message when splitSession is unavailable", async () => {
+		it("rejects when splitSession is unavailable", async () => {
 			const cwd = makeTempDir();
 			const store = new SqliteEventStore("test-ws", ":memory:");
 			const sessionManager = new ProjectionSessionManager(store, store);
@@ -280,16 +280,13 @@ describe("session_split", () => {
 				sessionManager: extSessionManager,
 			} as any;
 
-			const result = await toolDef.execute(
+			await expect(toolDef.execute(
 				"test_call_id",
 				{ reason: "test" },
 				undefined,
 				undefined,
 				ctx,
-			);
-
-			expect(result.content).toHaveLength(1);
-			expect((result.content[0] as any).text).toContain("not available");
+			)).rejects.toThrow("not available");
 
 			sessionManager.dispose();
 			store.close();

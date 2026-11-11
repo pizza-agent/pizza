@@ -25,6 +25,9 @@ export class LocalRuntimeAdapter implements RuntimeAdapter {
 	readonly kind: RuntimeKind = "local";
 	private checkpointService: LocalCheckpointService | undefined;
 	private status: RuntimeStatus["status"] = "idle";
+	private toolBarrier: Promise<void> = Promise.resolve();
+	private parallelTools = new Set<Promise<void>>();
+	private activeTools = 0;
 
 	constructor(private options: LocalRuntimeAdapterOptions) {
 		this.runtime_id = options.runtime_id ?? "local_runtime";
@@ -41,16 +44,36 @@ export class LocalRuntimeAdapter implements RuntimeAdapter {
 			};
 		}
 
-		this.status = "running";
-		try {
-			return await tool.execute(request.arguments, {
-				tool_call_id: request.tool_call_id,
-				signal: request.signal,
-				onUpdate: request.onUpdate,
-			});
-		} finally {
-			this.status = "idle";
+		const run = async (): Promise<ToolExecutionResult> => {
+			if (request.signal?.aborted) {
+				return {
+					content: [{ type: "text", text: "Operation aborted before execution" }],
+					is_error: true, error_message: "Operation aborted before execution",
+				};
+			}
+			this.activeTools++;
+			this.status = "running";
+			try {
+				return await tool.execute(request.arguments, {
+					tool_call_id: request.tool_call_id,
+					arguments_prepared: request.arguments_prepared,
+					signal: request.signal,
+					onUpdate: request.onUpdate,
+				});
+			} finally {
+				if (--this.activeTools === 0) this.status = "idle";
+			}
+		};
+		const sequential = (request.execution_mode ?? tool.getMetadata().executionMode) === "sequential";
+		const preceding = sequential ? Promise.all([this.toolBarrier, ...this.parallelTools]) : this.toolBarrier;
+		const result = preceding.then(run);
+		const settled = result.then(() => {}, () => {});
+		if (sequential) this.toolBarrier = settled;
+		else {
+			this.parallelTools.add(settled);
+			void settled.then(() => this.parallelTools.delete(settled));
 		}
+		return result;
 	}
 
 	async createCheckpoint(request: CheckpointRequest): Promise<CheckpointRef> {

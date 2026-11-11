@@ -151,12 +151,12 @@ export function createTellToolDefinition(
 
 			// action === "send"
 			if (!params.message) {
-				return textResult(
+				throw new Error(
 					"_tell send requires a `message`. Also provide `to` (a workspace name from `_tell list` or a project path).",
 				);
 			}
 			if (!params.to) {
-				return textResult(
+				throw new Error(
 					"_tell send requires `to` (a workspace name from `_tell list` or a project path).",
 				);
 			}
@@ -167,7 +167,7 @@ export function createTellToolDefinition(
 				socketPath = await ensureGateway(agentDir, undefined, VERSION);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				return textResult(`Failed to start gateway: ${message}`);
+				throw new Error(`Failed to start gateway: ${message}`);
 			}
 
 			const client = new GatewayClient({ socketPath });
@@ -190,7 +190,7 @@ export function createTellToolDefinition(
 				return textResult(delivery.reply ?? "(no response)");
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				return textResult(`_tell to ${params.to} failed: ${message}`);
+				throw new Error(`_tell to ${params.to} failed: ${message}`);
 			} finally {
 				await client.disconnect().catch(() => {});
 			}

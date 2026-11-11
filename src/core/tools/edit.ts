@@ -344,110 +344,32 @@ export function createEditToolDefinition(
 			const { path, edits } = validateEditInput(input);
 			const absolutePath = resolveToCwd(path, cwd);
 
-			return withFileMutationQueue(
-				absolutePath,
-				() =>
-					new Promise<{
-						content: Array<{ type: "text"; text: string }>;
-						details: EditToolDetails | undefined;
-					}>((resolve, reject) => {
-						// Check if already aborted.
-						if (signal?.aborted) {
-							reject(new Error("Operation aborted"));
-							return;
-						}
-
-						let aborted = false;
-
-						// Set up abort handler.
-						const onAbort = () => {
-							aborted = true;
-							reject(new Error("Operation aborted"));
-						};
-
-						if (signal) {
-							signal.addEventListener("abort", onAbort, { once: true });
-						}
-
-						// Perform the edit operation.
-						void (async () => {
-							try {
-								// Check if file exists.
-								try {
-									await ops.access(absolutePath);
-								} catch {
-									if (signal) {
-										signal.removeEventListener("abort", onAbort);
-									}
-									reject(new Error(`File not found: ${path}`));
-									return;
-								}
-
-								// Check if aborted before reading.
-								if (aborted) {
-									return;
-								}
-
-								// Read the file.
-								const buffer = await ops.readFile(absolutePath);
-								const rawContent = buffer.toString("utf-8");
-
-								// Check if aborted after reading.
-								if (aborted) {
-									return;
-								}
-
-								// Strip BOM before resolving line anchors.
-								const { bom, text: content } = stripBom(rawContent);
-								const originalEnding = detectLineEnding(content);
-								const normalizedContent = normalizeToLF(content);
-								const { baseContent, newContent, relocations } = applyEditsToNormalizedContent(
-									normalizedContent,
-									edits,
-									path,
-								);
-
-								// Check if aborted before writing.
-								if (aborted) {
-									return;
-								}
-
-								const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-								await ops.writeFile(absolutePath, finalContent);
-
-								// Check if aborted after writing.
-								if (aborted) {
-									return;
-								}
-
-								// Clean up abort handler.
-								if (signal) {
-									signal.removeEventListener("abort", onAbort);
-								}
-
-								const diffResult = generateDiffString(baseContent, newContent);
-								resolve({
-									content: [
-										{
-											type: "text",
-											text: `Successfully applied ${edits.length} edit(s) in ${path}.${relocations.length ? ` Relocated: ${relocations.join(", ")}.` : ""}`,
-										},
-									],
-									details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
-								});
-							} catch (error: unknown) {
-								// Clean up abort handler.
-								if (signal) {
-									signal.removeEventListener("abort", onAbort);
-								}
-
-								if (!aborted) {
-									reject(error instanceof Error ? error : new Error(String(error)));
-								}
-							}
-						})();
-					}),
-			);
+			return withFileMutationQueue(absolutePath, async () => {
+				const checkCancelled = () => {
+					if (signal?.aborted) throw new Error("Operation aborted before writing");
+				};
+				checkCancelled();
+				// Preserve access errors (permission denied is not a missing file).
+				await ops.access(absolutePath);
+				checkCancelled();
+				const buffer = await ops.readFile(absolutePath);
+				checkCancelled();
+				const { bom, text: content } = stripBom(buffer.toString("utf-8"));
+				const originalEnding = detectLineEnding(content);
+				const { baseContent, newContent, relocations } = applyEditsToNormalizedContent(
+					normalizeToLF(content), edits, path,
+				);
+				checkCancelled();
+				const diffResult = generateDiffString(baseContent, newContent);
+				await ops.writeFile(absolutePath, bom + restoreLineEndings(newContent, originalEnding));
+				return {
+					content: [{
+						type: "text" as const,
+						text: `Successfully applied ${edits.length} edit(s) in ${path}.${relocations.length ? ` Relocated: ${relocations.join(", ")}.` : ""}${signal?.aborted ? " Cancellation was requested during the write; the edit completed." : ""}`,
+					}],
+					details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
+				};
+			});
 		},
 		renderCall(args, theme, context) {
 			const component = getEditCallRenderComponent(context.state, context.lastComponent);

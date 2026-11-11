@@ -65,6 +65,7 @@ export interface ResolvedToolCall {
 	/** Undefined → classifier falls back to its own rules for the tool. */
 	intent?: ToolCallIntent;
 	command?: ToolCallCommand;
+	executionMode?: "sequential" | "parallel";
 }
 
 // ============================================================================
@@ -93,6 +94,8 @@ export interface ToolExecutionUpdate {
 /** Runtime-provided execution context for a tool call. */
 export interface ToolExecutionOptions {
 	tool_call_id?: string;
+	/** Arguments were already normalized before approval; validate without preparing again. */
+	arguments_prepared?: boolean;
 	signal?: AbortSignal;
 	onUpdate?: (partial: ToolExecutionUpdate) => void;
 }
@@ -105,6 +108,7 @@ export interface ToolRegistry {
 
 /** Tool executor interface */
 export interface ToolExecutor {
+	prepareArguments?(args: Record<string, unknown>, toolCallId: string): Record<string, unknown>;
 	execute(args: Record<string, unknown>, options?: ToolExecutionOptions): Promise<ToolExecutionResult>;
 	/** Resolve a call once before approval (see ResolvedToolCall). */
 	resolve?(args: Record<string, unknown>, toolCallId: string): ResolvedToolCall | undefined;
@@ -117,6 +121,7 @@ export interface ToolMetadata {
 	description?: string;
 	category: IntentCategory;
 	defaultRisk: IntentRisk;
+	executionMode?: "sequential" | "parallel";
 }
 
 // ============================================================================

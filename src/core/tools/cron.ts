@@ -128,8 +128,8 @@ function textResult(text: string): { content: Array<{ type: "text"; text: string
 	return { content: [{ type: "text", text }], details: undefined };
 }
 
-function errResult(message: string): { content: Array<{ type: "text"; text: string }>; details: undefined } {
-	return textResult(message);
+function errResult(message: string): never {
+	throw new Error(message);
 }
 
 function fmtTime(ms: number | null | undefined): string {
