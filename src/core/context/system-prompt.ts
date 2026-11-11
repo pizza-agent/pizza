@@ -375,7 +375,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 							"PASSING VALUES WITH QUOTES / SPACES / NEWLINES:",
 							"- _edit / _write arguments are shell-tokenized. A value written as bare positional",
 							"  text has its inner \" or ' silently consumed as shell quoting and DROPPED. NEVER write",
-							"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#ab call(\"x\") as bare tokens.",
+							"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#ab3f call(\"x\") as bare tokens.",
 							"- Instead use a verbatim channel: _edit --edits JSON, _write --content, or a <<EOF heredoc.",
 							"  These preserve quotes, spaces, and newlines exactly.",
 							"",
@@ -404,14 +404,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			);
 		}
 		const underscoreExamples: Array<[string, string]> = [
-			["_read", '- cli("_read src/main.ts") - Read a file; text lines include <line>#<2-hex-hash> anchors'],
+			["_read", '- cli("_read src/main.ts") - Read a file; text lines include <line>#<hash> anchors'],
 			["_read", '- cli("_read src/main.ts 10 50") - Read lines 10-59 (offset=10, limit=50)'],
 			["_write", '- cli("_write output.txt Hello World") - Write to a file'],
-			["_edit", '- cli("_edit src/main.ts replace 12#ab \"const value = 2\"") - Replace an anchored line'],
-			["_edit", '- cli("_edit src/main.ts insert_after 12#ab \"const next = 3\"") - Insert after an anchored line'],
-			["_edit", '- cli("_edit src/main.ts delete 12#ab..14#de") - Delete an anchored range'],
+			["_edit", '- cli("_edit src/main.ts replace 12#ab3f \"const value = 2\"") - Replace an anchored line'],
+			["_edit", '- cli("_edit src/main.ts insert_after 12#ab3f \"const next = 3\"") - Insert after an anchored line'],
+			["_edit", '- cli("_edit src/main.ts delete 12#ab3f..14#de02") - Delete an anchored range'],
 			["_edit", '- cli("_edit src/main.ts search \"const a = 1\" \"const a = 2\"") - Search-and-replace without line anchors (fallback when anchors are stale or unavailable)'],
-			["_edit", '- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)'],
+			["_edit", '- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#ab3f\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)'],
 			["_session_split", '- cli("_session_split topic_change") - Split when the conversation topic changes'],
 			["_session_split", '- cli("_session_split --reason topic_change --name \"Fix auth\"") - Split and name the new session'],
 			["_history_tree", '- cli("_history_tree list") - Show the session history tree'],

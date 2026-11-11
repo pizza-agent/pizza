@@ -1,7 +1,9 @@
 import { createHash } from "crypto";
 
-const HASH_LENGTH = 2;
-const LINE_ANCHOR_PATTERN = /^([1-9]\d*)#([0-9a-f]{2})$/;
+const HASH_LENGTH = 4;
+// Emit HASH_LENGTH (4) hex digits; accept 2–4 in anchors so range ids copied
+// from older read output (2-hex era) still resolve as hash prefixes.
+const LINE_ANCHOR_PATTERN = /^([1-9]\d*)#([0-9a-f]{2,4})$/;
 
 export interface LineAnchor {
 	line: number;
@@ -170,7 +172,7 @@ function parseLineAnchor(value: string | undefined, originalRange: string): Line
 	const match = value?.match(LINE_ANCHOR_PATTERN);
 	if (!match) {
 		throw new Error(
-			`Invalid range "${originalRange}". Expected <line>#<2-hex-hash> or <start>#<hash>..<end>#<hash>.`,
+			`Invalid range "${originalRange}". Expected <line>#<4-hex-hash> or <start>#<hash>..<end>#<hash>.`,
 		);
 	}
 	return {
@@ -190,7 +192,9 @@ function resolveByRecordIndex(
 	if (endIndex >= records.length) return undefined;
 	const start = records[startIndex];
 	const end = records[endIndex];
-	if (start.hash !== anchor.start.hash || end.hash !== anchor.end.hash) return undefined;
+	// Anchor hashes may be shorter than record hashes (legacy 2-hex anchors
+	// from older read output); compare as prefixes so both eras resolve.
+	if (!start.hash.startsWith(anchor.start.hash) || !end.hash.startsWith(anchor.end.hash)) return undefined;
 	return { startIndex, endIndex };
 }
 
