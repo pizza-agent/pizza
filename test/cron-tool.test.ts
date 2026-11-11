@@ -247,7 +247,6 @@ describe("_cron built-in cli command", () => {
 			getActiveSessionId: () => "sess_1",
 		};
 		const tool = createCliTestTool(process.cwd(), { cron: cronOptions });
-		const output = getTextOutput(await tool.execute("cron-update-noop", { command: "_cron update --task st_n" }));
-		expect(output).toContain("nothing to change");
+		await expect(tool.execute("cron-update-noop", { command: "_cron update --task st_n" })).rejects.toThrow("nothing to change");
 	});
 });

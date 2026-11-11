@@ -21,6 +21,7 @@ export type SessionSplitToolInput = Static<typeof sessionSplitSchema>;
 export function createSessionSplitToolDefinition(): ToolDefinition<typeof sessionSplitSchema, undefined> {
 	return defineTool({
 		name: "session_split",
+		executionMode: "sequential",
 		label: "session_split",
 		description:
 			"Split the current conversation session, starting a new session from this point forward. " +
@@ -48,14 +49,7 @@ export function createSessionSplitToolDefinition(): ToolDefinition<typeof sessio
 			);
 
 			if (!result) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: "Session split is not available in this runtime configuration.",
-						},
-					],
-				};
+				throw new Error("Session split is not available in this runtime configuration.");
 			}
 
 			if (result.already_split) {

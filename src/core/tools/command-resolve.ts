@@ -12,6 +12,7 @@ import { firstPureCommandSegment, hasShellControlSyntax, splitShellWords } from 
 import { isHelpRequest, parseBuiltinCommand } from "./builtin-commands.js";
 import type { CliCommandSource, CommandRegistry } from "./command-registry.js";
 import { checkShellPolicy, type ShellOptions } from "./shell.js";
+import { validateToolArguments } from "./argument-validation.js";
 
 export type ResolvedCliCommand =
 	| {
@@ -188,6 +189,7 @@ export function resolveCliCommand(rawCommand: string, context: ResolveCliCommand
 			const params = spec.parseArguments
 				? spec.parseArguments(parsed.args, parsed.heredoc, { quoteDelimitersConsumed: parsed.quoteDelimitersConsumed })
 				: parseSchemaArguments(spec.parameters!, parsed.args, parsed.heredoc);
+			if (spec.parameters) validateToolArguments(spec.parameters, params);
 			return { kind: "command", source, name, params, spec, raw };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -222,6 +224,7 @@ export function toResolvedToolCall(resolved: ResolvedCliCommand): ResolvedToolCa
 	switch (resolved.kind) {
 		case "command":
 			return {
+				executionMode: resolved.spec.executionMode,
 				intent: resolved.spec.classify?.(resolved.params) ?? { category: "unknown", description: resolved.raw.slice(0, 50) },
 				command: { name: resolved.name, source: resolved.source, params: resolved.params },
 			};

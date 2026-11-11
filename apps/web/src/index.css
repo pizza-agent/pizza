@@ -54,6 +54,7 @@
 
 :root {
 	color-scheme: light;
+	--chat-column-max-width: 48rem;
 	/* Codex light palette: white canvas, pale gray chrome, hairline borders,
 	   near-black ink. */
 	--bg: #ffffff;
@@ -204,6 +205,20 @@
 	::selection {
 		background: color-mix(in srgb, var(--link) 25%, transparent);
 	}
+}
+
+/* History and composer share the same edges, independent of turn navigation. */
+.chat-column {
+	width: calc(100% - 3rem);
+	max-width: var(--chat-column-max-width);
+	margin-inline: auto;
+}
+
+/* Keep navigation in the column's left gutter. Narrow panes shrink only the
+   rail, leaving the history and composer at their shared width. */
+.conversation-nav {
+	left: max(0px, calc((100% - var(--chat-column-max-width)) / 2 - 2.75rem));
+	width: clamp(1.25rem, calc((100% - var(--chat-column-max-width)) / 2 - 0.5rem), 2.25rem);
 }
 
 /* Mask the history itself, so theme colours remain exact and controls stay crisp. */

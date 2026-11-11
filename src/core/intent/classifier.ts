@@ -4,6 +4,7 @@
  * Classifies LLM-proposed tool calls by risk level and approval requirements.
  */
 
+import { splitShellWords } from "../exec/shell-words.js";
 import type { IntentClassification, IntentCategory, IntentRisk, ResolvedToolCall, ToolCallIntent } from "./types.js";
 
 // ============================================================================
@@ -193,26 +194,11 @@ export class IntentClassifier {
 			};
 		}
 
-		// Safe patterns
-		const safePatterns: RegExp[] = [
-			/^(echo|cat|pwd|ls|find|grep|head|tail|wc|date|whoami|id|uname)\b/,
-			/^git\s+(status|log|diff|branch|show|remote)\b/,
-			/^npm\s+(list|config|root)\b/,
-			/^yarn\s+(info|list)\b/,
-			/^pnpm\s+(list|root)\b/,
-			/^docker\s+(ps|images|logs)\b/,
-		];
-
-		if (isSingleSafeShellCommand(trimmed)) {
-			for (const pattern of safePatterns) {
-				if (!pattern.test(trimmed)) continue;
-				return {
-					risk: "safe",
-					requires_approval: false,
-					category: "shell_safe",
-					description: trimmed.length > 50 ? trimmed.slice(0, 50) + "..." : trimmed,
-				};
-			}
+		if (isReadOnlyShellCommand(trimmed)) {
+			return {
+				risk: "safe", requires_approval: false, category: "shell_safe",
+				description: trimmed.length > 50 ? trimmed.slice(0, 50) + "..." : trimmed,
+			};
 		}
 
 		// Moderate (default for shell)
@@ -515,4 +501,30 @@ function atBoundary(command: string, idx: number): boolean {
 function isSingleSafeShellCommand(command: string): boolean {
 	const withoutNullRedirects = command.replace(/\s+\d*>\/dev\/null\b/g, "");
 	return !/[|;&<>`$()]/.test(withoutNullRedirects);
+}
+
+/** Conservative read-only forms; a command name alone does not imply safety. */
+function isReadOnlyShellCommand(command: string): boolean {
+	if (!isSingleSafeShellCommand(command)) return false;
+	const words = splitShellWords(command.replace(/\s+\d*>\/dev\/null\b/g, ""));
+	const [name, sub, ...args] = words;
+	if (name === "find") return !words.some(word => /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/.test(word));
+	if (["echo", "cat", "pwd", "ls", "grep", "head", "tail", "wc", "date", "whoami", "id", "uname"].includes(name)) {
+		// date can set the system clock; uname/id/etc. are read-only.
+		if (name === "date") return words.slice(1).every(word => word.startsWith("+") || ["-u", "--utc", "--universal", "-R", "--rfc-email", "-I", "--iso-8601"].includes(word));
+		return true;
+	}
+	if (name === "git") {
+		if (["status", "log", "diff", "show"].includes(sub)) {
+			return !args.some(arg => /^(--output|--ext-diff|--textconv)(=|$)/.test(arg));
+		}
+		if (sub === "branch") return args.every(arg => /^-(?:[avr]+)$/.test(arg) || ["--all", "--remotes", "--verbose", "--list", "--show-current", "--no-color"].includes(arg));
+		if (sub === "remote") return args.length === 0 || args.every(arg => ["-v", "--verbose"].includes(arg)) || ["get-url", "show"].includes(args[0]);
+		return false;
+	}
+	if (name === "npm") return sub === "list" || sub === "root" || (sub === "config" && ["get", "list", "ls"].includes(args[0]));
+	if (name === "yarn") return sub === "info" || sub === "list";
+	if (name === "pnpm") return sub === "list" || sub === "root";
+	if (name === "docker") return ["ps", "images", "logs"].includes(sub);
+	return false;
 }

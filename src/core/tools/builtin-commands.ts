@@ -766,8 +766,9 @@ function buildEditFromParts(op: AnchorEditOp | undefined, range: string | undefi
 
 function parseOptionalInt(value: string | undefined): number | undefined {
 	if (value === undefined) return undefined;
-	const parsed = parseInt(value, 10);
-	return Number.isNaN(parsed) ? undefined : parsed;
+	const parsed = Number(value);
+	if (value.trim() === "" || !Number.isSafeInteger(parsed)) throw new Error(`Expected an integer, got "${value}"`);
+	return parsed;
 }
 
 export function isHelpRequest(args: string[]): boolean {

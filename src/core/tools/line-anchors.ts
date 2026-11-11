@@ -153,7 +153,14 @@ export function resolveRange(content: string, range: string, path: string): Reso
 	}
 
 	if (candidates.length > 1) {
-		throw new Error(`range ${range} is ambiguous in ${path}. Re-read a smaller region and use current line anchors.`);
+		const detail = candidates
+			.slice(0, 6)
+			.map((c) => `${records[c.startIndex].lineNumber}#${records[c.startIndex].hash}`)
+			.join(", ") + (candidates.length > 6 ? ", …" : "");
+		throw new Error(
+			`range ${range} is ambiguous in ${path}: the hash matches ${candidates.length} locations (${detail}). ` +
+				"Re-read around the intended line and use its current line-numbered anchor.",
+		);
 	}
 
 	throw new Error(`range ${range} is stale in ${path}. Re-read the file and use current line anchors.`);

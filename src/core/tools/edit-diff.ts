@@ -42,6 +42,10 @@ interface MatchedEdit {
 export interface AppliedEditsResult {
 	baseContent: string;
 	newContent: string;
+	/** Ranges that resolved by relocation (line numbers shifted) rather than at
+	 *  their anchored position, e.g. "415#f9 → line 435". Surfaced so a relocated
+	 *  edit is never silent. */
+	relocations: string[];
 }
 
 /** Strip UTF-8 BOM if present, return both the BOM (if any) and the text without it */
@@ -100,6 +104,7 @@ export function applyEditsToNormalizedContent(
 
 	const baseContent = normalizedContent;
 	const matchedEdits: MatchedEdit[] = [];
+	const relocations: string[] = [];
 	for (let i = 0; i < edits.length; i++) {
 		const edit = edits[i];
 
@@ -129,6 +134,9 @@ export function applyEditsToNormalizedContent(
 		}
 
 		const resolved = resolveRange(baseContent, edit.range, path);
+		if (resolved.usedRelocation) {
+			relocations.push(`${edit.range} → line ${resolved.startLine}`);
+		}
 		let matchIndex = resolved.startIndex;
 		let matchLength = resolved.endIndex - resolved.startIndex;
 		let replacement = "";
@@ -185,7 +193,7 @@ export function applyEditsToNormalizedContent(
 		throw getNoChangeError(path, edits.length);
 	}
 
-	return { baseContent, newContent };
+	return { baseContent, newContent, relocations };
 }
 
 /**

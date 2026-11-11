@@ -492,7 +492,7 @@ export async function setApprovalPolicy(policy: ApprovalPolicy): Promise<Approva
 
 export async function getApprovalPolicy(): Promise<ApprovalPolicy> {
 	const r = await sendCommandAwait<{ approvalPolicy: ApprovalPolicy }>({ type: "get_approval_policy" }, 5000);
-	return r.data?.approvalPolicy ?? "auto";
+	return r.data?.approvalPolicy ?? "off";
 }
 
 export async function getApprovalGates(): Promise<ApprovalGates> {

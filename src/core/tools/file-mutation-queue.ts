@@ -1,14 +1,29 @@
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { readlinkSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 
 function getMutationQueueKey(filePath: string): string {
-	const resolvedPath = resolve(filePath);
-	try {
-		return realpathSync.native(resolvedPath);
-	} catch {
-		return resolvedPath;
+	let parent = resolve(filePath);
+	const missing: string[] = [];
+	let symlinkHops = 0;
+	for (;;) {
+		try {
+			return join(realpathSync.native(parent), ...missing);
+		} catch {
+			// A dangling symlink can still be a valid write target: writing
+			// through it creates its destination, rather than replacing the link.
+			try {
+				const target = readlinkSync(parent);
+				if (++symlinkHops > 40) return resolve(filePath);
+				parent = resolve(dirname(parent), target);
+				continue;
+			} catch { /* Not a symlink; find the nearest existing parent. */ }
+			const next = dirname(parent);
+			if (next === parent) return resolve(filePath);
+			missing.unshift(basename(parent));
+			parent = next;
+		}
 	}
 }
 
