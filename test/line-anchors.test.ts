@@ -12,8 +12,8 @@ import {
 
 describe("line-anchors", () => {
 	describe("hashLine", () => {
-		it("produces a 4-hex hash", () => {
-			expect(hashLine("hello")).toMatch(/^[0-9a-f]{4}$/);
+		it("produces a 2-hex hash", () => {
+			expect(hashLine("hello")).toMatch(/^[0-9a-f]{2}$/);
 		});
 
 		it("is deterministic for identical input", () => {
@@ -25,7 +25,7 @@ describe("line-anchors", () => {
 		});
 
 		it("hashes the empty string", () => {
-			expect(hashLine("")).toMatch(/^[0-9a-f]{4}$/);
+			expect(hashLine("")).toMatch(/^[0-9a-f]{2}$/);
 		});
 	});
 
@@ -65,11 +65,8 @@ describe("line-anchors", () => {
 			expect(() => parseRange("0#ab")).toThrow(/Invalid range/);
 		});
 
-		it("accepts 2-4 hex digits and rejects longer hashes", () => {
-			expect(parseRange("5#ab").start.hash).toBe("ab");
-			expect(parseRange("5#abc").start.hash).toBe("abc");
-			expect(parseRange("5#abcd").start.hash).toBe("abcd");
-			expect(() => parseRange("5#abcde")).toThrow(/Invalid range/);
+		it.each(["5#a", "5#abc", "5#abcd", "5#abcde"])("rejects a hash with the wrong length: %s", (range) => {
+			expect(() => parseRange(range)).toThrow(/Invalid range/);
 		});
 
 		it("rejects a reversed range (start line after end line)", () => {
@@ -159,24 +156,15 @@ describe("line-anchors", () => {
 			expect(resolved.usedRelocation).toBe(true);
 		});
 
-		it("resolves legacy 2-hex anchors as hash prefixes", () => {
-			const content = "alpha\nbeta\ngamma";
-			const legacy = `2#${hashLine("beta").slice(0, 2)}`;
-			const resolved = resolveRange(content, legacy, "f.txt");
-			expect(resolved.startLine).toBe(2);
-			expect(resolved.existingText).toBe("beta\n");
-			expect(resolved.usedRelocation).toBe(false);
-		});
-
 		it("lists candidate locations in the ambiguous error", () => {
 			const content = "alpha\nbeta\nalpha\nbeta\nalpha";
 			const wrongLine = `1#${hashLine("beta")}`; // "beta" lives on 2 and 4
-			expect(() => resolveRange(content, wrongLine, "f.txt")).toThrow(/ambiguous.*2#[0-9a-f]{4}.*4#[0-9a-f]{4}/);
+			expect(() => resolveRange(content, wrongLine, "f.txt")).toThrow(/ambiguous.*2#[0-9a-f]{2}.*4#[0-9a-f]{2}/);
 		});
 
 		it("throws a stale error when no candidate matches", () => {
 			const content = "alpha\nbeta";
-			// Valid legacy 2-hex hashes that do not match either lines content hash.
+			// Valid 2-hex hashes that do not match either lines content hash.
 			expect(() => resolveRange(content, "1#aa..2#bb", "f.txt")).toThrow(/stale/);
 		});
 	});

@@ -41,7 +41,7 @@ function operatorRejection(name: string, raw: string): string {
 	const guidance =
 		name === "_edit" || name === "_write"
 			? " For multi-line or special-character content, pass it through a channel that " +
-				"preserves it verbatim: _edit --edits '{\"op\":\"replace\",\"range\":\"12#ab3f\",\"new\":\"line1\\nline2\"}' " +
+				"preserves it verbatim: _edit --edits '{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"line1\\nline2\"}' " +
 				"(JSON keeps quotes/spaces/newlines), a <<EOF heredoc, or wrap the whole value in quotes. " +
 				"Do not split a value across bare positional tokens."
 			: suggested && suggested !== raw

@@ -290,7 +290,7 @@ describe("cli built-in underscore commands", () => {
 
 	it("gates _edit through approvals.edits", () => {
 		const gated = new IntentClassifier({ require_approval_edits: true, require_approval_unknown: false });
-		const result = gated.classify("cli", { command: `_edit a.ts replace 12#ab3f "x = 1"` }, resolvedFor("_edit a.ts replace 12#ab3f \"x = 1\""));
+		const result = gated.classify("cli", { command: `_edit a.ts replace 12#ab "x = 1"` }, resolvedFor("_edit a.ts replace 12#ab \"x = 1\""));
 		expect(result.category).toBe("file_write");
 		expect(result.requires_approval).toBe(true);
 	});

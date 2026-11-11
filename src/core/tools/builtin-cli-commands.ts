@@ -47,7 +47,7 @@ const pathOf = (params: { path?: string }) => (params.path ? [params.path] : und
 
 const META: Record<BuiltinCommand, BuiltinMeta> = {
 	_read: {
-		description: "Read file content with line anchors",
+		description: "Read file content with 2-hex line anchors",
 		usage: "_read <path> [offset] [limit]",
 		classify: (p) => ({ category: "file_read", affectedFiles: pathOf(p), description: `Read ${p.path ?? ""}` }),
 	},
