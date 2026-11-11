@@ -127,7 +127,7 @@ function GeneralPage() {
 	}, []);
 	// Approval policy (two states: "off" auto-runs everything; "auto"/gated
 	// asks for unknown tools and dangerous commands).
-	const [approvalPolicy, setApprovalPolicyState] = useState<ApprovalPolicy>("auto");
+	const [approvalPolicy, setApprovalPolicyState] = useState<ApprovalPolicy>("off");
 	useEffect(() => {
 		getApprovalPolicy().then(setApprovalPolicyState).catch(() => {});
 	}, []);
@@ -218,8 +218,8 @@ function GeneralPage() {
 						<PixelSelect
 							value={approvalPolicy}
 							options={[
-								{ value: "auto", label: t("composer.approvalGated") },
 								{ value: "off", label: t("composer.approvalOff") },
+								{ value: "auto", label: t("composer.approvalGated") },
 							]}
 							onChange={(value) => handlePolicySelect(value as ApprovalPolicy)}
 							size="sm"

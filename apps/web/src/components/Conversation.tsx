@@ -251,6 +251,18 @@ function formatToolArgs(toolArgs?: string): string {
 	}
 }
 
+/** Split the first line of a `cli` tool command into a display label + the
+ *  remaining preview text. Internal `_name ...` commands yield the
+ *  sub-command as the label ("read", "edit"); shell commands get no label —
+ *  the command itself is shown as the preview. */
+function splitCliCommand(firstLine: string): { label: string; rest: string } {
+	const trimmed = firstLine.trim();
+	const m = /^(\S+)(?:\s+(.*))?$/.exec(trimmed);
+	if (!m) return { label: "", rest: "" };
+	const head = m[1];
+	return head.startsWith("_") ? { label: head.slice(1), rest: m[2] ?? "" } : { label: "", rest: trimmed };
+}
+
 function approvalRiskTone(risk?: string): "neutral" | "warning" | "danger" {
 	switch (risk) {
 		case "dangerous":
@@ -409,10 +421,17 @@ const ToolCard = memo(function ToolCard({
 	const command = formatToolArgs(item.toolArgs);
 	// Routed `_tell` commands get a dedicated header ("tell → <workspace>") so
 	// cross-workspace traffic reads as messaging, not as a raw shell call.
-	const tellInfo = item.toolName === "cli" ? parseTellCommand(command) : null;
+	const isCliTool = item.toolName === "cli";
+	const tellInfo = isCliTool ? parseTellCommand(command) : null;
 	const tellToName = tellInfo?.to ? workspaceNameFrom(tellInfo.to) : undefined;
 	const { shown: commandShown, clamped: commandClamped } = clampForDisplay(command, argsExpanded);
 	const commandFirstLine = command.split("\n", 1)[0] ?? "";
+	// `cli` is the only execution surface, so "cli" as a label carries no
+	// information. `_cmd` calls surface the sub-command as the label; shell
+	// commands get none — the command itself says what ran.
+	const cliParts = isCliTool ? splitCliCommand(commandFirstLine) : null;
+	const toolLabel = cliParts ? cliParts.label : (item.toolName || item.title);
+	const headerPreview = cliParts ? cliParts.rest : commandFirstLine;
 	const running = item.streaming && !item.toolResult;
 	const approval = item.pendingApproval;
 	const awaitingApproval = approval?.status === "pending";
@@ -426,7 +445,7 @@ const ToolCard = memo(function ToolCard({
 		}
 	}, [item.streaming, running, awaitingApproval]);
 	// Tool name + title are matched by search too; highlight them when active.
-	const toolTitle = highlight ? highlightText(item.toolName || item.title, highlight, highlightActive) : (item.toolName || item.title);
+	const toolTitle = highlight && toolLabel ? highlightText(toolLabel, highlight, highlightActive) : toolLabel;
 	// A collapsed card with a multi-line command still needs a body: the
 	// header only shows the first line, so expanding is the only way to
 	// reach the rest. Single-line commands are fully visible in the header.
@@ -478,10 +497,10 @@ const ToolCard = memo(function ToolCard({
 								) : (
 									<Terminal className="h-3.5 w-3.5 shrink-0 text-muted" />
 								)}
-								<span className="shrink-0">{toolTitle}</span>
-								{commandFirstLine && (
+								{toolLabel && <span className="shrink-0">{toolTitle}</span>}
+								{headerPreview && (
 									<span className="min-w-0 truncate font-mono text-xs font-normal text-muted/70">
-										{commandFirstLine}
+										{headerPreview}
 									</span>
 								)}
 							</>
@@ -1156,7 +1175,7 @@ export function Conversation({
 				setRenderCount(items.length);
 				setNavigationTarget(id);
 			}} />
-			<div className={cn("mx-auto max-w-3xl pr-6 pb-32 pt-4", items.filter((item) => item.role === "user" && !item.agentMessage && !item.queued).length > 3 ? "pl-12 sm:pl-14" : "pl-6")}>
+			<div className="chat-column pb-32 pt-4">
 				{visibleItems.map((item, i) => {
 					const isActive = item.id === activeMatchId;
 					let content: React.ReactNode;

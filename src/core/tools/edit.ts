@@ -401,7 +401,7 @@ export function createEditToolDefinition(
 								const { bom, text: content } = stripBom(rawContent);
 								const originalEnding = detectLineEnding(content);
 								const normalizedContent = normalizeToLF(content);
-								const { baseContent, newContent } = applyEditsToNormalizedContent(
+								const { baseContent, newContent, relocations } = applyEditsToNormalizedContent(
 									normalizedContent,
 									edits,
 									path,
@@ -430,7 +430,7 @@ export function createEditToolDefinition(
 									content: [
 										{
 											type: "text",
-											text: `Successfully applied ${edits.length} edit(s) in ${path}.`,
+											text: `Successfully applied ${edits.length} edit(s) in ${path}.${relocations.length ? ` Relocated: ${relocations.join(", ")}.` : ""}`,
 										},
 									],
 									details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },

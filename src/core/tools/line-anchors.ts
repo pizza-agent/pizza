@@ -1,7 +1,9 @@
 import { createHash } from "crypto";
 
-const HASH_LENGTH = 2;
-const LINE_ANCHOR_PATTERN = /^([1-9]\d*)#([0-9a-f]{2})$/;
+const HASH_LENGTH = 4;
+// Emit HASH_LENGTH (4) hex digits; accept 2–4 in anchors so range ids copied
+// from older read output (2-hex era) still resolve as hash prefixes.
+const LINE_ANCHOR_PATTERN = /^([1-9]\d*)#([0-9a-f]{2,4})$/;
 
 export interface LineAnchor {
 	line: number;
@@ -153,7 +155,14 @@ export function resolveRange(content: string, range: string, path: string): Reso
 	}
 
 	if (candidates.length > 1) {
-		throw new Error(`range ${range} is ambiguous in ${path}. Re-read a smaller region and use current line anchors.`);
+		const detail = candidates
+			.slice(0, 6)
+			.map((c) => `${records[c.startIndex].lineNumber}#${records[c.startIndex].hash}`)
+			.join(", ") + (candidates.length > 6 ? ", …" : "");
+		throw new Error(
+			`range ${range} is ambiguous in ${path}: the hash matches ${candidates.length} locations (${detail}). ` +
+				"Re-read around the intended line and use its current line-numbered anchor.",
+		);
 	}
 
 	throw new Error(`range ${range} is stale in ${path}. Re-read the file and use current line anchors.`);
@@ -163,7 +172,7 @@ function parseLineAnchor(value: string | undefined, originalRange: string): Line
 	const match = value?.match(LINE_ANCHOR_PATTERN);
 	if (!match) {
 		throw new Error(
-			`Invalid range "${originalRange}". Expected <line>#<2-hex-hash> or <start>#<hash>..<end>#<hash>.`,
+			`Invalid range "${originalRange}". Expected <line>#<4-hex-hash> or <start>#<hash>..<end>#<hash>.`,
 		);
 	}
 	return {
@@ -183,7 +192,9 @@ function resolveByRecordIndex(
 	if (endIndex >= records.length) return undefined;
 	const start = records[startIndex];
 	const end = records[endIndex];
-	if (start.hash !== anchor.start.hash || end.hash !== anchor.end.hash) return undefined;
+	// Anchor hashes may be shorter than record hashes (legacy 2-hex anchors
+	// from older read output); compare as prefixes so both eras resolve.
+	if (!start.hash.startsWith(anchor.start.hash) || !end.hash.startsWith(anchor.end.hash)) return undefined;
 	return { startIndex, endIndex };
 }
 
