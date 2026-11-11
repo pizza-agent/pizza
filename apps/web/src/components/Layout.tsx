@@ -444,7 +444,7 @@ export default function Layout({
 								{t("layout.plugins")}
 							</div>
 							<div className={cn("whitespace-nowrap tracking-[-0.025em] text-muted [word-spacing:-0.08em]", i18n.resolvedLanguage?.startsWith("zh") ? "text-[11px]" : "text-[10px]")}>
-								{t("layout.pluginsSubtitle")}
+								{["skills", "mcps", "extensions", "channels"].map((key) => t(`plugins.tabs.${key}`)).join(" · ")}
 							</div>
 						</div>
 					</NavLink>

@@ -16,7 +16,7 @@ const KEY = "pizza:main-agent-pet-position:v2";
 const BOX_W = 84;
 
 /** Overlay only. Dragging never updates parent state or message measurements. */
-export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState, running, onOpen, onShowProfile, topInset = -8 }: {
+export const MainAgentPet = memo(function MainAgentPet({ profile, pet: petState, running, onOpen, onShowProfile, topInset = 12 }: {
 	profile: MainAgentProfile | null;
 	pet: PetState;
 	running: boolean;
