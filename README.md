@@ -83,6 +83,7 @@ pizza -p "summarize this repo"      # one-shot print mode
 pizza --mode rpc                    # JSON-RPC server
 pizza --continue                    # resume the previous session
 pizza --export session.html         # export a session as a shareable HTML page
+pizza sessions                      # list saved sessions in this workspace
 ```
 
 ## Acknowledgements

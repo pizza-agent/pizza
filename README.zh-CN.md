@@ -84,6 +84,7 @@ pizza -p "总结这个仓库"              # 单次打印模式
 pizza --mode rpc                    # JSON-RPC 服务
 pizza --continue                    # 继续上一次会话
 pizza --export session.html         # 把会话导出成可分享的 HTML 页面
+pizza sessions                      # 列出当前工作区保存的会话
 ```
 
 ## 致谢
