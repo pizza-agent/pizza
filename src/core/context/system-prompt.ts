@@ -6,6 +6,7 @@ import { existsSync } from "fs";
 import { execSync } from "child_process";
 import * as os from "node:os";
 import { getShellConfig } from "../../utils/shell.js";
+import { DEFAULT_CLI_SHELL_TIMEOUT_MS } from "../tools/shell.js";
 import { type Skill } from "../skills/skills.js";
 
 /**
@@ -399,6 +400,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 					"substitution ($() ``), globs (* ?), and newlines. Use shell commands when you need",
 					"any of these. If grep/find/ls are missing from PATH, Pizza injects temporary",
 					"per-process shims for only those missing commands.",
+					`Shell commands are killed after a default timeout of ${DEFAULT_CLI_SHELL_TIMEOUT_MS / 60000} minutes; pass the cli`,
+					"tool's \"timeout\" parameter (milliseconds) for longer-running commands, or 0",
+					"to disable the timeout — always set it explicitly for installs, builds, polls,",
+					"and broad filesystem scans.",
 					...(cli.shellAllow?.length ? ["", formatShellAvailability(cli)] : []),
 				].join("\n"),
 			);

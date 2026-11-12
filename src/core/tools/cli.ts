@@ -15,12 +15,12 @@ import type { CliCommandSource, CommandRegistry } from "./command-registry.js";
 import { type ResolvedCliCommand, resolveCliCommand, toResolvedToolCall } from "./command-resolve.js";
 import { toolRenderBridge as tui } from "./render-bridge.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
-import { createLocalBashOperations, runShellCommand, type ShellDetails, type ShellOptions } from "./shell.js";
+import { createLocalBashOperations, DEFAULT_CLI_SHELL_TIMEOUT_MS, runShellCommand, type ShellDetails, type ShellOptions } from "./shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js";
 
 const cliSchema = Type.Object({
 	command: Type.String({ description: "Command to execute: an underscore command or (when enabled) a shell command" }),
-	timeout: Type.Optional(Type.Integer({ minimum: 0, maximum: 2147483647, description: "Timeout in milliseconds (e.g. 1000 = 1 second; optional, no default timeout; 0 disables timeout)" })),
+	timeout: Type.Optional(Type.Integer({ minimum: 0, maximum: 2147483647, description: "Timeout in milliseconds (e.g. 1000 = 1 second; optional, default 600000 = 10 minutes for shell commands; 0 disables timeout)" })),
 });
 
 export type CliToolInput = Static<typeof cliSchema>;
@@ -55,6 +55,7 @@ export interface CliToolOptions {
 
 const RESOLVED_CACHE_LIMIT = 256;
 const CLI_PREVIEW_LINES = 5;
+
 
 type CliRenderState = {
 	startedAt: number | undefined;
@@ -216,7 +217,8 @@ function describeCli(available: CliCommandDefinition[], shell: ShellOptions | un
 				"_write with --content or a <<EOF heredoc, or wrap the whole value in quotes. Do NOT pass such a value as bare " +
 				"positional tokens — its inner quotes/spaces get silently mangled."
 			: "") +
-		(shell ? ` Shell output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB.` : "");
+		(shell ? ` Shell output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB.` : "") +
+		(shell ? ` Shell commands are killed after ${DEFAULT_CLI_SHELL_TIMEOUT_MS / 60000} minutes by default; pass \"timeout\" explicitly for longer-running commands, or 0 to disable.` : "");
 	const snippet =
 		`Execute CLI commands: underscore commands (${names.join("/") || "none"}) are pure single commands with NO shell operators` +
 		(shell ? "; use shell commands (grep, find, ls, cat, git, npm) for pipes/redirections" : "; shell commands are disabled");
@@ -273,7 +275,7 @@ export function createCliToolDefinition(
 						operations: operations!,
 						commandPrefix: shell?.commandPrefix,
 						spawnHook: shell?.spawnHook,
-						timeout,
+						timeout: timeout ?? DEFAULT_CLI_SHELL_TIMEOUT_MS,
 						signal,
 						onUpdate,
 						commandNames: registry.names(),
