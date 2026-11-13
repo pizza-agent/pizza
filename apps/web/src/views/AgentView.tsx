@@ -17,6 +17,7 @@ import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
 import { cn, isRemoteWorkspaceKey, samePath } from "@/lib/utils";
 import { StreamDeltaBuffer } from "@/lib/stream-deltas";
+import { chatEventMatchesSession, chatSessionTransition, type ChatSessionIdentity } from "@/lib/session-events";
 import { parseAgentMessage } from "@/lib/agent-messages";
 import type { LayoutOutletContext } from "@/components/Layout";
 
@@ -27,14 +28,6 @@ function blockToDataUrl(block: Record<string, unknown>): string | null {
 	// Already a data URL?
 	if (data.startsWith("data:")) return data;
 	return `data:${mime};base64,${data}`;
-}
-
-function isInternalContinuationSessionEvent(event: TypedEvent): boolean {
-	const payload = event.payload as Record<string, unknown> | undefined;
-	return Boolean(
-		payload?.background === true ||
-		(typeof payload?.context_parent_session_id === "string" && payload.context_parent_session_id),
-	);
 }
 
 /** A follow-up queued behind the running turn, shown in the pending strip. */
@@ -363,6 +356,14 @@ export default function AgentView({
 	const queuedMsgsRef = useRef<QueuedMsg[]>([]);
 	const itemsRef = useRef<TimelineItem[]>([]);
 	const stateRef = useRef<RpcSessionState | null>(state);
+	// Events can arrive back-to-back before React commits a state snapshot.
+	const sessionRef = useRef<ChatSessionIdentity>({ sessionId: state?.sessionId, threadId: state?.threadId });
+	const sessionSnapshotRef = useRef({ workspace, sessionId: state?.sessionId, threadId: state?.threadId });
+	if (sessionSnapshotRef.current.workspace !== workspace || sessionSnapshotRef.current.sessionId !== state?.sessionId || sessionSnapshotRef.current.threadId !== state?.threadId) {
+		sessionSnapshotRef.current = { workspace, sessionId: state?.sessionId, threadId: state?.threadId };
+		sessionRef.current = { sessionId: state?.sessionId, threadId: state?.threadId };
+	}
+	const historyGenerationRef = useRef(0);
 	itemsRef.current = items;
 	stateRef.current = state;
 	queuedMsgsRef.current = queuedMsgs;
@@ -385,8 +386,10 @@ export default function AgentView({
 	// of truth — live events keep it in sync afterwards). Called on history
 	// load so a reload/workspace revisit doesn't lose queued messages.
 	const refreshQueued = useCallback(async () => {
+		const generation = historyGenerationRef.current;
 		try {
 			const r = await sendCommandAwait<{ entries: Array<{ kind: string; text: string; sourceEventId?: string }> }>({ type: "get_queued_messages" }, 10000);
+			if (generation !== historyGenerationRef.current) return;
 			const entries = r.data?.entries ?? [];
 			setQueuedMsgs(
 				entries
@@ -408,6 +411,7 @@ export default function AgentView({
 	// in-flight streaming turn isn't interrupted).
 	const sessionSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const reloadForSessionSwitch = useCallback(() => {
+		const generation = ++historyGenerationRef.current;
 		const ws = workspace ?? "";
 		deltaBufferRef.current?.discard(ws);
 		// Clear the per-workspace cache so a later workspace switch doesn't
@@ -415,19 +419,22 @@ export default function AgentView({
 		itemsByWs.current.delete(ws);
 		seenIdsByWs.current.delete(ws);
 		activeAssistantByWs.current.delete(ws);
+		queuedMsgsByWs.current.delete(ws);
 		// Reset current state — the new active session's messages will
 		// replace whatever we were showing.
 		setItems([]);
 		seenIdsRef.current = new Set();
 		activeAssistantRef.current = null;
+		setQueuedMsgs([]);
+		pinnedToBottomRef.current = true;
 		setError("");
 		// Re-fetch the new active session's messages.
 		setLoadingHistory(true);
-		let cancelled = false;
+		const isCurrent = () => generation === historyGenerationRef.current;
 		(async () => {
 			try {
 				const r = await sendCommandAwait({ type: "get_messages" }, 30000);
-				if (cancelled) return;
+				if (!isCurrent()) return;
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
@@ -440,16 +447,15 @@ export default function AgentView({
 					history = [...history, { id, role: "assistant", title: tRef.current("common.pizza"), text: "", status: "STREAMING", streaming: true, timestamp: Date.now() }];
 					activeAssistantRef.current = id;
 				}
-				if (!cancelled) setItems(history);
+				setItems(history);
 				void refreshQueued();
 				onRefreshState?.();
-			} catch {
-				// Silently ignore — the empty state will show.
+			} catch (e) {
+				if (isCurrent()) setError(e instanceof Error ? e.message : String(e));
 			} finally {
-				if (!cancelled) setLoadingHistory(false);
+				if (isCurrent()) setLoadingHistory(false);
 			}
 		})();
-		return () => { cancelled = true; };
 	}, [workspace, onRefreshState, refreshQueued]);
 
 	// Save/restore conversation on workspace switch.
@@ -457,6 +463,9 @@ export default function AgentView({
 		const prevWs = prevWsRef.current;
 		const newWs = workspace ?? "";
 		if (prevWs !== newWs) {
+			++historyGenerationRef.current;
+			if (sessionSwitchTimer.current) clearTimeout(sessionSwitchTimer.current);
+			setLoadingHistory(false);
 			// Save current conversation under the old workspace.
 			if (prevWs) {
 				itemsByWs.current.set(prevWs, itemsRef.current);
@@ -490,12 +499,13 @@ export default function AgentView({
 		// restored them. Otherwise, fetch from sidecar.
 		const cached = itemsByWs.current.get(workspace);
 		if (cached && cached.length > 0) return;
+		const generation = ++historyGenerationRef.current;
 		setLoadingHistory(true);
 		let cancelled = false;
 		(async () => {
 			try {
 				const r = await sendCommandAwait({ type: "get_messages" }, 30000);
-				if (cancelled) return;
+				if (cancelled || generation !== historyGenerationRef.current) return;
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
@@ -516,7 +526,7 @@ export default function AgentView({
 			} catch {
 				// Silently ignore — history will load on next workspace switch.
 			} finally {
-				if (!cancelled) setLoadingHistory(false);
+				if (!cancelled && generation === historyGenerationRef.current) setLoadingHistory(false);
 			}
 		})();
 		return () => { cancelled = true; };
@@ -582,11 +592,11 @@ export default function AgentView({
 		const eventCwd = event._cwd ?? "";
 		const currentWs = workspace ?? "";
 		const isForCurrent = samePath(eventCwd, currentWs);
-		const activeState = stateRef.current;
-		const eventSessionId = typeof (event as unknown as { session_id?: unknown }).session_id === "string"
-			? (event as unknown as { session_id: string }).session_id
-			: undefined;
-		const eventThreadId = typeof event.thread_id === "string" ? event.thread_id : undefined;
+		const seenRef = isForCurrent ? seenIdsRef : { current: seenIdsByWs.current.get(eventCwd) ?? new Set<string>() };
+		if (seenRef.current.has(event.event_id)) return;
+		const transition = isForCurrent ? chatSessionTransition(event, sessionRef.current) : undefined;
+		if (transition) sessionRef.current = transition;
+		const activeState = sessionRef.current;
 		const payloadSessionId = typeof (event.payload as Record<string, unknown> | undefined)?.sessionId === "string"
 			? (event.payload as Record<string, unknown>).sessionId as string
 			: undefined;
@@ -601,17 +611,12 @@ export default function AgentView({
 			!isRenderEvent ||
 			isScheduledCompletionForCurrent ||
 			isScheduledFiredForCurrent ||
-			(eventSessionId && eventSessionId === activeState?.sessionId) ||
-			(payloadSessionId && payloadSessionId === activeState?.sessionId) ||
-			(!eventSessionId && eventThreadId && eventThreadId === activeState?.threadId) ||
-			(!eventSessionId && !eventThreadId && event.type !== "SCHEDULED_TASK_FIRED");
+			chatEventMatchesSession(event, activeState);
 		if (isForCurrent && !belongsToCurrentSession) {
 			return;
 		}
 
 		// Determine which seenIds and activeAssistant to use.
-		const seenRef = isForCurrent ? seenIdsRef : { current: seenIdsByWs.current.get(eventCwd) ?? new Set<string>() };
-		if (seenRef.current.has(event.event_id)) return;
 		seenRef.current.add(event.event_id);
 		if (!isForCurrent) {
 			seenIdsByWs.current.set(eventCwd, seenRef.current);
@@ -1080,7 +1085,7 @@ export default function AgentView({
 			case "SESSION_CREATED":
 			case "SESSION_FORKED":
 			case "SESSION_JUMPED": {
-				if (isInternalContinuationSessionEvent(event)) break;
+				if (!transition || transition.preserveHistory) break;
 				// The active session changed (user started a new session,
 				// jumped/forked from the BranchTreeExplorer, or replayed
 				// from the Timeline). Our current items belong to the OLD
@@ -1090,6 +1095,8 @@ export default function AgentView({
 				// SESSION_FORKED in quick succession) only triggers one
 				// reload.
 				if (!isForCurrent) break;
+				++historyGenerationRef.current;
+				setLoadingHistory(true);
 				if (sessionSwitchTimer.current) clearTimeout(sessionSwitchTimer.current);
 				sessionSwitchTimer.current = setTimeout(() => {
 					sessionSwitchTimer.current = null;
@@ -1150,7 +1157,9 @@ export default function AgentView({
 
 	// Cancel any pending session-switch reload on unmount.
 	useEffect(() => {
+		const requestGeneration = historyGenerationRef;
 		return () => {
+			++requestGeneration.current;
 			if (sessionSwitchTimer.current) clearTimeout(sessionSwitchTimer.current);
 		};
 	}, []);
@@ -1586,6 +1595,7 @@ export default function AgentView({
 			{workspace && <ExtensionUiHost key={workspace} workspace={workspace} />}
 			<Composer
 				state={state}
+				sendDisabled={loadingHistory || waitingForWorkspace}
 				workspace={workspace}
 				workspaces={workspaces}
 				sidecarReady={sidecarReady}
