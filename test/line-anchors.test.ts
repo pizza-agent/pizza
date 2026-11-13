@@ -12,8 +12,8 @@ import {
 
 describe("line-anchors", () => {
 	describe("hashLine", () => {
-		it("produces a 2-hex hash", () => {
-			expect(hashLine("hello")).toMatch(/^[0-9a-f]{2}$/);
+	it("produces a 4-hex hash", () => {
+		expect(hashLine("hello")).toMatch(/^[0-9a-f]{4}$/);
 		});
 
 		it("is deterministic for identical input", () => {
@@ -24,8 +24,8 @@ describe("line-anchors", () => {
 			expect(hashLine("a")).not.toBe(hashLine("b"));
 		});
 
-		it("hashes the empty string", () => {
-			expect(hashLine("")).toMatch(/^[0-9a-f]{2}$/);
+	it("hashes the empty string", () => {
+		expect(hashLine("")).toMatch(/^[0-9a-f]{4}$/);
 		});
 	});
 
@@ -65,7 +65,7 @@ describe("line-anchors", () => {
 			expect(() => parseRange("0#ab")).toThrow(/Invalid range/);
 		});
 
-		it.each(["5#a", "5#abc", "5#abcd", "5#abcde"])("rejects a hash with the wrong length: %s", (range) => {
+	it.each(["5#a", "5#abcdef123"])("rejects a hash with the wrong length: %s", (range) => {
 			expect(() => parseRange(range)).toThrow(/Invalid range/);
 		});
 
@@ -156,16 +156,23 @@ describe("line-anchors", () => {
 			expect(resolved.usedRelocation).toBe(true);
 		});
 
-		it("lists candidate locations in the ambiguous error", () => {
+		it("picks the candidate nearest the hinted line instead of erroring on duplicates", () => {
 			const content = "alpha\nbeta\nalpha\nbeta\nalpha";
-			const wrongLine = `1#${hashLine("beta")}`; // "beta" lives on 2 and 4
-			expect(() => resolveRange(content, wrongLine, "f.txt")).toThrow(/ambiguous.*2#[0-9a-f]{2}.*4#[0-9a-f]{2}/);
+			// "beta" lives on 2 and 4 — the hint at line 1 is nearer to 2.
+			const resolved = resolveRange(content, `1#${hashLine("beta")}`, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("reports ambiguity with content snippets when candidates are equidistant", () => {
+			const content = "beta\nalpha\nbeta"; // "beta" on 1 and 3, hint at 2 → tie
+			expect(() => resolveRange(content, `2#${hashLine("beta")}`, "f.txt")).toThrow(/ambiguous.*1#[0-9a-f]{4}.*beta.*3#[0-9a-f]{4}.*beta/s);
 		});
 
 		it("throws a stale error when no candidate matches", () => {
 			const content = "alpha\nbeta";
-			// Valid 2-hex hashes that do not match either lines content hash.
-			expect(() => resolveRange(content, "1#aa..2#bb", "f.txt")).toThrow(/stale/);
+			// Valid hashes that match neither line\u0027s content fingerprint.
+			expect(() => resolveRange(content, "1#aaaa..2#bbbb", "f.txt")).toThrow(/stale/);
 		});
 	});
 });

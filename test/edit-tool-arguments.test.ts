@@ -182,4 +182,72 @@ describe("edit tool search mode", () => {
 		expect((result.content[0] as { type: string; text: string }).text).toContain("Successfully applied 2 edit(s)");
 		expect(await readFile(filePath, "utf8")).toBe("const a = 10\nconst b = 20\n");
 	});
+
+});
+
+describe("edit tool batch diagnostics", () => {
+	it("reports every failed edit in one error instead of stopping at the first", async () => {
+		const dir = await createTempDir();
+		const filePath = join(dir, "batch.txt");
+		await writeFile(filePath, "alpha\nbeta\ngamma\n", "utf8");
+
+		const definition = createEditToolDefinition(dir);
+		const good = formatLineAnchor(2, "beta");
+		await expect(
+			definition.execute(
+				"tool-batch-1",
+				{
+					path: "batch.txt",
+					edits: [
+						{ op: "replace", range: "1#dead", new: "x" },      // stale
+						{ op: "replace", range: good, new: "BETA" },        // ok
+						{ op: "search", old: "not-here", new: "y" },        // not found
+					],
+				},
+				undefined,
+				undefined,
+				{} as ExtensionContext,
+			),
+		).rejects.toThrow(/edits\[0\].*stale[\s\S]*edits\[2\].*not found/);
+
+		// Nothing was written — the batch failed as a unit.
+		expect(await readFile(filePath, "utf8")).toBe("alpha\nbeta\ngamma\n");
+	});
+
+	it("accepts legacy 2-hex anchors from older reads", async () => {
+		const dir = await createTempDir();
+		const filePath = join(dir, "legacy.txt");
+		await writeFile(filePath, "one\ntwo\n", "utf8");
+
+		const definition = createEditToolDefinition(dir);
+		const legacy = `2#${formatLineAnchor(2, "two").split("#")[1].slice(0, 2)}`;
+		const result = await definition.execute(
+			"tool-legacy-1",
+			{ path: "legacy.txt", edits: [{ op: "replace", range: legacy, new: "TWO" }] },
+			undefined,
+			undefined,
+			{} as ExtensionContext,
+		);
+		expect((result.content[0] as { type: string; text: string }).text).toContain("Successfully applied 1 edit(s)");
+		expect(await readFile(filePath, "utf8")).toBe("one\nTWO\n");
+	});
+
+	it("structural match survives re-indentation", async () => {
+		const dir = await createTempDir();
+		const filePath = join(dir, "indent.txt");
+		// Line was re-indented since the anchor was captured (2-space → 6-space).
+		await writeFile(filePath, "if (x) {\n      return 1;\n}\n", "utf8");
+
+		const definition = createEditToolDefinition(dir);
+		const anchor = formatLineAnchor(2, "  return 1;");
+		const result = await definition.execute(
+			"tool-indent-1",
+			{ path: "indent.txt", edits: [{ op: "replace", range: anchor, new: "      return 2;" }] },
+			undefined,
+			undefined,
+			{} as ExtensionContext,
+		);
+		expect((result.content[0] as { type: string; text: string }).text).toContain("Successfully applied 1 edit(s)");
+		expect(await readFile(filePath, "utf8")).toBe("if (x) {\n      return 2;\n}\n");
+	});
 });
