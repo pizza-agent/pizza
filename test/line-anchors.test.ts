@@ -174,5 +174,71 @@ describe("line-anchors", () => {
 			// Valid hashes that match neither line\u0027s content fingerprint.
 			expect(() => resolveRange(content, "1#aaaa..2#bbbb", "f.txt")).toThrow(/stale/);
 		});
+
+		it("structural fingerprint: re-indented line still resolves at hinted position", () => {
+			const content = "if (x) {\n\t\treturn 1;\n}\n";
+			const anchor = `2#${hashLine("  return 1;")}`;
+			const resolved = resolveRange(content, anchor, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(false);
+		});
+
+		it("structural fingerprint: tabs and extra spaces hash identically", () => {
+			expect(hashLine("\tfoo  bar")).toBe(hashLine("  foo bar  "));
+			expect(hashLine("return 1")).not.toBe(hashLine("return 2"));
+		});
+
+		it("picks the unique nearest among three duplicates", () => {
+			const content = "}\nx\ny\n}\nz\nw\n}"; // "}" on 1, 4, 7
+			const resolved = resolveRange(content, `6#${hashLine("}")}`, "f.txt");
+			expect(resolved.startLine).toBe(7); // dist: 5,2,1 — line 7 unique nearest
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("three-way equidistant tie is a real ambiguity", () => {
+			const content = "}\nx\n}\nx\n}"; // "}" on 1, 3, 5; hint 3 hits 3 directly… use hint 4: dist 3,1,1 tie
+			expect(() => resolveRange(content, `4#${hashLine("}")}`, "f.txt")).toThrow(/ambiguous/);
+		});
+
+		it("hint beyond EOF with a single candidate relocates", () => {
+			const content = "alpha\nbeta";
+			const resolved = resolveRange(content, `99#${hashLine("beta")}`, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("hint beyond EOF with duplicate candidates reports ambiguity", () => {
+			const content = "foo\nx\nfoo";
+			expect(() => resolveRange(content, `99#${hashLine("foo")}`, "f.txt")).toThrow(/ambiguous/);
+		});
+
+		it("legacy 2-hex anchor resolves via prefix match", () => {
+			const content = "alpha\nbeta";
+			const legacy = `2#${hashLine("beta").slice(0, 2)}`;
+			const resolved = resolveRange(content, legacy, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(false);
+		});
+
+		it("range anchors only check endpoint fingerprints — interior drift is tolerated", () => {
+			const content = "foo\nM1\nM2\nbar\nx";
+			const range = `${formatLineAnchor(1, "foo")}..${formatLineAnchor(4, "bar")}`;
+			const resolved = resolveRange(content, range, "f.txt");
+			expect(resolved.existingText).toBe("foo\nM1\nM2\nbar\n");
+		});
+
+		it("relocates a whole range when both endpoints shifted together", () => {
+			const content = "new line\nfoo\nmid\nbar";
+			const range = `${formatLineAnchor(1, "foo")}..${formatLineAnchor(3, "bar")}`;
+			const resolved = resolveRange(content, range, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.endLine).toBe(4);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("ambiguity error embeds candidate line contents", () => {
+			const content = "beta\nmid\nbeta";
+			expect(() => resolveRange(content, `2#${hashLine("beta")}`, "f.txt")).toThrow(/"beta".*"beta"/);
+		});
 	});
 });
