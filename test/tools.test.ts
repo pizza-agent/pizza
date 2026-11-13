@@ -643,6 +643,20 @@ describe("Coding Agent Tools", () => {
 			expect(exec).toHaveBeenCalledWith("echo ok", testDir, expect.objectContaining({ timeout: 1500 }));
 		});
 
+		it("should apply the default shell timeout when none is passed", async () => {
+			const exec = vi.fn(async () => ({ exitCode: 0 }));
+			const tool = createCliTestTool(testDir, { operations: { exec } });
+			await tool.execute("test-default-timeout", { command: "echo ok" });
+			expect(exec).toHaveBeenCalledWith("echo ok", testDir, expect.objectContaining({ timeout: 600000 }));
+		});
+
+		it("should let timeout 0 disable the default shell timeout", async () => {
+			const exec = vi.fn(async () => ({ exitCode: 0 }));
+			const tool = createCliTestTool(testDir, { operations: { exec } });
+			await tool.execute("test-timeout-disabled", { command: "echo ok", timeout: 0 });
+			expect(exec).toHaveBeenCalledWith("echo ok", testDir, expect.objectContaining({ timeout: 0 }));
+		});
+
 		it("should throw error when cwd does not exist", async () => {
 			const nonexistentCwd = "/this/directory/definitely/does/not/exist/12345";
 

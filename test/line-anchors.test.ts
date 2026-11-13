@@ -12,8 +12,8 @@ import {
 
 describe("line-anchors", () => {
 	describe("hashLine", () => {
-		it("produces a 2-hex hash", () => {
-			expect(hashLine("hello")).toMatch(/^[0-9a-f]{2}$/);
+	it("produces a 4-hex hash", () => {
+		expect(hashLine("hello")).toMatch(/^[0-9a-f]{4}$/);
 		});
 
 		it("is deterministic for identical input", () => {
@@ -24,8 +24,8 @@ describe("line-anchors", () => {
 			expect(hashLine("a")).not.toBe(hashLine("b"));
 		});
 
-		it("hashes the empty string", () => {
-			expect(hashLine("")).toMatch(/^[0-9a-f]{2}$/);
+	it("hashes the empty string", () => {
+		expect(hashLine("")).toMatch(/^[0-9a-f]{4}$/);
 		});
 	});
 
@@ -65,7 +65,7 @@ describe("line-anchors", () => {
 			expect(() => parseRange("0#ab")).toThrow(/Invalid range/);
 		});
 
-		it.each(["5#a", "5#abc", "5#abcd", "5#abcde"])("rejects a hash with the wrong length: %s", (range) => {
+	it.each(["5#a", "5#abcdef123"])("rejects a hash with the wrong length: %s", (range) => {
 			expect(() => parseRange(range)).toThrow(/Invalid range/);
 		});
 
@@ -156,16 +156,89 @@ describe("line-anchors", () => {
 			expect(resolved.usedRelocation).toBe(true);
 		});
 
-		it("lists candidate locations in the ambiguous error", () => {
+		it("picks the candidate nearest the hinted line instead of erroring on duplicates", () => {
 			const content = "alpha\nbeta\nalpha\nbeta\nalpha";
-			const wrongLine = `1#${hashLine("beta")}`; // "beta" lives on 2 and 4
-			expect(() => resolveRange(content, wrongLine, "f.txt")).toThrow(/ambiguous.*2#[0-9a-f]{2}.*4#[0-9a-f]{2}/);
+			// "beta" lives on 2 and 4 — the hint at line 1 is nearer to 2.
+			const resolved = resolveRange(content, `1#${hashLine("beta")}`, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("reports ambiguity with content snippets when candidates are equidistant", () => {
+			const content = "beta\nalpha\nbeta"; // "beta" on 1 and 3, hint at 2 → tie
+			expect(() => resolveRange(content, `2#${hashLine("beta")}`, "f.txt")).toThrow(/ambiguous.*1#[0-9a-f]{4}.*beta.*3#[0-9a-f]{4}.*beta/s);
 		});
 
 		it("throws a stale error when no candidate matches", () => {
 			const content = "alpha\nbeta";
-			// Valid 2-hex hashes that do not match either lines content hash.
-			expect(() => resolveRange(content, "1#aa..2#bb", "f.txt")).toThrow(/stale/);
+			// Valid hashes that match neither line\u0027s content fingerprint.
+			expect(() => resolveRange(content, "1#aaaa..2#bbbb", "f.txt")).toThrow(/stale/);
+		});
+
+		it("structural fingerprint: re-indented line still resolves at hinted position", () => {
+			const content = "if (x) {\n\t\treturn 1;\n}\n";
+			const anchor = `2#${hashLine("  return 1;")}`;
+			const resolved = resolveRange(content, anchor, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(false);
+		});
+
+		it("structural fingerprint: tabs and extra spaces hash identically", () => {
+			expect(hashLine("\tfoo  bar")).toBe(hashLine("  foo bar  "));
+			expect(hashLine("return 1")).not.toBe(hashLine("return 2"));
+		});
+
+		it("picks the unique nearest among three duplicates", () => {
+			const content = "}\nx\ny\n}\nz\nw\n}"; // "}" on 1, 4, 7
+			const resolved = resolveRange(content, `6#${hashLine("}")}`, "f.txt");
+			expect(resolved.startLine).toBe(7); // dist: 5,2,1 — line 7 unique nearest
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("three-way equidistant tie is a real ambiguity", () => {
+			const content = "}\nx\n}\nx\n}"; // "}" on 1, 3, 5; hint 3 hits 3 directly… use hint 4: dist 3,1,1 tie
+			expect(() => resolveRange(content, `4#${hashLine("}")}`, "f.txt")).toThrow(/ambiguous/);
+		});
+
+		it("hint beyond EOF with a single candidate relocates", () => {
+			const content = "alpha\nbeta";
+			const resolved = resolveRange(content, `99#${hashLine("beta")}`, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("hint beyond EOF with duplicate candidates reports ambiguity", () => {
+			const content = "foo\nx\nfoo";
+			expect(() => resolveRange(content, `99#${hashLine("foo")}`, "f.txt")).toThrow(/ambiguous/);
+		});
+
+		it("legacy 2-hex anchor resolves via prefix match", () => {
+			const content = "alpha\nbeta";
+			const legacy = `2#${hashLine("beta").slice(0, 2)}`;
+			const resolved = resolveRange(content, legacy, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.usedRelocation).toBe(false);
+		});
+
+		it("range anchors only check endpoint fingerprints — interior drift is tolerated", () => {
+			const content = "foo\nM1\nM2\nbar\nx";
+			const range = `${formatLineAnchor(1, "foo")}..${formatLineAnchor(4, "bar")}`;
+			const resolved = resolveRange(content, range, "f.txt");
+			expect(resolved.existingText).toBe("foo\nM1\nM2\nbar\n");
+		});
+
+		it("relocates a whole range when both endpoints shifted together", () => {
+			const content = "new line\nfoo\nmid\nbar";
+			const range = `${formatLineAnchor(1, "foo")}..${formatLineAnchor(3, "bar")}`;
+			const resolved = resolveRange(content, range, "f.txt");
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.endLine).toBe(4);
+			expect(resolved.usedRelocation).toBe(true);
+		});
+
+		it("ambiguity error embeds candidate line contents", () => {
+			const content = "beta\nmid\nbeta";
+			expect(() => resolveRange(content, `2#${hashLine("beta")}`, "f.txt")).toThrow(/"beta".*"beta"/);
 		});
 	});
 });

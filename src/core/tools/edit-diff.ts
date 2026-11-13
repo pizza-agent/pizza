@@ -105,6 +105,7 @@ export function applyEditsToNormalizedContent(
 	const baseContent = normalizedContent;
 	const matchedEdits: MatchedEdit[] = [];
 	const relocations: string[] = [];
+	const failures: string[] = [];
 	for (let i = 0; i < edits.length; i++) {
 		const edit = edits[i];
 
@@ -113,15 +114,17 @@ export function applyEditsToNormalizedContent(
 			const searchText = normalizeToLF(edit.old);
 			const firstMatch = baseContent.indexOf(searchText);
 			if (firstMatch === -1) {
-				throw new Error(
+				failures.push(
 					`edits[${i}].old text not found in ${path}. Make sure the search text matches the file exactly (including whitespace and indentation).`,
 				);
+				continue;
 			}
 			const secondMatch = baseContent.indexOf(searchText, firstMatch + 1);
 			if (secondMatch !== -1) {
-				throw new Error(
+				failures.push(
 					`edits[${i}].old text matches multiple locations in ${path}. Include more surrounding lines in the search text to make it unique.`,
 				);
+				continue;
 			}
 			const existingText = baseContent.slice(firstMatch, firstMatch + searchText.length);
 			matchedEdits.push({
@@ -133,7 +136,15 @@ export function applyEditsToNormalizedContent(
 			continue;
 		}
 
-		const resolved = resolveRange(baseContent, edit.range, path);
+		let resolved: ResolvedLineRange;
+		try {
+			resolved = resolveRange(baseContent, edit.range, path);
+		} catch (err) {
+			// Collect instead of throwing so one call reports every bad anchor,
+			// not just the first — the model can fix them all in a single retry.
+			failures.push(`edits[${i}]: ${err instanceof Error ? err.message : String(err)}`);
+			continue;
+		}
 		if (resolved.usedRelocation) {
 			relocations.push(`${edit.range} → line ${resolved.startLine}`);
 		}
@@ -158,7 +169,8 @@ export function applyEditsToNormalizedContent(
 				replacement = "";
 				break;
 			default:
-				throw new Error(`edits[${i}].op is invalid in ${path}.`);
+				failures.push(`edits[${i}].op is invalid in ${path}.`);
+				continue;
 		}
 
 		matchedEdits.push({
@@ -167,6 +179,10 @@ export function applyEditsToNormalizedContent(
 			matchLength,
 			replacement,
 		});
+	}
+
+	if (failures.length > 0) {
+		throw new Error(failures.join("\n"));
 	}
 
 	matchedEdits.sort((a, b) => a.matchIndex - b.matchIndex);

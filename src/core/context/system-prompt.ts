@@ -6,6 +6,7 @@ import { existsSync } from "fs";
 import { execSync } from "child_process";
 import * as os from "node:os";
 import { getShellConfig } from "../../utils/shell.js";
+import { DEFAULT_CLI_SHELL_TIMEOUT_MS } from "../tools/shell.js";
 import { type Skill } from "../skills/skills.js";
 
 /**
@@ -375,7 +376,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 							"PASSING VALUES WITH QUOTES / SPACES / NEWLINES:",
 							"- _edit / _write arguments are shell-tokenized. A value written as bare positional",
 							"  text has its inner \" or ' silently consumed as shell quoting and DROPPED. NEVER write",
-							"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#ab call(\"x\") as bare tokens.",
+							"  e.g. _write f secret(\"x\",\"y\") or _edit f replace 12#abcd call(\"x\") as bare tokens.",
 							"- Instead use a verbatim channel: _edit --edits JSON, _write --content, or a <<EOF heredoc.",
 							"  These preserve quotes, spaces, and newlines exactly.",
 							"",
@@ -399,19 +400,23 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 					"substitution ($() ``), globs (* ?), and newlines. Use shell commands when you need",
 					"any of these. If grep/find/ls are missing from PATH, Pizza injects temporary",
 					"per-process shims for only those missing commands.",
+					`Shell commands are killed after a default timeout of ${DEFAULT_CLI_SHELL_TIMEOUT_MS / 60000} minutes; pass the cli`,
+					"tool's \"timeout\" parameter (milliseconds) for longer-running commands, or 0",
+					"to disable the timeout — always set it explicitly for installs, builds, polls,",
+					"and broad filesystem scans.",
 					...(cli.shellAllow?.length ? ["", formatShellAvailability(cli)] : []),
 				].join("\n"),
 			);
 		}
 		const underscoreExamples: Array<[string, string]> = [
-			["_read", '- cli("_read src/main.ts") - Read a file; text lines include <line>#<2-hex-hash> anchors'],
+			["_read", '- cli("_read src/main.ts") - Read a file; text lines include <line>#<4-hex-hash> anchors'],
 			["_read", '- cli("_read src/main.ts 10 50") - Read lines 10-59 (offset=10, limit=50)'],
 			["_write", '- cli("_write output.txt Hello World") - Write to a file'],
-			["_edit", '- cli("_edit src/main.ts replace 12#ab \"const value = 2\"") - Replace an anchored line'],
-			["_edit", '- cli("_edit src/main.ts insert_after 12#ab \"const next = 3\"") - Insert after an anchored line'],
-			["_edit", '- cli("_edit src/main.ts delete 12#ab..14#de") - Delete an anchored range'],
+			["_edit", '- cli("_edit src/main.ts replace 12#abcd \"const value = 2\"") - Replace an anchored line'],
+			["_edit", '- cli("_edit src/main.ts insert_after 12#abcd \"const next = 3\"") - Insert after an anchored line'],
+			["_edit", '- cli("_edit src/main.ts delete 12#abcd..14#def0") - Delete an anchored range'],
 			["_edit", '- cli("_edit src/main.ts search \"const a = 1\" \"const a = 2\"") - Search-and-replace without line anchors (fallback when anchors are stale or unavailable)'],
-			["_edit", '- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)'],
+			["_edit", '- cli("_edit src/main.ts --edits \'[{\"op\":\"replace\",\"range\":\"12#abcd\",\"new\":\"x = f(\\\"a\\\")\"}]\'") - PREFER --edits JSON for values with quotes/spaces/newlines (kept verbatim)'],
 			["_session_split", '- cli("_session_split topic_change") - Split when the conversation topic changes'],
 			["_session_split", '- cli("_session_split --reason topic_change --name \"Fix auth\"") - Split and name the new session'],
 			["_history_tree", '- cli("_history_tree list") - Show the session history tree'],
