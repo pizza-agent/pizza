@@ -213,7 +213,7 @@ function describeCli(available: CliCommandDefinition[], shell: ShellOptions | un
 		(shell ? " To use a pipeline or redirection, run a plain shell command instead." : "") +
 		(hasVerbatimCommands
 			? " For _edit/_write, a value containing quotes, multiple spaces, or newlines must go through a verbatim channel — " +
-				"_edit with --edits JSON (e.g. --edits '[{\"op\":\"replace\",\"range\":\"12#ab\",\"new\":\"line1\\nline2\"}]'), " +
+				"_edit with --edits JSON (e.g. --edits '[{\"op\":\"replace\",\"range\":\"12#abcd\",\"new\":\"line1\\nline2\"}]'), " +
 				"_write with --content or a <<EOF heredoc, or wrap the whole value in quotes. Do NOT pass such a value as bare " +
 				"positional tokens — its inner quotes/spaces get silently mangled."
 			: "") +
