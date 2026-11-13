@@ -219,6 +219,7 @@ import { saveDraft, loadDraft } from "@/lib/composer-drafts";
 
 export function Composer({
 	sidecarReady,
+	sendDisabled = false,
 	isRunning,
 	state,
 	workspace,
@@ -228,6 +229,8 @@ export function Composer({
 	onRefreshState,
 }: {
 	sidecarReady: boolean;
+	/** Keep the draft editable while the selected conversation is loading. */
+	sendDisabled?: boolean;
 	isRunning: boolean;
 	state: RpcSessionState | null;
 	workspace?: string | null;
@@ -1474,7 +1477,7 @@ ${insert}`;
 
 	const handleSend = () => {
 		const message = input.trim();
-		if (!sidecarReady) return;
+		if (!sidecarReady || sendDisabled) return;
 
 		// `/` builtin — intercepted locally like the TUI's builtin dispatch.
 		// Non-builtin `/name args` falls through to onSend so the agent can
@@ -1524,7 +1527,7 @@ ${insert}`;
 	};
 
 	const canSend =
-		sidecarReady && !recording && !transcribing && (!!input.trim() || images.length > 0 || files.length > 0);
+		sidecarReady && !sendDisabled && !recording && !transcribing && (!!input.trim() || images.length > 0 || files.length > 0);
 
 	return (
 		<div className="bg-bg py-4">

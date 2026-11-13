@@ -325,6 +325,7 @@ export class SessionManager {
 			payload: {
 				target_session_id: active.session_id,
 				reopened_as: continuation.session_id,
+				context_parent_session_id: active.session_id,
 				reason: reason ?? "continue historical session",
 				direct: true,
 				background: true,
@@ -470,6 +471,7 @@ export class SessionManager {
 			type: "SESSION_JUMPED",
 			payload: {
 				target_session_id: target.session_id,
+				context_parent_session_id: target.context_parent_session_id,
 				reason,
 				direct: true,
 				background: options.background,

@@ -16,6 +16,7 @@ import { PET_SETTINGS_PATH } from "@/lib/pet";
 import type { RpcSessionState, WorkspaceMeta } from "@/lib/types";
 import { isTauri, isMainChatCwd, isRemoteWorkspaceKey, MAIN_CHAT_CWD, samePath } from "@/lib/utils";
 import { setWorkspacePaths } from "@/lib/workspace-paths";
+import { chatSessionTransition } from "@/lib/session-events";
 
 function isMainAgentConflictError(message: string): boolean {
 	return message.includes("Another main agent instance is already running");
@@ -439,7 +440,7 @@ function AppInner() {
 			if (cancelled) { un1(); return; }
 			unlisteners.push(un1);
 			const un2 = await subscribeEvents((event) => {
-				const typed = event as { type: string; _cwd?: string };
+				const typed = event as { type: string; _cwd?: string; thread_id?: string; payload?: unknown };
 				// Track per-workspace streaming state for ALL workspaces
 				// so the sidebar can show blinking indicators even for
 				// non-active workspaces.
@@ -456,6 +457,15 @@ function AppInner() {
 				}
 				// Only process state updates for the active workspace.
 				if (typed._cwd && !samePath(typed._cwd, workspace)) return;
+				// Structural events precede USER_MESSAGE and streaming events. Adopt
+				// their identity now, and reject older in-flight state snapshots.
+				if (["SESSION_CREATED", "SESSION_FORKED", "SESSION_JUMPED", "SESSION_BOUNDARY_INFERRED"].includes(typed.type)) {
+					stateAppliedSeqRef.current = stateRequestSeqRef.current;
+					setState((current) => {
+						const next = chatSessionTransition(typed, current ?? {});
+						return current && next ? { ...current, sessionId: next.sessionId, threadId: next.threadId } : current;
+					});
+				}
 				// Refresh state on model/thinking changes, and when the agent
 				// turn starts (isStreaming → true) or completes (isStreaming → false).
 				// Skip intermediate AGENT_TURN_END/REQUESTED during multi-tool turns
@@ -468,6 +478,7 @@ function AppInner() {
 					typed.type === "SESSION_CREATED" ||
 					typed.type === "SESSION_FORKED" ||
 					typed.type === "SESSION_JUMPED" ||
+					typed.type === "SESSION_BOUNDARY_INFERRED" ||
 					// Compaction rewrites the context — refetch so the context-usage
 					// indicator reflects the post-compact size immediately instead
 					// of waiting for the next turn boundary.
