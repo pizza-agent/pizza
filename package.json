@@ -57,6 +57,8 @@
 		"test": "cross-env PIZZA_OFFLINE=1 vitest --run --no-file-parallelism --poolOptions.forks.singleFork",
 		"test:headless": "cross-env PIZZA_OFFLINE=1 vitest --run --no-file-parallelism --poolOptions.forks.singleFork",
 		"test:online": "vitest --run",
+		"bench": "tsx bench/run.ts",
+		"bench:check": "tsc -p tsconfig.bench.json",
 		"test:pg": "cross-env PIZZA_OFFLINE=1 vitest --run test/postgres-storage.integration.test.ts",
 		"install:local": "npm run build && npm link",
 		"prepublishOnly": "npm run clean && npm run build && npm run vendor-tools"
