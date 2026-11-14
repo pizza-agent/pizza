@@ -87,6 +87,9 @@ export function formatFileOperations(readFiles: string[], modifiedFiles: string[
 
 /** Maximum characters for a tool result in serialized summaries. */
 const TOOL_RESULT_MAX_CHARS = 2000;
+const ASSISTANT_THINKING_MAX_CHARS = 2000;
+const TOOL_CALL_ARG_VALUE_MAX_CHARS = 500;
+const TOOL_CALL_ARG_MAX_CHARS = 2000;
 
 /**
  * Truncate text to a maximum character length for summarization.
@@ -98,13 +101,28 @@ function truncateForSummary(text: string, maxChars: number): string {
 	return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
 }
 
+/** Cap large values individually, then cap the whole argument string. */
+function formatToolCallArguments(args: Record<string, unknown> | undefined): string {
+	if (!args) return "";
+	const entries = Object.entries(args).map(([key, value]) => {
+		const serialized = JSON.stringify(value) ?? "undefined";
+		if (serialized.length <= TOOL_CALL_ARG_VALUE_MAX_CHARS) {
+			return `${key}=${serialized}`;
+		}
+		const omitted = serialized.length - TOOL_CALL_ARG_VALUE_MAX_CHARS;
+		return `${key}=${serialized.slice(0, TOOL_CALL_ARG_VALUE_MAX_CHARS)}[... ${omitted} more characters truncated]`;
+	});
+	return truncateForSummary(entries.join(", "), TOOL_CALL_ARG_MAX_CHARS);
+}
+
 /**
  * Serialize LLM messages to text for summarization.
  * This prevents the model from treating it as a conversation to continue.
  * Call convertToLlm() first to handle custom message types.
  *
- * Tool results are truncated to keep the summarization request within
- * reasonable token budgets. Full content is not needed for summarization.
+ * Tool results, assistant thinking, and large tool-call arguments are
+ * truncated to keep the summarization request within reasonable token
+ * budgets. Full content is not needed for summarization.
  */
 export function serializeConversation(messages: Message[]): string {
 	const parts: string[] = [];
@@ -130,16 +148,20 @@ export function serializeConversation(messages: Message[]): string {
 				} else if (block.type === "thinking") {
 					thinkingParts.push(block.thinking);
 				} else if (block.type === "toolCall") {
-					const args = block.arguments as Record<string, unknown>;
-					const argsStr = Object.entries(args)
-						.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-						.join(", ");
+					const argsStr = formatToolCallArguments(
+						block.arguments as Record<string, unknown> | undefined,
+					);
 					toolCalls.push(`${block.name}(${argsStr})`);
 				}
 			}
 
 			if (thinkingParts.length > 0) {
-				parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
+				parts.push(
+					`[Assistant thinking]: ${truncateForSummary(
+						thinkingParts.join("\n"),
+						ASSISTANT_THINKING_MAX_CHARS,
+					)}`,
+				);
 			}
 			if (textParts.length > 0) {
 				parts.push(`[Assistant]: ${textParts.join("\n")}`);
