@@ -29,6 +29,7 @@ import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
 import { prefetchLoginShellPath } from "../../src/utils/login-shell-path.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
 import { acquireGatewayLock, readGatewayOwner, type GatewayLockInfo } from "./gateway-lock.js";
+import { GatewayWatchdog, type GatewayWatchdogOptions, type WatchdogAlert } from "./watchdog.js";
 import { getMainLockPath, isPidLockOwnerAlive, readPidLock, type MainAgentLock } from "../../src/core/agent/main-agent.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
@@ -117,6 +118,12 @@ export interface GatewayServerOptions {
 	 * scheduled-workspace discovery — it is NOT excluded from tell destination
 	 * name lookups (the main workspace is a valid tell target). */
 	mainDir?: string;
+	/**
+	 * Deterministic gateway watchdog: observes each pooled agent's event stream
+	 * and emits alerts for idle model streams, idle tools, and repeated tool
+	 * calls. Pass `false` to disable. Alerts never abort a turn by themselves.
+	 */
+	watchdog?: GatewayWatchdogOptions | false;
 	/** Pizza version (from package.json), reported in `status` so clients can detect an outdated gateway after an upgrade. */
 	version?: string;
 	/**
@@ -205,6 +212,8 @@ export interface GatewayServerEvents {
 	tell: (to: string, ok: boolean, durationMs: number) => void;
 	/** An agent process was spawned. */
 	agentSpawned: (cwd: string) => void;
+	/** The gateway watchdog emitted an alert (alert only; no action is taken). */
+	watchdog: (alert: WatchdogAlert) => void;
 	/** An agent process was torn down (idle eviction or shutdown). */
 	agentClosed: (cwd: string) => void;
 	/** Server started listening. */
@@ -253,6 +262,13 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	const schedulerGuardInterval = options.schedulerGuardInterval ?? 60_000;
 	const unresponsiveOwnerTimeout = options.unresponsiveOwnerTimeout ?? 10_000;
 	const emitter = new EventEmitter();
+	const watchdog = new GatewayWatchdog({
+		...(options.watchdog === false ? { enabled: false } : options.watchdog),
+		onAlert: (alert) => {
+			console.error(`[watchdog] ${alert.kind} ${alert.workspace}: ${alert.message}`);
+			emitter.emit("watchdog", alert);
+		},
+	});
 
 	const pool = new Map<string, PoolEntry>();
 	let server: Server | undefined;
@@ -307,6 +323,7 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 			// `rpc` path (e.g. a desktop prompt) which never touches the
 			// `tell` path the timer was originally wired to.
 			entry.lastActivity = Date.now();
+			watchdog.observe(cwd, event);
 			broadcastEvent(cwd, event as unknown as GatewayRpcFrame);
 		});
 		eventForwarders.set(cwd, unsubscribe);
@@ -619,6 +636,7 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 			forwarder();
 			eventForwarders.delete(cwd);
 		}
+		watchdog.forget(cwd);
 		await entry.client.stop().catch(() => {});
 		emitter.emit("agentClosed", cwd as never);
 	}
@@ -1515,6 +1533,7 @@ function nextMessageId(): string {
 		startHealthCheck();
 		startSchedulerGuard();
 		startOwnershipWatch();
+		watchdog.start();
 		// After the socket is listening: adapters the supervisor spawns connect
 		// back to this gateway immediately, so start it only once we can serve.
 		channelSupervisor.start();
@@ -1526,6 +1545,7 @@ function nextMessageId(): string {
 		if (ownershipTimer) { clearInterval(ownershipTimer); ownershipTimer = undefined; }
 		stopHealthCheck();
 		stopSchedulerGuard();
+		watchdog.stop();
 		await channelSupervisor.shutdown();
 		// Tear down all pooled agents.
 		const cwds = Array.from(pool.keys());
