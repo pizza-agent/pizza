@@ -12,7 +12,7 @@ import type { SessionDescriptor, SessionSourceRef, BuildContextOptions, BuiltCon
 import type { TimelineEntry, TimelineEntryKind } from "./timeline-projection.js";
 import { eventsToMessages } from "./event-to-message.js";
 import { sanitizeToolPairing } from "./context-sanitizer.js";
-import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolResultEvents } from "../compaction/tool-result-masking.js";
+import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolCallArgumentEvents, maskToolResultEvents } from "../compaction/tool-result-masking.js";
 import { estimateTokens } from "../compaction/compaction.js";
 
 // ============================================================================
@@ -298,7 +298,9 @@ export class SessionProjection {
 			const firstKeptSequence = firstKept?.sequence ?? latestCompaction.sequence + 1;
 			result = [latestCompaction, ...result.filter((event) => event.sequence >= firstKeptSequence)];
 		}
-		return maskBeforeSequence >= 0 ? maskToolResultEvents(result, maskBeforeSequence, maskMinChars) : result;
+		if (maskBeforeSequence < 0) return result;
+		const maskedResults = maskToolResultEvents(result, maskBeforeSequence, maskMinChars);
+		return maskToolCallArgumentEvents(maskedResults, maskBeforeSequence, maskMinChars);
 	}
 
 	private _summarizeEvent(event: EventBase): string {

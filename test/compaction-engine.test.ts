@@ -47,6 +47,32 @@ function appendToolRound(store: SqliteEventStore, id: string, path: string, outp
 	});
 }
 
+function appendWriteRound(store: SqliteEventStore, id: string, content: string) {
+	const call = store.append({
+		actor_id: "coder_agent",
+		type: "AGENT_MESSAGE_END",
+		payload: {
+			content: [
+				{
+					type: "tool_call",
+					id,
+					name: "cli",
+					arguments: { command: `_write src/generated.ts --content ${content}` },
+				},
+			],
+			model: { provider: "test", model_id: "test" },
+			usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+			stop_reason: "tool_use",
+		},
+	});
+	store.append({
+		actor_id: "runtime",
+		type: "TOOL_EXECUTION_END",
+		payload: { tool_call_id: id, tool_name: "cli", result: [{ type: "text", text: "wrote 40000 bytes" }], is_error: false, duration_ms: 1 },
+	});
+	return call;
+}
+
 function failingLlm(): LLMClient & { calls: number } {
 	const client = {
 		calls: 0,
@@ -133,6 +159,46 @@ describe("CompactionEngine tool-result masking", () => {
 		expect(llm.calls).toBe(1);
 		expect(outcome.mode).toBeUndefined();
 		expect(outcome.summary).toContain("LLM summary");
+		store.close();
+	});
+
+	it("hybrid: masks large old tool-call arguments while keeping the path", async () => {
+		const store = new SqliteEventStore("compaction-arg-mask", ":memory:");
+		store.append({ actor_id: "user", type: "USER_MESSAGE", payload: { content: "write the generated file" } });
+		const content = "x".repeat(40_000);
+		const callEvent = appendWriteRound(store, "call_write", content);
+		appendAssistant(store, "done");
+
+		const engine = new CompactionEngine({
+			store,
+			projection: createProjection(store),
+			llmClient: failingLlm(),
+			model: { provider: "test", model_id: "test" },
+			settings: { contextWindow: 20_000, reserveTokens: 0, keepRecentTokens: 1 },
+		});
+
+		const outcome = await engine.compact("threshold", new AbortController().signal);
+		expect(outcome.mode).toBe("mask");
+		expect(outcome.masked_count).toBe(0);
+		expect(outcome.masked_args_count).toBe(1);
+		expect(outcome.summary).toContain("1 old tool-call argument set(s)");
+		expect(outcome.tokens_after!).toBeLessThan(outcome.tokens_before / 4);
+
+		store.append({ actor_id: "compactor", type: "COMPACTION_END", payload: { ...outcome } });
+		const messages = createProjection(store).buildContext().messages;
+		const call = messages
+			.filter((message) => message.role === "assistant")
+			.flatMap((message) => (message as { content: Array<{ type: string; arguments?: Record<string, unknown> }> }).content)
+			.find((block) => block.type === "toolCall");
+		expect(call).toBeDefined();
+		const command = String((call!.arguments as { command: string }).command);
+		expect(command).toContain("_write src/generated.ts");
+		expect(command).toContain("chars cleared from old context");
+		expect(command).not.toContain(content);
+
+		const raw = store.get(callEvent.event_id)!;
+		const rawCall = (raw.payload as { content: Array<{ arguments: { command: string } }> }).content[0]!;
+		expect(rawCall.arguments.command).toContain(content);
 		store.close();
 	});
 

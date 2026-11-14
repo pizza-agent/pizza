@@ -16,10 +16,11 @@ import type { SessionProjection } from "../projection/session-projection.js";
 import type { LLMClient, ModelConfig, LLMResponse } from "../runtime/llm-types.js";
 import type { CompactionOutcome, CompactionPolicy, CompactionReason } from "../runtime/policies.js";
 import { serializeConversation, SUMMARIZATION_SYSTEM_PROMPT } from "./utils.js";
-import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolResultEvents } from "./tool-result-masking.js";
+import { DEFAULT_MASK_MIN_CHARS, isMaskCompaction, maskToolCallArgumentEvents, maskToolResultEvents } from "./tool-result-masking.js";
 
 /**
- * - "mask": only replace old tool results with placeholders (no LLM call).
+ * - "mask": replace old tool results with placeholders and clear old tool-call
+ *   arguments (no LLM call).
  * - "summary": only LLM summarization (drops the summarized prefix).
  * - "hybrid": mask first; fall back to summary if masking alone doesn't get
  *   the context comfortably below the threshold.
@@ -266,7 +267,7 @@ export class CompactionEngine implements CompactionPolicy {
 		return this.contextWindow() * this.threshold() * ratio;
 	}
 
-	/** Tier 1: mask tool results older than the keepRecentTokens window. Undefined if nothing to mask. */
+	/** Tier 1: mask old tool results and tool-call arguments. Undefined if nothing to mask. */
 	private _maskToolResults(
 		pairs: EventMessagePair[],
 		keepRecentTokens: number,
@@ -277,25 +278,31 @@ export class CompactionEngine implements CompactionPolicy {
 		const boundary = pairs[boundaryIndex]!.event;
 		const minChars = this.config.settings?.maskMinChars ?? DEFAULT_MASK_MIN_CHARS;
 		const events = pairs.map((pair) => pair.event);
-		const maskedEvents = maskToolResultEvents(events, boundary.sequence, minChars);
+		const maskedResults = maskToolResultEvents(events, boundary.sequence, minChars);
+		const maskedEvents = maskToolCallArgumentEvents(maskedResults, boundary.sequence, minChars);
 
 		let maskedCount = 0;
+		let maskedArgsCount = 0;
 		let savedTokens = 0;
 		maskedEvents.forEach((event, i) => {
 			if (event === events[i]) return;
 			const maskedMessage = eventToMessage(event);
-			maskedCount++;
+			if (event.type === "TOOL_EXECUTION_END") maskedCount++;
+			else if (event.type === "AGENT_MESSAGE_END") maskedArgsCount++;
 			savedTokens += estimateMessageTokens(pairs[i]!.message) - (maskedMessage ? estimateMessageTokens(maskedMessage) : 0);
 		});
-		if (maskedCount === 0) return undefined;
+		if (maskedCount === 0 && maskedArgsCount === 0) return undefined;
 
+		const resultNote = `${maskedCount} old tool result(s)`;
+		const argsNote = maskedArgsCount > 0 ? ` and ${maskedArgsCount} old tool-call argument set(s)` : "";
 		return {
 			mode: "mask",
-			summary: `Cleared ${maskedCount} old tool result(s), saving ~${savedTokens} tokens`,
+			summary: `Cleared ${resultNote}${argsNote}, saving ~${savedTokens} tokens`,
 			first_kept_event_id: pairs[0]!.event.event_id,
 			mask_before_event_id: boundary.event_id,
 			mask_min_chars: minChars,
 			masked_count: maskedCount,
+			masked_args_count: maskedArgsCount,
 			tokens_before: tokensBefore,
 			tokens_after: Math.max(0, tokensBefore - savedTokens),
 		};
