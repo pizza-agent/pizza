@@ -16,7 +16,10 @@ import { listModels } from "../packages/cli/list-models.js";
 import { getAgentDir, getMainDir, getMainMemoryDir, getModelsPath, VERSION } from "./config.js";
 import {
 	acquireMainLock,
+	getMainLockPath,
 	initializeMainAgent,
+	isProcessAlive,
+	readPidLock,
 	type MainAgentLock,
 } from "./core/agent/main-agent.js";
 import {
@@ -581,6 +584,12 @@ export async function main(args: string[], options?: MainOptions) {
 		server.on("takeover", (sock: string) => {
 			console.error(chalk.yellow(`Gateway: previous owner of ${sock} stopped answering; taking over the socket.`));
 		});
+		// A live gateway on another socket owns this agent dir: clients find
+		// it through the gateway lock and attach there.
+		server.on("conflict", (owner: { pid: number; socket: string }) => {
+			console.error(chalk.yellow(`Gateway: ${agentDir} is already served by the gateway at ${owner.socket} (pid ${owner.pid}); exiting.`));
+			process.exit(1);
+		});
 		server.on("error", (error: Error) => {
 			console.error(chalk.red(`Gateway error: ${error.message}`));
 		});
@@ -597,6 +606,20 @@ export async function main(args: string[], options?: MainOptions) {
 		};
 		process.on("SIGINT", shutdown);
 		process.on("SIGTERM", shutdown);
+		// Dev desktop builds tie the gateway to the GUI that spawned it: a
+		// detached dev daemon outliving its `tauri dev` session keeps holding
+		// the main agent and bots, blocking the installed app.
+		const parentPid = Number(process.env.PIZZA_GATEWAY_PARENT_PID);
+		delete process.env.PIZZA_GATEWAY_PARENT_PID;
+		if (Number.isInteger(parentPid) && parentPid > 0) {
+			const parentWatch = setInterval(() => {
+				if (isProcessAlive(parentPid)) return;
+				clearInterval(parentWatch);
+				console.error(chalk.yellow(`Gateway: parent process ${parentPid} exited; shutting down.`));
+				void shutdown();
+			}, 5000);
+			parentWatch.unref();
+		}
 		// The gateway hosts agents for other workspaces — a stray rejection must not
 		// silently take the whole pool down with it.
 		installCrashHandlers({
@@ -663,9 +686,20 @@ export async function main(args: string[], options?: MainOptions) {
 			console.log(chalk.green(`Main agent initialized. Edit ${join(mainDir, "SOUL.md")} to define your personality.`));
 		}
 
-		mainLock = acquireMainLock(mainDir);
+		// Record the gateway that spawned us (only if it really is our parent)
+		// so a conflicting client can reuse or stop that gateway rather than
+		// killing an agent it would immediately respawn.
+		const ownerGateway =
+			process.env.PIZZA_GATEWAY_SOCKET && process.env.PIZZA_GATEWAY_PID === String(process.ppid)
+				? { gatewaySocket: process.env.PIZZA_GATEWAY_SOCKET, gatewayPid: process.ppid }
+				: {};
+		mainLock = acquireMainLock(mainDir, ownerGateway);
 		if (!mainLock) {
-			console.error(chalk.red("Another main agent instance is already running. Use --main-dir to use a different directory, or stop the other instance."));
+			const owner = readPidLock(getMainLockPath(mainDir));
+			const holder = owner
+				? ` (pid ${owner.pid}${typeof owner.gatewaySocket === "string" ? `, gateway ${owner.gatewaySocket}` : ""})`
+				: "";
+			console.error(chalk.red(`Another main agent instance is already running${holder}. Use --main-dir to use a different directory, or stop the other instance.`));
 			process.exit(1);
 		}
 		// Lock auto-releases on process exit via the handler inside acquireMainLock.

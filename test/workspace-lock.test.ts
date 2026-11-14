@@ -9,7 +9,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acquirePidLock, acquireWorkspaceLock } from "../src/core/agent/main-agent.js";
+import { acquirePidLock, acquireWorkspaceLock, osProcessStartedAt } from "../src/core/agent/main-agent.js";
+
+const lockOf = (pid: number): string => JSON.stringify({ pid, startedAt: osProcessStartedAt(pid) ?? Date.now() });
 
 function tmpDir(): string {
 	return mkdtempSync(join(tmpdir(), "pizza-wslock-"));
@@ -33,7 +35,7 @@ describe("workspace single-writer lock", () => {
 		// A second acquirer on the same path while the first owner (this process)
 		// is alive is rejected. (acquirePidLock treats our own pid as re-entrant,
 		// so simulate a different live owner by writing another pid.)
-		writeFileSync(lockPath, String(process.ppid));
+		writeFileSync(lockPath, lockOf(process.ppid));
 		const second = acquirePidLock(lockPath);
 		expect(second).toBeNull();
 
@@ -59,12 +61,22 @@ describe("workspace single-writer lock", () => {
 		dirs.push(dir);
 		const lockPath = join(dir, ".lock");
 		// Write a lock owned by a pid that definitely does not exist.
-		writeFileSync(lockPath, "999999");
+		writeFileSync(lockPath, lockOf(999_999));
 		const reclaimed = acquirePidLock(lockPath);
 		expect(reclaimed).not.toBeNull();
 		// The lock file now records our pid.
-		expect(readFileSync(lockPath, "utf-8").trim()).toBe(String(process.pid));
+		expect(JSON.parse(readFileSync(lockPath, "utf-8")).pid).toBe(process.pid);
 		reclaimed!.release();
+	});
+
+	it("a non-JSON lock is unreadable and reclaimed", () => {
+		const dir = tmpDir();
+		dirs.push(dir);
+		const lockPath = join(dir, ".lock");
+		writeFileSync(lockPath, String(process.ppid));
+		const lock = acquirePidLock(lockPath);
+		expect(lock).not.toBeNull();
+		lock!.release();
 	});
 
 	it("acquireWorkspaceLock locks the workspace dir", () => {
@@ -73,7 +85,7 @@ describe("workspace single-writer lock", () => {
 		const lock = acquireWorkspaceLock(dir);
 		expect(lock).not.toBeNull();
 		// Same path, foreign live owner → blocked.
-		writeFileSync(join(dir, ".lock"), String(process.ppid));
+		writeFileSync(join(dir, ".lock"), lockOf(process.ppid));
 		expect(acquireWorkspaceLock(dir)).toBeNull();
 		lock!.release();
 	});

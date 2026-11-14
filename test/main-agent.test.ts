@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	acquireMainLock,
+	isPidLockOwnerAlive,
+	osProcessStartedAt,
+	readPidLock,
 	buildMainGreetingPrompt,
 	getMainAgentGuidelines,
 	isMainGreetingMessage,
@@ -16,6 +19,8 @@ import {
 	loadUserProfileFile,
 } from "../src/core/agent/main-agent.js";
 import { APP_NAME, getMainMemoryDir, getMainSoulPath } from "../src/config.js";
+
+const lockOf = (pid: number): string => JSON.stringify({ pid, startedAt: osProcessStartedAt(pid) ?? Date.now() });
 
 describe("main-agent", () => {
 	let tempDir: string;
@@ -385,10 +390,29 @@ describe("main-agent", () => {
 
 			expect(lock).not.toBeNull();
 			expect(existsSync(join(mainDir, ".lock"))).toBe(true);
-			expect(readFileSync(join(mainDir, ".lock"), "utf-8").trim()).toBe(String(process.pid));
+			expect(readPidLock(join(mainDir, ".lock"))?.pid).toBe(process.pid);
 
 			lock?.release();
 			expect(existsSync(join(mainDir, ".lock"))).toBe(false);
+		});
+
+		test("records owner metadata (e.g. the spawning gateway) in the lock", () => {
+			const mainDir = join(tempDir, "main-meta");
+			const lock = acquireMainLock(mainDir, { gatewaySocket: "/tmp/gw.sock", gatewayPid: 42 });
+
+			const info = readPidLock(join(mainDir, ".lock"));
+			expect(info).toMatchObject({ pid: process.pid, gatewaySocket: "/tmp/gw.sock", gatewayPid: 42 });
+			expect(typeof info?.startedAt).toBe("number");
+
+			lock?.release();
+		});
+
+		test("release removes its process listeners", () => {
+			const before = process.listenerCount("SIGTERM");
+			const lock = acquireMainLock(join(tempDir, "main-listeners"));
+			expect(process.listenerCount("SIGTERM")).toBe(before + 1);
+			lock?.release();
+			expect(process.listenerCount("SIGTERM")).toBe(before);
 		});
 
 		test("second acquire in the same process reclaims the existing lock (re-entrant)", () => {
@@ -411,14 +435,43 @@ describe("main-agent", () => {
 			// PID 1 is init on POSIX and is alive, so use a very high pid number
 			// that is effectively never in use.
 			const bogusPid = 999_999;
-			writeFileSync(join(mainDir, ".lock"), String(bogusPid), "utf-8");
+			writeFileSync(join(mainDir, ".lock"), lockOf(bogusPid), "utf-8");
 
 			const lock = acquireMainLock(mainDir);
 
 			expect(lock).not.toBeNull();
-			expect(readFileSync(join(mainDir, ".lock"), "utf-8").trim()).toBe(String(process.pid));
+			expect(readPidLock(join(mainDir, ".lock"))?.pid).toBe(process.pid);
 
 			lock?.release();
+		});
+
+		test("reclaims a lock whose live pid was reused by an unrelated process", () => {
+			const mainDir = join(tempDir, "main-reused");
+			mkdirSync(mainDir, { recursive: true });
+			// The parent pid is alive, but it did not start an hour ago.
+			writeFileSync(
+				join(mainDir, ".lock"),
+				JSON.stringify({ pid: process.ppid, startedAt: Date.now() - 3_600_000 }),
+				"utf-8",
+			);
+
+			const lock = acquireMainLock(mainDir);
+
+			expect(lock).not.toBeNull();
+			expect(readPidLock(join(mainDir, ".lock"))?.pid).toBe(process.pid);
+			lock?.release();
+		});
+
+		test("still refuses a live owner whose start time matches", () => {
+			const mainDir = join(tempDir, "main-live");
+			mkdirSync(mainDir, { recursive: true });
+			// Held by a live foreign process (our parent) with its real start time.
+			writeFileSync(join(mainDir, ".lock"), lockOf(process.ppid), "utf-8");
+			expect(acquireMainLock(mainDir)).toBeNull();
+			// A start time far from the parent's real one marks it reused.
+			expect(isPidLockOwnerAlive({ pid: process.ppid, startedAt: Date.now() + 86_400_000 })).toBe(false);
+			// Our own recorded start time matches the OS-reported one.
+			expect(isPidLockOwnerAlive({ pid: process.pid, startedAt: Date.now() - process.uptime() * 1000 })).toBe(true);
 		});
 
 		test("returns null when the lock is held by a live pid", () => {
@@ -433,7 +486,7 @@ describe("main-agent", () => {
 			// (covered above) — for a truly live foreign pid we rely on the
 			// isProcessAlive check. This test documents that the current process
 			// is detected as alive.
-			writeFileSync(join(mainDir, ".lock"), String(process.pid), "utf-8");
+			writeFileSync(join(mainDir, ".lock"), lockOf(process.pid), "utf-8");
 
 			// Same pid → reclaim path (ownerPid === process.pid), should succeed.
 			const lock = acquireMainLock(mainDir);
