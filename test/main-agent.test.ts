@@ -445,7 +445,8 @@ describe("main-agent", () => {
 			lock?.release();
 		});
 
-		test("reclaims a lock whose live pid was reused by an unrelated process", () => {
+		// Start times come from `ps etime`; Windows has no PID-reuse check.
+		test.skipIf(process.platform === "win32")("reclaims a lock whose live pid was reused by an unrelated process", () => {
 			const mainDir = join(tempDir, "main-reused");
 			mkdirSync(mainDir, { recursive: true });
 			// The parent pid is alive, but it did not start an hour ago.
@@ -462,7 +463,8 @@ describe("main-agent", () => {
 			lock?.release();
 		});
 
-		test("still refuses a live owner whose start time matches", () => {
+		// Start times come from `ps etime`; Windows has no PID-reuse check.
+		test.skipIf(process.platform === "win32")("still refuses a live owner whose start time matches", () => {
 			const mainDir = join(tempDir, "main-live");
 			mkdirSync(mainDir, { recursive: true });
 			// Held by a live foreign process (our parent) with its real start time.

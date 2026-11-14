@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -19,7 +20,10 @@ pub struct LockInfo {
 
 impl LockInfo {
 	pub fn str_field(&self, key: &str) -> Option<String> {
-		self.meta.get(key).and_then(Value::as_str).map(str::to_string)
+		self.meta
+			.get(key)
+			.and_then(Value::as_str)
+			.map(str::to_string)
 	}
 }
 
@@ -55,7 +59,10 @@ pub fn agent_dir() -> Option<PathBuf> {
 		.ok()
 		.filter(|h| !h.is_empty())
 		.map(PathBuf::from);
-	match std::env::var("PIZZA_AGENT_DIR").ok().filter(|d| !d.is_empty()) {
+	match std::env::var("PIZZA_AGENT_DIR")
+		.ok()
+		.filter(|d| !d.is_empty())
+	{
 		Some(dir) if dir == "~" => home,
 		Some(dir) if dir.starts_with("~/") => home.map(|h| h.join(&dir[2..])),
 		Some(dir) => Some(PathBuf::from(dir)),
@@ -141,7 +148,10 @@ pub fn process_command(_pid: u32) -> Option<String> {
 #[cfg(unix)]
 fn process_started_at(pid: u32) -> Option<u64> {
 	let elapsed = parse_etime(&ps_field(pid, "etime")?)?;
-	let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_millis() as u64;
+	let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.ok()?
+		.as_millis() as u64;
 	Some(now.saturating_sub(elapsed * 1000))
 }
 
@@ -200,7 +210,10 @@ mod tests {
 		let info = read_lock(&path).unwrap();
 		assert_eq!(info.pid, 42);
 		assert_eq!(info.started_at, 1_700_000_000_000);
-		assert_eq!(info.str_field("gatewaySocket").as_deref(), Some("/tmp/gw.sock"));
+		assert_eq!(
+			info.str_field("gatewaySocket").as_deref(),
+			Some("/tmp/gw.sock")
+		);
 
 		std::fs::write(&path, "{broken").unwrap();
 		assert!(read_lock(&path).is_none());
@@ -210,8 +223,12 @@ mod tests {
 	#[cfg(unix)]
 	#[test]
 	fn detects_reused_pid_by_start_time() {
+		use std::time::{SystemTime, UNIX_EPOCH};
 		let me = std::process::id();
-		let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+		let now = SystemTime::now()
+			.duration_since(UNIX_EPOCH)
+			.unwrap()
+			.as_millis() as u64;
 		let fresh = |started_at: u64| LockInfo {
 			pid: me,
 			started_at,

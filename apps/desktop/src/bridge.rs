@@ -887,7 +887,11 @@ fn current_main_agent_status() -> MainAgentStatus {
 		};
 	};
 	let running = pid_lock::owner_alive(&info);
-	let command = if running { pid_lock::process_command(info.pid) } else { None };
+	let command = if running {
+		pid_lock::process_command(info.pid)
+	} else {
+		None
+	};
 	MainAgentStatus {
 		running,
 		pid: Some(info.pid),
@@ -933,10 +937,11 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 	if let Some(owner_gateway) = info.str_field("gatewaySocket").map(PathBuf::from) {
 		if Some(&owner_gateway) != gateway_channel::current_gateway_socket().as_ref() {
 			let socket = owner_gateway.clone();
-			let stopped =
-				tauri::async_runtime::spawn_blocking(move || gateway_channel::stop_gateway(&socket))
-					.await
-					.unwrap_or(false);
+			let stopped = tauri::async_runtime::spawn_blocking(move || {
+				gateway_channel::stop_gateway(&socket)
+			})
+			.await
+			.unwrap_or(false);
 			log_file(&format!(
 				"stop_main_agent: stopped owning gateway {} (main agent pid {}): {}",
 				owner_gateway.display(),
