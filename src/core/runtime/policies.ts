@@ -66,7 +66,7 @@ export interface CompactionOutcome {
 	tokens_before: number;
 	/** Estimated tokens after compaction (post-summary context). */
 	tokens_after?: number;
-	/** "summary" (default): LLM summary + prefix dropped. "mask": old tool results replaced by placeholders. */
+	/** "summary" (default): LLM summary + prefix dropped. "mask": old tool results replaced and old tool-call arguments cleared. */
 	mode?: "summary" | "mask";
 	/** mask mode: tool results before this event are masked. */
 	mask_before_event_id?: string;
@@ -74,6 +74,8 @@ export interface CompactionOutcome {
 	mask_min_chars?: number;
 	/** mask mode: number of tool results masked. */
 	masked_count?: number;
+	/** mask mode: number of assistant messages whose tool-call arguments were cleared. */
+	masked_args_count?: number;
 }
 
 /** Decides whether to compact, and how to compact when asked. */
