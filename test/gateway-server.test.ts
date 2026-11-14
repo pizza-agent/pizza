@@ -274,6 +274,67 @@ describe("gateway server", () => {
 		}
 	});
 
+	it("emits a watchdog alert from the forwarded agent event stream", async () => {
+		const socketPath = uniqueSocketPath();
+		sockets.push(socketPath);
+		const projectDir = mkdtempSync(join(tmpdir(), "pizza-gw-watchdog-"));
+		sockets.push(projectDir);
+
+		const listeners: Array<(event: unknown) => void> = [];
+		const fakeAgent: AgentConnection = {
+			async start() {},
+			async stop() {},
+			onEvent(listener) {
+				listeners.push(listener);
+				return () => {};
+			},
+			onExit: () => () => {},
+			async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+				return { id: (command as { id: string }).id, type: "response", command: (command as { type: string }).type, success: true } as unknown as RpcResponse;
+			},
+			async prompt() {},
+			async followUp() {},
+			async waitForIdle() {},
+			async getLastAssistantText() {
+				return "ok";
+			},
+		};
+
+		const alerts: Array<{ kind?: string; workspace?: string }> = [];
+		server = createGatewayServer({
+			socketPath,
+			agentDir: "/tmp/nonexistent-agent",
+			agentIdleTimeout: 0,
+			agentHealthCheckInterval: 0,
+			schedulerGuardInterval: 0,
+			watchdog: { tickMs: 20, streamIdleMs: 20 },
+			createAgent: () => fakeAgent,
+		});
+		server.on("watchdog", (alert) => alerts.push(alert));
+		await server.start();
+
+		const response = JSON.parse(
+			await sendAndWait(socketPath, {
+				type: "tell",
+				id: "watchdog-tell",
+				to: projectDir,
+				message: "hello",
+				timeoutMs: 1000,
+			}),
+		);
+		expect(response.type).toBe("tell_result");
+		expect(listeners.length).toBeGreaterThan(0);
+
+		for (const listener of listeners) {
+			listener({ type: "turn_start" });
+			listener({ type: "message_start", message: { role: "assistant", content: [], timestamp: Date.now() } });
+		}
+		await new Promise((resolve) => setTimeout(resolve, 120));
+
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]).toMatchObject({ kind: "stream_idle", workspace: projectDir });
+	});
+
 	it("normalizes destination paths so path variants share ONE pool entry", async () => {
 		// /a/b, /a/b/ and /a/../a/b must resolve to the same agent — divergent
 		// pool keys would spawn a second agent for the same workspace and lose

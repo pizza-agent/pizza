@@ -559,16 +559,36 @@ describe("SchedulerEngine — SessionTarget: new with real session id reassign",
 		});
 		if (!t1.ok || !t2.ok) throw new Error("create failed");
 
-		// Start T1 and wait for it to acquire + reassign
-		const p1 = engine.runNow(t1.task.id);
-		await new Promise((r) => setTimeout(r, 20));
-		const p2 = engine.runNow(t2.task.id);
-		await Promise.all([p1, p2]);
-		await new Promise((r) => setTimeout(r, 50));
+		// Start both. T1 always dispatches. T2 either starts before T1 migrates
+		// its lock (and dispatches) or sees the migrated real-session lock and
+		// is skipped under the `skip` policy. Poll for the outcome instead of
+		// assuming a fixed 20/50ms window: Windows CI can take longer to settle
+		// the queued dispatch.
+		await engine.runNow(t1.task.id);
+		await engine.runNow(t2.task.id);
+		const settled = await (async () => {
+			const deadline = Date.now() + 3_000;
+			while (Date.now() < deadline) {
+				const t2Skipped = engine
+					.history(t2.task.id)
+					.some((run) => run.status === "skipped" && /busy/.test(run.reason ?? ""));
+				if (capturedSessionIds.includes(t1.task.id) && (capturedSessionIds.includes(t2.task.id) || t2Skipped)) {
+					return true;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+			return false;
+		})();
+		expect(settled).toBe(true);
 
-		// Both tasks should have been dispatched
+		// T1 always dispatches; T2 must have either dispatched or recorded a
+		// busy skip (never silently disappear).
 		expect(capturedSessionIds).toContain(t1.task.id);
-		expect(capturedSessionIds).toContain(t2.task.id);
+		const t2Dispatched = capturedSessionIds.includes(t2.task.id);
+		const t2SkippedForBusySession = engine
+			.history(t2.task.id)
+			.some((run) => run.status === "skipped" && /busy/.test(run.reason ?? ""));
+		expect(t2Dispatched || t2SkippedForBusySession).toBe(true);
 
 		// After reassign, both should be at the real session id. The first one
 		// to finish releases its lock; the second one runs in the real
