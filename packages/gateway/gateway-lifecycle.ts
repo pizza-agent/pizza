@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { serializeJsonLine } from "./jsonl.js";
 import { gatewaySocketPath } from "./gateway-server.js";
+import { readGatewayOwner } from "./gateway-lock.js";
 import { resolveCliSpawn } from "../rpc/cli-spawn.js";
 
 /** How long to wait for a freshly-spawned gateway to bind its socket (ms). */
@@ -193,6 +194,16 @@ function cleanStaleSocket(socketPath: string): void {
 }
 
 /**
+ * The gateway socket a client should use: an explicit PIZZA_GATEWAY_SOCKET
+ * (set for agents a gateway spawns, so `_tell` routes back through it), else
+ * the live gateway that owns `agentDir` (it may run on a non-default socket,
+ * e.g. the dev desktop's), else the standard location.
+ */
+export function resolveGatewaySocket(agentDir: string): string {
+	return process.env.PIZZA_GATEWAY_SOCKET ?? readGatewayOwner(agentDir)?.socket ?? gatewaySocketPath();
+}
+
+/**
  * Ensure the gateway daemon is running, reachable, and running the same
  * version as the caller. If it's not running, spawn it. If it's running an
  * outdated version (e.g. after an upgrade), gracefully shut it down and
@@ -210,7 +221,7 @@ function cleanStaleSocket(socketPath: string): void {
  *   entry point instead of the pizza CLI.
  */
 export async function ensureGateway(agentDir: string, socketPath?: string, expectedVersion?: string, cliPath?: string): Promise<string> {
-	const sock = socketPath ?? gatewaySocketPath();
+	const sock = socketPath ?? resolveGatewaySocket(agentDir);
 
 	// Fast path: already running?
 	if (existsSync(sock) && (await pingGateway(sock))) {

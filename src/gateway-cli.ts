@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import chalk from "chalk";
-import { gatewaySocketPath, ensureGateway } from "../packages/gateway/index.js";
+import { resolveGatewaySocket } from "../packages/gateway/index.js";
 import { serializeJsonLine } from "../packages/gateway/jsonl.js";
 import { getAgentDir } from "./config.js";
 import { mergePathValues, resolveLoginShellPath } from "./utils/login-shell-path.js";
@@ -261,8 +261,9 @@ export async function handleGatewayCommand(args: string[]): Promise<boolean> {
 
 	const sub = args[1];
 	// PIZZA_GATEWAY_SOCKET lets you target a non-default socket, e.g. the
-	// dev desktop's gateway-dev.sock: `PIZZA_GATEWAY_SOCKET=~/.pizza/gateway-dev.sock pizza gateway status`
-	const socketPath = process.env.PIZZA_GATEWAY_SOCKET ?? gatewaySocketPath();
+	// dev desktop's gateway-dev.sock: `PIZZA_GATEWAY_SOCKET=~/.pizza/gateway-dev.sock pizza gateway status`.
+	// Without it, the live gateway owning the agent dir is found via its lock.
+	const socketPath = resolveGatewaySocket(getAgentDir());
 	const drain = args.includes("--drain");
 
 	switch (sub) {

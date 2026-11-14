@@ -28,7 +28,8 @@ export {
 	type GatewayTransportOptions,
 } from "./channel-client.js";
 
-export { ensureGateway } from "./gateway-lifecycle.js";
+export { ensureGateway, resolveGatewaySocket } from "./gateway-lifecycle.js";
+export { readGatewayOwner, type GatewayLockInfo } from "./gateway-lock.js";
 
 export {
 	type GatewayRequest,

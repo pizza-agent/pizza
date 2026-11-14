@@ -531,8 +531,80 @@ impl GatewayChannel {
 	}
 }
 
+/// The socket of the gateway this desktop last connected to (set by
+/// `ensure_gateway`; may be a foreign gateway it chose to reuse).
+static ACTIVE_SOCKET: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// The gateway this desktop talks to: the one `ensure_gateway` settled on,
+/// else the live owner of the agent dir, else the default socket.
+pub fn current_gateway_socket() -> Option<PathBuf> {
+	ACTIVE_SOCKET
+		.lock()
+		.ok()
+		.and_then(|s| s.clone())
+		.or_else(|| live_gateway_owner().map(|(socket, _)| socket))
+		.or_else(gateway_socket_path)
+}
+
+/// The live gateway owning the agent dir, per `<agentDir>/gateway.lock`
+/// (written by packages/gateway/gateway-lock.ts).
+fn live_gateway_owner() -> Option<(PathBuf, crate::pid_lock::LockInfo)> {
+	let info = crate::pid_lock::read_lock(&crate::pid_lock::agent_dir()?.join("gateway.lock"))?;
+	let socket = PathBuf::from(info.str_field("socket")?);
+	crate::pid_lock::owner_alive(&info).then_some((socket, info))
+}
+
+/// One gateway per agent dir: it alone runs the main agent, the scheduler
+/// and the channel bots. When a live gateway on ANOTHER socket owns it (e.g.
+/// the installed app's next to a dev build), release builds attach to it if
+/// it runs our version — many windows, one main agent. Dev builds and
+/// version mismatches take over instead: let busy agents finish, then stop
+/// it so our own gateway can own the agent dir. Returns the socket to reuse.
+fn reuse_foreign_gateway(own_socket: &PathBuf, expected_version: Option<&str>) -> Option<PathBuf> {
+	let (owner_socket, owner) = live_gateway_owner()?;
+	if &owner_socket == own_socket || !gateway_ready(&owner_socket) {
+		return None;
+	}
+	if !cfg!(debug_assertions) {
+		let compatible = match expected_version {
+			None => true,
+			Some(expected) => {
+				query_gateway_status(&owner_socket).is_some_and(|s| s.version == expected)
+			}
+		};
+		if compatible {
+			crate::bridge::log_file(&format!(
+				"ensure_gateway: reusing gateway at {} (pid {}) that owns the agent dir",
+				owner_socket.display(),
+				owner.pid
+			));
+			return Some(owner_socket);
+		}
+	}
+	crate::bridge::log_file(&format!(
+		"ensure_gateway: taking over the agent dir from gateway at {} (pid {})",
+		owner_socket.display(),
+		owner.pid
+	));
+	wait_for_idle_agents(&owner_socket, Duration::from_secs(30));
+	let stopped = shutdown_gateway(&owner_socket);
+	crate::bridge::log_file(&format!("ensure_gateway: takeover stopped={}", stopped));
+	None
+}
+
+/// Wait (bounded) until no agent of the gateway at `socket_path` is mid-turn.
+fn wait_for_idle_agents(socket_path: &PathBuf, timeout: Duration) {
+	let deadline = std::time::Instant::now() + timeout;
+	while busy_agent_count(socket_path).unwrap_or(0) > 0 && std::time::Instant::now() < deadline {
+		std::thread::sleep(Duration::from_secs(1));
+	}
+}
+
 /// Spawn (or reuse) the gateway daemon: `pizza --mode gateway`. Detached, like
-/// the TS ensureGateway. Returns once the socket/pipe responds to a ping.
+/// the TS ensureGateway. Returns the socket of the gateway to connect to once
+/// it responds to a ping — normally `socket_path`, but a compatible gateway
+/// that already owns the agent dir on another socket is reused instead
+/// (see `reuse_foreign_gateway`).
 ///
 /// If `expected_version` is provided and a gateway is already running, its
 /// reported version is compared: a mismatch (e.g. the user just upgraded and
@@ -543,16 +615,31 @@ pub fn ensure_gateway(
 	socket_path: &PathBuf,
 	pizza_cmd: (&str, &[String]),
 	expected_version: Option<&str>,
-) -> Result<(), String> {
-	use std::process::{Command, Stdio};
+) -> Result<PathBuf, String> {
 	// The updater stops the gateway right before replacing the app bundle;
 	// respawning it from the old binary would lock files on Windows.
 	if crate::updater::is_installing() {
 		return Err("Pizza is installing an update; the gateway will restart afterwards".into());
 	}
-	if cfg!(debug_assertions) {
-		take_over_from_production_gateway(socket_path);
+	let socket = match reuse_foreign_gateway(socket_path, expected_version) {
+		Some(owner_socket) => owner_socket,
+		None => {
+			ensure_own_gateway(socket_path, pizza_cmd, expected_version)?;
+			socket_path.clone()
+		}
+	};
+	if let Ok(mut active) = ACTIVE_SOCKET.lock() {
+		*active = Some(socket.clone());
 	}
+	Ok(socket)
+}
+
+fn ensure_own_gateway(
+	socket_path: &PathBuf,
+	pizza_cmd: (&str, &[String]),
+	expected_version: Option<&str>,
+) -> Result<(), String> {
+	use std::process::{Command, Stdio};
 	// Fast path: ping an existing gateway.
 	if gateway_ready(socket_path) {
 		// Version check: if the caller knows its version and the running
@@ -659,6 +746,11 @@ pub fn ensure_gateway(
 		"PIZZA_GATEWAY_SOCKET",
 		socket_path.to_string_lossy().to_string(),
 	);
+	// A dev gateway lives only as long as the `tauri dev` GUI that spawned it;
+	// a stray one would keep the main agent and bots from the installed app.
+	if cfg!(debug_assertions) {
+		cmd.env("PIZZA_GATEWAY_PARENT_PID", std::process::id().to_string());
+	}
 	cmd.stdin(Stdio::null());
 	cmd.stdout(Stdio::null());
 	cmd.stderr(Stdio::null());
@@ -791,34 +883,6 @@ fn supervise_gateway_child(mut child: std::process::Child, path: PathBuf, interv
 			return;
 		}
 	}
-}
-
-/// Debug builds: the dev gateway has its own socket but shares the main
-/// agent lock (`~/.pizza/main/.lock`) and channel adapters (bot tokens) with
-/// the production gateway. With both alive, the dev gateway's main agent
-/// dies on the lock ("Agent process stopped") and bots fight (Telegram 409).
-/// Dev takes over: let busy production agents finish (up to 30s), then stop
-/// the production gateway gracefully.
-fn take_over_from_production_gateway(dev_socket: &PathBuf) {
-	let Some(prod) = socket_path_for(false) else {
-		return;
-	};
-	if &prod == dev_socket || !gateway_ready(&prod) {
-		return;
-	}
-	crate::bridge::log_file(&format!(
-		"take_over_from_production_gateway: stopping production gateway at {}",
-		prod.display()
-	));
-	let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-	while busy_agent_count(&prod).unwrap_or(0) > 0 && std::time::Instant::now() < deadline {
-		std::thread::sleep(std::time::Duration::from_secs(1));
-	}
-	let stopped = shutdown_gateway(&prod);
-	crate::bridge::log_file(&format!(
-		"take_over_from_production_gateway: stopped={}",
-		stopped
-	));
 }
 
 /// Parsed `status_result` from the gateway — just the fields we need for the
@@ -1241,7 +1305,7 @@ mod _unsupported_stub {
 		_socket_path: &PathBuf,
 		_pizza_cmd: (&str, &[String]),
 		_expected_version: Option<&str>,
-	) -> Result<(), String> {
+	) -> Result<PathBuf, String> {
 		Err("gateway channel is not implemented on this platform".into())
 	}
 }

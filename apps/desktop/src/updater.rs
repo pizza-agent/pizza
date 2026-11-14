@@ -113,7 +113,7 @@ async fn download_and_install(app: &AppHandle) -> Result<(), String> {
 /// Wait until no gateway agent is busy, then stop the gateway and every
 /// desktop-owned sidecar. New spawns are blocked from here on.
 fn stop_agent_runtime(app: &AppHandle) -> Result<(), String> {
-	let socket = gateway_channel::gateway_socket_path();
+	let socket = gateway_channel::current_gateway_socket();
 	if let Some(socket) = &socket {
 		while let Some(busy) = gateway_channel::busy_agent_count(socket).filter(|&n| n > 0) {
 			emit(app, UpdateProgress::WaitingForAgents { busy });

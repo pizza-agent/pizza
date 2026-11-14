@@ -14,6 +14,7 @@
  *  - a best-effort single-instance lockfile
  */
 
+import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -382,7 +383,19 @@ export interface MainAgentLock {
 	release(): void;
 }
 
-function isProcessAlive(pid: number): boolean {
+/**
+ * Contents of a pid lockfile (JSON). Callers may attach extra metadata —
+ * e.g. which gateway owns a main agent — so a conflicting process can tell
+ * the user (and the desktop) WHO holds the lock and where to reach it.
+ */
+export interface PidLockInfo {
+	pid: number;
+	/** Epoch ms when the owning process started — detects PID reuse. */
+	startedAt: number;
+	[key: string]: unknown;
+}
+
+export function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -392,46 +405,90 @@ function isProcessAlive(pid: number): boolean {
 	}
 }
 
+function processStartedAt(): number {
+	return Math.round(Date.now() - process.uptime() * 1000);
+}
+
+/** `ps etime` has 1s resolution and `startedAt` derives from process.uptime(). */
+const START_TIME_TOLERANCE_MS = 15_000;
+
+/** OS-reported start time of `pid` (epoch ms), or undefined if unknown. */
+export function osProcessStartedAt(pid: number): number | undefined {
+	if (process.platform === "win32") return undefined;
+	try {
+		const out = execFileSync("ps", ["-o", "etime=", "-p", String(pid)], {
+			encoding: "utf-8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 2000,
+		}).trim();
+		// [[dd-]hh:]mm:ss
+		const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(out);
+		if (!m) return undefined;
+		const seconds = ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]);
+		return Date.now() - seconds * 1000;
+	} catch {
+		return undefined;
+	}
+}
+
+export function readPidLock(lockPath: string): PidLockInfo | null {
+	try {
+		const parsed = JSON.parse(readFileSync(lockPath, "utf-8")) as PidLockInfo;
+		return Number.isInteger(parsed.pid) && typeof parsed.startedAt === "number" ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
 /**
- * Core single-writer lockfile: write our pid to `lockPath` (exclusive create),
- * reclaiming it if the recorded owner is no longer alive. The returned handle
- * releases on call, on `exit`, and on SIGINT/SIGTERM/SIGHUP — so a process
- * killed by a signal (e.g. the Bun --compile sidecar) still frees the lock.
+ * True if the lock's owner is still the process that wrote it. A bare
+ * liveness check is not enough: after a crash or reboot the recorded pid can
+ * be reused by an unrelated process, which would otherwise hold the lock
+ * forever. The live pid must also have started at the recorded time.
+ */
+export function isPidLockOwnerAlive(info: PidLockInfo): boolean {
+	if (!isProcessAlive(info.pid)) return false;
+	const actual = osProcessStartedAt(info.pid);
+	return actual === undefined || Math.abs(actual - info.startedAt) <= START_TIME_TOLERANCE_MS;
+}
+
+const LOCK_RELEASE_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/**
+ * Core single-writer lockfile: write our pid (plus `meta`) to `lockPath`
+ * (exclusive create), reclaiming it if the recorded owner is no longer alive
+ * — or, via `reclaimLive`, if the caller decides a live owner may be
+ * superseded. The returned handle releases on call, on `exit`, and on
+ * SIGINT/SIGTERM/SIGHUP — so a process killed by a signal (e.g. the Bun
+ * --compile sidecar) still frees the lock.
  *
  * Returns null if another LIVE process holds it. Best-effort: a permission
- * error or an unreadable lock gives up (null) rather than throwing.
+ * error or a missing directory gives up (null) rather than throwing.
  *
- * Shared by {@link acquireMainLock} (one main agent) and
- * {@link acquireWorkspaceLock} (one active driver per workspace).
+ * Shared by {@link acquireMainLock} (one main agent),
+ * {@link acquireWorkspaceLock} (one active driver per workspace) and the
+ * gateway lock (one gateway per agent dir).
  */
-export function acquirePidLock(lockPath: string): MainAgentLock | null {
-	// Fast path: atomically create the lock file. If it does not exist yet,
-	// `wx` succeeds and we own the lock.
+export function acquirePidLock(
+	lockPath: string,
+	meta: Record<string, unknown> = {},
+	options: { reclaimLive?: (owner: PidLockInfo) => boolean } = {},
+): MainAgentLock | null {
+	const content = JSON.stringify({ ...meta, pid: process.pid, startedAt: processStartedAt() });
 	try {
-		writeFileSync(lockPath, String(process.pid), { encoding: "utf-8", flag: "wx" });
+		writeFileSync(lockPath, content, { encoding: "utf-8", flag: "wx" });
 	} catch (error) {
-		// EEXIST → a lock file is present; fall through to the reclaim path.
-		// Anything else (e.g. permission error) → give up.
 		if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
 			return null;
 		}
-	}
-
-	// Reclaim path: a lock file already exists. Check whether its owner is
-	// still alive; if not, overwrite it and take ownership.
-	if (existsSync(lockPath)) {
-		let ownerPid = NaN;
-		try {
-			ownerPid = Number.parseInt(readFileSync(lockPath, "utf-8").trim(), 10);
-		} catch {
-			ownerPid = NaN;
-		}
-		if (!Number.isNaN(ownerPid) && ownerPid !== process.pid && isProcessAlive(ownerPid)) {
+		// A lock file is present. Reclaim it if its owner is dead, unreadable,
+		// ourselves (re-entrant call), or explicitly superseded by the caller.
+		const owner = readPidLock(lockPath);
+		if (owner && owner.pid !== process.pid && isPidLockOwnerAlive(owner) && !options.reclaimLive?.(owner)) {
 			return null;
 		}
-		// Owner is dead or it's our own pid (re-entrant call) — reclaim.
 		try {
-			writeFileSync(lockPath, String(process.pid), "utf-8");
+			writeFileSync(lockPath, content, "utf-8");
 		} catch {
 			return null;
 		}
@@ -441,29 +498,21 @@ export function acquirePidLock(lockPath: string): MainAgentLock | null {
 	const release = (): void => {
 		if (released) return;
 		released = true;
-		try {
-			const current = Number.parseInt(readFileSync(lockPath, "utf-8").trim(), 10);
-			if (current === process.pid) {
-				rmSync(lockPath, { force: true });
-			}
-		} catch {
-			// ignore
+		process.off("exit", release);
+		for (const signal of LOCK_RELEASE_SIGNALS) process.off(signal, release);
+		if (readPidLock(lockPath)?.pid === process.pid) {
+			rmSync(lockPath, { force: true });
 		}
 	};
 
-	const onExit = (): void => release();
-	process.once("exit", onExit);
-
+	process.once("exit", release);
 	// Belt-and-suspenders: in some runtimes (notably the Bun --compile binary
 	// used as the desktop sidecar) `process.on("exit")` can be skipped or
 	// fired late if the process is killed by a signal. Hook SIGINT/SIGTERM/
 	// SIGHUP explicitly so the lock is released promptly and a fresh process
 	// can take over without hitting a stale-lock path. The `release()`
 	// guard makes the redundant exit-path call a no-op.
-	const onSignal = (): void => release();
-	process.once("SIGINT", onSignal);
-	process.once("SIGTERM", onSignal);
-	process.once("SIGHUP", onSignal);
+	for (const signal of LOCK_RELEASE_SIGNALS) process.once(signal, release);
 
 	return { release };
 }
@@ -473,12 +522,17 @@ export function acquirePidLock(lockPath: string): MainAgentLock | null {
  * Returns a lock handle on success, or null if another live instance holds it.
  * A stale lock (owning process no longer alive) is reclaimed automatically.
  *
- * The create path uses `flag: "wx"` (exclusive create) to avoid the TOCTOU
- * race between `existsSync` and `writeFileSync`.
+ * `meta` is recorded in the lockfile — the main agent stores the gateway
+ * that spawned it, so a conflicting client can stop or reuse that gateway
+ * instead of killing a process the gateway would immediately respawn.
  */
-export function acquireMainLock(mainDir: string): MainAgentLock | null {
+export function acquireMainLock(mainDir: string, meta: Record<string, unknown> = {}): MainAgentLock | null {
 	mkdirSync(mainDir, { recursive: true });
-	return acquirePidLock(join(mainDir, ".lock"));
+	return acquirePidLock(getMainLockPath(mainDir), meta);
+}
+
+export function getMainLockPath(mainDir: string): string {
+	return join(mainDir, ".lock");
 }
 
 /**
@@ -496,3 +550,4 @@ export function acquireMainLock(mainDir: string): MainAgentLock | null {
 export function acquireWorkspaceLock(workspaceDir: string): MainAgentLock | null {
 	return acquirePidLock(join(workspaceDir, ".lock"));
 }
+

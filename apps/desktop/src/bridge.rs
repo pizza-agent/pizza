@@ -1,4 +1,5 @@
 use crate::gateway_channel;
+use crate::pid_lock;
 use crate::remote;
 use crate::remote_deploy;
 use base64::Engine;
@@ -868,106 +869,16 @@ fn main_agent_lock_path() -> Option<PathBuf> {
 	persistent_chat_cwd().map(|cwd| PathBuf::from(cwd).join(".lock"))
 }
 
-fn read_main_agent_lock_pid() -> Option<(PathBuf, u32)> {
+fn read_main_agent_lock() -> Option<(PathBuf, pid_lock::LockInfo)> {
 	let lock_path = main_agent_lock_path()?;
-	let raw = std::fs::read_to_string(&lock_path).ok()?;
-	let pid = raw.trim().parse::<u32>().ok()?;
-	Some((lock_path, pid))
-}
-
-#[cfg(unix)]
-fn is_process_alive(pid: u32) -> bool {
-	Command::new("kill")
-		.args(["-0", &pid.to_string()])
-		.status()
-		.map(|status| status.success())
-		.unwrap_or(false)
-}
-
-#[cfg(windows)]
-fn is_process_alive(pid: u32) -> bool {
-	// `tasklist /FI "PID eq <pid>" /FO CSV /NH` prints one CSV line per
-	// matching process, or "INFO: No tasks..." when the pid is dead.
-	Command::new("tasklist")
-		.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-		.output()
-		.map(|out| {
-			String::from_utf8_lossy(&out.stdout).lines().any(|line| {
-				line.split(',')
-					.nth(1)
-					.map(|field| field.trim_matches('"') == pid.to_string())
-					.unwrap_or(false)
-			})
-		})
-		.unwrap_or(false)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn is_process_alive(_pid: u32) -> bool {
-	false
-}
-
-#[cfg(unix)]
-fn process_command(pid: u32) -> Option<String> {
-	let pid_arg = pid.to_string();
-	let output = Command::new("ps")
-		.args(["-p", &pid_arg, "-o", "command="])
-		.output()
-		.ok()?;
-	if !output.status.success() {
-		return None;
-	}
-	let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
-	if command.is_empty() {
-		None
-	} else {
-		Some(command)
-	}
-}
-
-#[cfg(windows)]
-fn process_command(pid: u32) -> Option<String> {
-	let output = Command::new("powershell")
-		.args([
-			"-NoProfile",
-			"-Command",
-			&format!(
-				"(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
-				pid
-			),
-		])
-		.output()
-		.ok()?;
-	if !output.status.success() {
-		return None;
-	}
-	let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
-	if command.is_empty() {
-		None
-	} else {
-		Some(command)
-	}
-}
-
-#[cfg(not(any(unix, windows)))]
-fn process_command(_pid: u32) -> Option<String> {
-	None
-}
-
-fn is_probably_pizza_main_agent(command: &str) -> bool {
-	let lower = command.to_ascii_lowercase();
-	command.contains("--main")
-		&& (lower.contains("pizza")
-			|| lower.contains("src/cli")
-			|| lower.contains("src/main")
-			|| lower.contains("dist/cli")
-			|| lower.contains("dist/main"))
+	let info = pid_lock::read_lock(&lock_path)?;
+	Some((lock_path, info))
 }
 
 fn current_main_agent_status() -> MainAgentStatus {
 	let lock_path = main_agent_lock_path().unwrap_or_else(|| PathBuf::from("~/.pizza/main/.lock"));
 	let lock_path_str = lock_path.to_string_lossy().to_string();
-	let Some((_, pid)) = read_main_agent_lock_pid() else {
+	let Some((_, info)) = read_main_agent_lock() else {
 		return MainAgentStatus {
 			running: false,
 			pid: None,
@@ -975,11 +886,15 @@ fn current_main_agent_status() -> MainAgentStatus {
 			lock_path: lock_path_str,
 		};
 	};
-	let running = is_process_alive(pid);
-	let command = if running { process_command(pid) } else { None };
+	let running = pid_lock::owner_alive(&info);
+	let command = if running {
+		pid_lock::process_command(info.pid)
+	} else {
+		None
+	};
 	MainAgentStatus {
 		running,
-		pid: Some(pid),
+		pid: Some(info.pid),
 		command,
 		lock_path: lock_path_str,
 	}
@@ -990,28 +905,57 @@ pub fn main_agent_status() -> Result<MainAgentStatus, String> {
 	Ok(current_main_agent_status())
 }
 
+/// Wait up to ~3s for `pid` to exit, then drop its lock if it left one.
+async fn wait_for_main_agent_exit(lock_path: &Path, pid: u32) -> bool {
+	for _ in 0..30 {
+		if !pid_lock::is_process_alive(pid) {
+			if pid_lock::read_lock(lock_path).is_some_and(|info| info.pid == pid) {
+				let _ = std::fs::remove_file(lock_path);
+			}
+			return true;
+		}
+		tokio::time::sleep(Duration::from_millis(100)).await;
+	}
+	false
+}
+
 #[tauri::command]
 pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
-	let Some((lock_path, pid)) = read_main_agent_lock_pid() else {
+	let Some((lock_path, info)) = read_main_agent_lock() else {
 		return Ok(current_main_agent_status());
 	};
-	if !is_process_alive(pid) {
+	let pid = info.pid;
+	if !pid_lock::owner_alive(&info) {
+		// Dead owner, or its pid now belongs to an unrelated process.
 		let _ = std::fs::remove_file(&lock_path);
 		return Ok(current_main_agent_status());
 	}
-	let command = process_command(pid).unwrap_or_default();
-	if !is_probably_pizza_main_agent(&command) {
-		return Err(format!(
-			"The process referenced by the lock file does not look like the Pizza main agent; aborting. PID: {}, command: {}",
-			pid,
-			if command.is_empty() {
-				"<unknown>"
-			} else {
-				&command
+
+	// A gateway respawns its main agent right after it is killed (scheduler
+	// guard, next attach) and re-takes the lock. Stop that whole gateway
+	// instead — unless it is the gateway this desktop is using.
+	if let Some(owner_gateway) = info.str_field("gatewaySocket").map(PathBuf::from) {
+		if Some(&owner_gateway) != gateway_channel::current_gateway_socket().as_ref() {
+			let socket = owner_gateway.clone();
+			let stopped = tauri::async_runtime::spawn_blocking(move || {
+				gateway_channel::stop_gateway(&socket)
+			})
+			.await
+			.unwrap_or(false);
+			log_file(&format!(
+				"stop_main_agent: stopped owning gateway {} (main agent pid {}): {}",
+				owner_gateway.display(),
+				pid,
+				stopped
+			));
+			if stopped && wait_for_main_agent_exit(&lock_path, pid).await {
+				return Ok(current_main_agent_status());
 			}
-		));
+		}
 	}
 
+	// owner_alive() matched the recorded start time, so `pid` is provably the
+	// main agent that wrote the lock (not a reused pid) — safe to signal.
 	#[cfg(unix)]
 	let stop_result = Command::new("kill")
 		.args(["-TERM", &pid.to_string()])
@@ -1035,17 +979,8 @@ pub async fn stop_main_agent() -> Result<MainAgentStatus, String> {
 		));
 	}
 
-	for _ in 0..30 {
-		if !is_process_alive(pid) {
-			if std::fs::read_to_string(&lock_path)
-				.map(|raw| raw.trim() == pid.to_string())
-				.unwrap_or(false)
-			{
-				let _ = std::fs::remove_file(&lock_path);
-			}
-			return Ok(current_main_agent_status());
-		}
-		tokio::time::sleep(Duration::from_millis(100)).await;
+	if wait_for_main_agent_exit(&lock_path, pid).await {
+		return Ok(current_main_agent_status());
 	}
 
 	Err(format!(
@@ -2792,7 +2727,7 @@ pub async fn channel_op(
 		.ok_or_else(|| "HOME not set; cannot resolve gateway socket".to_string())?;
 	let (program, args) = gateway_command(resolve_pizza_command(&app));
 	tauri::async_runtime::spawn_blocking(move || {
-		gateway_channel::ensure_gateway(
+		let socket = gateway_channel::ensure_gateway(
 			&socket,
 			(&program, &args),
 			Some(env!("CARGO_PKG_VERSION")),
@@ -2986,7 +2921,7 @@ async fn init_sidecar_via_gateway(
 	// ensure_gateway, connect and attach all block (attach waits up to 15s
 	// for attach_ok): keep them off the async runtime's worker threads.
 	let (channel, resolved_cwd) = tauri::async_runtime::spawn_blocking(move || {
-		gateway_channel::ensure_gateway(
+		let socket = gateway_channel::ensure_gateway(
 			&socket,
 			(&program, &args),
 			Some(env!("CARGO_PKG_VERSION")),
@@ -3536,7 +3471,7 @@ pub async fn delete_workspace(
 	// sidecars alone leaves the gateway owner alive and able to recreate metadata.
 	if let Some(ref cwd) = cwd {
 		let existing = lock_ok(&state.channels).get(cwd).cloned();
-		let socket = gateway_channel::gateway_socket_path();
+		let socket = gateway_channel::current_gateway_socket();
 		let target = cwd.clone();
 		tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
 			if let Some(channel) = existing {

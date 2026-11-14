@@ -28,6 +28,8 @@ import { adapterProxyEnv, ChannelSupervisor } from "./channel-supervisor.js";
 import { listKnownWorkspaces } from "../../src/core/event-store/workspace.js";
 import { prefetchLoginShellPath } from "../../src/utils/login-shell-path.js";
 import { normalizeCwd, scheduledCwdsOnDisk } from "./scheduler-guard.js";
+import { acquireGatewayLock, readGatewayOwner, type GatewayLockInfo } from "./gateway-lock.js";
+import { getMainLockPath, isPidLockOwnerAlive, readPidLock, type MainAgentLock } from "../../src/core/agent/main-agent.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import {
 	type GatewayResponse,
@@ -223,6 +225,13 @@ export interface GatewayServerEvents {
 	 * hung owner exits via its `displaced` watchdog once its loop recovers.
 	 */
 	takeover: (socketPath: string) => void;
+	/**
+	 * A live gateway on another socket already owns this agent dir (see
+	 * gateway-lock.ts). This instance does not serve; clients should attach to
+	 * the owner's socket instead. Emitted instead of `listening`, or right
+	 * after it when the lock race was lost.
+	 */
+	conflict: (owner: GatewayLockInfo) => void;
 	/** An unexpected error. */
 	error: (error: Error) => void;
 }
@@ -366,10 +375,16 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		// main-agent conversation auto-rejected every gated tool call.
 		// Forward the resolved proxy (+ NO_PROXY bypasses) so MCP HTTP clients
 		// in the agent match channel adapters.
-		const proxyEnv = adapterProxyEnv(agentDir);
-		return interactive
-			? { ...proxyEnv, PIZZA_AGENT_DIR: agentDir }
-			: { ...proxyEnv, PIZZA_AGENT_DIR: agentDir, PIZZA_HEADLESS: "1" };
+		// PIZZA_GATEWAY_SOCKET/PID: the agent's `_tell` routes back through
+		// THIS gateway, and the main agent records it as the lock owner so a
+		// conflicting client knows which gateway to reuse or stop.
+		const env = {
+			...adapterProxyEnv(agentDir),
+			PIZZA_AGENT_DIR: agentDir,
+			PIZZA_GATEWAY_SOCKET: socketPath,
+			PIZZA_GATEWAY_PID: String(process.pid),
+		};
+		return interactive ? env : { ...env, PIZZA_HEADLESS: "1" };
 	}
 
 	/** In-flight spawns keyed by cwd — dedupes concurrent getOrCreateAgent
@@ -411,9 +426,25 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 	function assertSpawnAllowed(cwd: string): void {
 		const crash = spawnCrashes.get(cwd);
 		if (!crash || Date.now() >= crash.nextAllowedAt) return;
+		// The main-lock holder is gone (e.g. the user stopped it from the
+		// conflict screen): retry now rather than making them wait out the
+		// backoff for a cause that no longer exists.
+		if (isMainLockConflict(cwd, crash.reason) && !mainLockHeld()) {
+			spawnCrashes.delete(cwd);
+			return;
+		}
 		throw new Error(
 			`agent for ${cwd} keeps exiting right after spawn (attempt ${crash.count + 1} allowed in ~${Math.ceil((crash.nextAllowedAt - Date.now()) / 1000)}s): ${crash.reason}`,
 		);
+	}
+
+	function isMainLockConflict(cwd: string, reason: string): boolean {
+		return mainDir !== undefined && normalizeCwd(cwd) === mainDir && reason.includes("Another main agent instance is already running");
+	}
+
+	function mainLockHeld(): boolean {
+		const owner = mainDir === undefined ? null : readPidLock(getMainLockPath(mainDir));
+		return owner !== null && isPidLockOwnerAlive(owner);
 	}
 
 	/** Find or spawn the RpcClient for `cwd`. */
@@ -1335,7 +1366,7 @@ function nextMessageId(): string {
 	 *  - `unresponsive`: the kernel accepts on its behalf but its event loop
 	 *    has not answered for `replyTimeoutMs` — a hung daemon.
 	 */
-	const probeSocketOwner = (replyTimeoutMs: number): Promise<"absent" | "alive" | "unresponsive"> =>
+	const probeSocketOwner = (replyTimeoutMs: number, target = socketPath): Promise<"absent" | "alive" | "unresponsive"> =>
 		new Promise((resolve) => {
 			let settled = false;
 			const finish = (state: "absent" | "alive" | "unresponsive") => {
@@ -1346,7 +1377,7 @@ function nextMessageId(): string {
 				resolve(state);
 			};
 			let timer = setTimeout(() => finish("absent"), 3000);
-			const socket = connect(socketPath);
+			const socket = connect(target);
 			socket.on("connect", () => {
 				if (replyTimeoutMs <= 0) return finish("alive");
 				clearTimeout(timer);
@@ -1371,9 +1402,24 @@ function nextMessageId(): string {
 	const reportDuplicate = (): void => {
 		emitter.emit("duplicate", socketPath as never);
 	};
+	let gatewayLock: MainAgentLock | null = null;
+	/** A live gateway on a different socket that owns this agent dir. */
+	const foreignOwner = (): GatewayLockInfo | null => {
+		const owner = readGatewayOwner(agentDir);
+		return owner && owner.pid !== process.pid && owner.socket !== socketPath ? owner : null;
+	};
 
 	async function start(): Promise<void> {
 		if (server) return;
+		// One gateway per agent dir: a second one would spawn its own main
+		// agent (dying on the main lock) and duplicate every channel bot. Only
+		// an owner that actually answers counts — a hung one is superseded.
+		const owner = foreignOwner();
+		if (owner && (await probeSocketOwner(5_000, owner.socket)) === "alive") {
+			emitter.emit("conflict", owner as never);
+			return;
+		}
+		const unresponsiveOwnerSocket = owner?.socket;
 		// Warm the login-shell PATH in the background so the first agent
 		// spawn (spawnAgent awaits it) rarely has to wait.
 		if (!options.createAgent) void prefetchLoginShellPath();
@@ -1458,6 +1504,14 @@ function nextMessageId(): string {
 			reportDuplicate();
 			return;
 		}
+		gatewayLock = acquireGatewayLock(agentDir, socketPath, gatewayVersion, unresponsiveOwnerSocket);
+		// null without a foreign owner = unwritable lock (best-effort, serve anyway).
+		const raceWinner = gatewayLock ? null : foreignOwner();
+		if (raceWinner) {
+			emitter.emit("conflict", raceWinner as never);
+			await stop();
+			return;
+		}
 		startHealthCheck();
 		startSchedulerGuard();
 		startOwnershipWatch();
@@ -1507,6 +1561,8 @@ function nextMessageId(): string {
 				/* already gone */
 			}
 		}
+		gatewayLock?.release();
+		gatewayLock = null;
 	}
 
 	function socketInode(): string | undefined {
