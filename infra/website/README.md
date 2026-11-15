@@ -50,7 +50,7 @@ Illustration prompt:
 - Verified the mobile menu, FAQ expansion, clipboard feedback, real video playback, dialog positioning, Escape-to-close, and focus return.
 - Body/CTA contrast ratios: light body 5.59, light CTA 5.20, dark body 7.97, dark CTA 7.46.
 - Website build and 48 OAuth/static-route regression tests passed. The Google OAuth chain also passed the existing real workerd/SQLite runtime fixture test.
-- Deployed Worker version `d41042a6-9fb6-4a14-9806-1eaf6dea8830`. Both language pages, scripts, styles, images and video return 200. All three installer URLs return 200. Unknown pages return 404, website POST returns 405, and OAuth metadata/readiness still return the expected JSON.
+- Deployed Worker version `21513613-a045-4bf2-b3df-a27131f789da`. Both language pages, scripts, styles, images and video return 200. All three installer URLs return 200. Unknown pages return 404, website POST returns 405, and OAuth metadata/readiness still return the expected JSON.
 - Google PageSpeed's Lighthouse API was attempted but returned quota-exceeded (429); no Lighthouse score is claimed. Production dependencies audit: zero reported vulnerabilities.
 
 ## Publishing a native desktop recording
@@ -81,16 +81,27 @@ Media migration validation (2026-11-15): the real workerd/R2 fixture passed full
 
 ## Current desktop demo (2026-11-15)
 
-- Source: Pizza **0.5.5 development build**, commit `8a07c8df59ff4e4df450d39d52ede9957be92543`, native macOS app `ai.pizza.gui.dev`. The recording is a real desktop capture made with macOS `screencapture`, with actual clicks and task execution. No headless browser, synthetic interface or injected assistant responses were used.
-- Public video: https://pizza.hertzbeat.com/media/demos/pizza-desktop-2026-11-15-8a07c8d.mp4
-- Poster: https://pizza.hertzbeat.com/media/demos/pizza-desktop-2026-11-15-8a07c8d.webp (frame at 23 seconds of the published video).
-- Format: 90 seconds, 1440 × 960, 24 fps, H.264/yuv420p, silent MP4 with fast-start metadata. Video size: 1,183,659 bytes. Poster size: 53,320 bytes.
-- Video SHA-256: `99608dc491e83a4f93ad703c7f09094763a872edd950fe57486040bd30d8fbfe`.
-- Poster SHA-256: `653d23f4aee07f65c79721f6eeac2f6fd7ed685f7270096332494a3d242b30d0`.
-- The demo workspace contains a fictional public launch brief. Pizza actually reads `brief.md`, creates `launch-checklist.md` (8 tasks across 3 priorities), and summarizes the result. The file preview and mutation timeline display that real output.
-- Other scenes show the Google app catalog, the connected Drive adapter's 11 tool definitions, remote HTTP/local stdio custom MCP setup, and connected Notion status. No fresh account login or provider data read is performed in these scenes.
-- Editing: crop only the operating-system capture padding (2400 × 1600 at x=112, y=76), scale to 1440 × 960, and keep the source intervals 22–52s, 54–70s, 122–142s, 143–158s, and 209–218s in order. Pauses and private workspace navigation are excluded; the actual model response is shown at its original speed. The 4-minute raw capture and all encoded media remain outside the repository.
-- Published-video chapters: 0:00 real task and file output; 0:30 event timeline; 0:46 Google apps and Drive tools; 1:06 custom MCP transport configuration; 1:21 connected Notion.
-- Native visual verification also covered all three setup forms: remote MCP HTTP, local MCP stdio, and built-in Google app settings (which hide server transport/URL fields). The Google settings check was performed after the recorded interval.
+The current recording tells one 35-second story: **give the personal assistant a goal → workspaces execute → review the deliveries with the assistant**. It replaces the previous 90-second UI tour. Settings, MCP schemas and event-log inspection are excluded from this cut.
 
-Current-demo verification: the entire published MP4 decoded without errors (2,160 frames). Remote video/poster SHA-256 values match the local exports. The live browser reported a 90-second duration, readyState 4 and no media error, and seeking reached the middle of the video successfully. The responsive player uses the recording's 3:2 dimensions; desktop and 390px mobile checks passed without letterboxing or horizontal overflow. The temporary viewport override was reset.
+- Source: Pizza **0.5.5 development build**, commit `0d7d4ab35236b7b1662edf538f242323f4ac25ef`, native macOS app `ai.pizza.gui.dev`. All task input, delegation, workspace navigation, file modifications and replies are real desktop operations. No simulated interface or injected assistant response is used.
+- Video: https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.mp4
+- Poster: https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.webp (frame at 28 seconds of the published video).
+- Format: **35 seconds**, 1440 × 960, 24 fps, H.264/yuv420p, silent fast-start MP4. Video size: **875,949 bytes**. Poster size: 77,312 bytes.
+- Video SHA-256: `eb9bdaa16b8a80fcb884e2032375b28f730744ba020abf2150baebc8ae99a4d3`.
+- Poster SHA-256: `b473cc96eaaa41279b0f018c2ca262ec13267185fcd4fd571f19ebc6abfdd40a`.
+- Public demo task: ask the personal assistant to prepare a Pizza launch, delegate homepage copy to the `官网改版` workspace, and improve onboarding in `产品文档`. The real agents update `首页文案.md` and `快速开始.md`; the gateway relays their replies back, and the personal assistant actually produces the final combined summary. Both agents ran from the same initial request without manually prompting each workspace.
+- Both fixture documents contain fictional public demonstration material. The video shows the website file preview and the documentation workspace's actual completion reply.
+- Editing: remove OS capture padding (crop 2400 × 1600 at x=112, y=76), scale to 1440 × 960, and overlay chapter labels in the toolbar area. Use the source intervals below, in order. The 4× segments are clearly labeled **4× 快进**; all goal/result scenes retain their original speed. Pauses and irrelevant panel inspection are cut. Raw recordings and exports remain outside the Git checkout.
+
+| Published interval | Source interval | Speed | Focus |
+| --- | --- | --- | --- |
+| 0–7s | 4–11s | 1× | Give the goal to the personal assistant |
+| 7–10s | 11–23s | 4× | Assistant delegates the tasks |
+| 10–13s | 23–35s | 4× | Workspace executes actual file edits |
+| 13–21s | 41–49s | 1× | Inspect the website workspace's real output |
+| 21–25s | 53–57s | 1× | Switch to the documentation workspace's result |
+| 25–35s | 146–156s | 1× | Return to the assistant's combined delivery summary |
+
+The previous long recording remains an immutable R2 archive, without active website or README links. No demo video binaries are included in the repository.
+
+Current-cut verification: all 840 video frames decode without errors; the MP4 is exactly 35.00 seconds and fast-start metadata precedes video data. Remote video/poster hashes match the exports, and seeking returns 206. In the live browser, the new URL played with duration 35, readyState 4 and no media error; progress-bar navigation reached the workspace scene and the assistant summary. English and Chinese pages point to the new media.

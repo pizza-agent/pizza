@@ -1,14 +1,68 @@
 {
-  "video": "https://pizza.hertzbeat.com/media/demos/pizza-desktop-2026-11-15-8a07c8d.mp4",
-  "poster": "https://pizza.hertzbeat.com/media/demos/pizza-desktop-2026-11-15-8a07c8d.webp",
-  "recording": "Native macOS capture of Pizza Dev; pauses and private workspace navigation removed",
+  "video": "https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.mp4",
+  "poster": "https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.webp",
+  "recording": "Native Pizza assistant delegates real tasks to two workspaces and receives their actual results; 4x segments are labeled",
   "version": "0.5.5 (development)",
-  "sourceCommit": "8a07c8df59ff4e4df450d39d52ede9957be92543",
+  "sourceCommit": "0d7d4ab35236b7b1662edf538f242323f4ac25ef",
   "recordedAt": "2026-11-15",
   "width": 1440,
   "height": 960,
-  "durationSeconds": 90,
-  "bytes": 1183659,
-  "sha256": "99608dc491e83a4f93ad703c7f09094763a872edd950fe57486040bd30d8fbfe",
-  "posterSha256": "653d23f4aee07f65c79721f6eeac2f6fd7ed685f7270096332494a3d242b30d0"
+  "durationSeconds": 35,
+  "bytes": 875949,
+  "sha256": "eb9bdaa16b8a80fcb884e2032375b28f730744ba020abf2150baebc8ae99a4d3",
+  "posterSha256": "b473cc96eaaa41279b0f018c2ca262ec13267185fcd4fd571f19ebc6abfdd40a",
+  "chapters": [
+    {
+      "start": 0,
+      "title": "Personal assistant: give a goal"
+    },
+    {
+      "start": 7,
+      "title": "Delegate and execute (4x)"
+    },
+    {
+      "start": 13,
+      "title": "Website workspace: inspect the real file"
+    },
+    {
+      "start": 21,
+      "title": "Documentation workspace: see the second result"
+    },
+    {
+      "start": 25,
+      "title": "Personal assistant: review both deliveries"
+    }
+  ],
+  "edits": [
+    {
+      "sourceStart": 4,
+      "sourceEnd": 11,
+      "speed": 1
+    },
+    {
+      "sourceStart": 11,
+      "sourceEnd": 23,
+      "speed": 4
+    },
+    {
+      "sourceStart": 23,
+      "sourceEnd": 35,
+      "speed": 4
+    },
+    {
+      "sourceStart": 41,
+      "sourceEnd": 49,
+      "speed": 1
+    },
+    {
+      "sourceStart": 53,
+      "sourceEnd": 57,
+      "speed": 1
+    },
+    {
+      "sourceStart": 146,
+      "sourceEnd": 156,
+      "speed": 1
+    }
+  ]
 }
