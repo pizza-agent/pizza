@@ -1111,6 +1111,7 @@
       "title": "关于",
       "tagline": "开源的事件驱动 Agent，没有 while true —— 每一次对话、工具调用和文件编辑都是不可变事件日志中的一条记录。",
       "version": "版本",
+      "website": "官网",
       "repository": "GitHub 仓库",
       "license": "开源许可",
       "updateAvailable": "发现新版本 {{version}}",

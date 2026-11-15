@@ -52,7 +52,7 @@ function detectNodeVersion(): string {
 /**
  * Check if the current directory is a git repository
  */
-function isGitRepository(cwd: string): boolean {
+export function isGitRepository(cwd: string): boolean {
 	try {
 		const gitDir = existsSync(cwd) ? cwd : process.cwd();
 		execSync("git rev-parse --is-inside-work-tree", { cwd: gitDir, stdio: "ignore", windowsHide: true });

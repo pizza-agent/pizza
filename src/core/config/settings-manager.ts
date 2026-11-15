@@ -141,6 +141,9 @@ export interface Settings {
 	// interactive startup (cached 24h). Default: true.
 	autoUpdateCheck?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
+	// Sign commits Pizza authors with a `Co-Authored-By: pizza-agent[bot]`
+	// trailer (Cursor/Claude Code/Codex-style attribution). Default: true.
+	gitCommitCoAuthor?: boolean;
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
@@ -1009,6 +1012,16 @@ export class SettingsManager {
 
 	getShellCommandPrefix(): string | undefined {
 		return this.settings.shellCommandPrefix;
+	}
+
+	getGitCommitCoAuthor(): boolean {
+		return this.settings.gitCommitCoAuthor ?? true;
+	}
+
+	setGitCommitCoAuthor(enabled: boolean): void {
+		this.globalSettings.gitCommitCoAuthor = enabled;
+		this.markModified("gitCommitCoAuthor");
+		this.save();
 	}
 
 	setShellCommandPrefix(prefix: string | undefined): void {

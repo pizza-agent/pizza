@@ -44,7 +44,7 @@ import type { RpcSessionState } from "@/lib/types";
 import { appUpdateProgressLabel, startAppUpdate, useAppUpdate } from "@/lib/app-update";
 import { PluginsContent } from "@/views/PluginsView";
 import { PetSettingsPage } from "@/components/PetSettingsPage";
-import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Download, Github, Info, SlidersHorizontal, Clock, Puzzle, Search, PawPrint } from "lucide-react";
+import { Key, Trash2, Eye, EyeOff, Plus, ArrowLeft, ArrowRight, ChevronRight, ChevronDown, Download, Github, Globe, Info, SlidersHorizontal, Clock, Puzzle, Search, PawPrint } from "lucide-react";
 import { setTheme, useThemeId, refreshCustomThemes, type CustomTheme } from "@/lib/theme";
 import {
 	SUPPORTED_LANGUAGES,
@@ -355,6 +355,7 @@ function SchedulerPage() {
 }
 
 const PIZZA_REPO_URL = "https://github.com/pizza-agent/pizza";
+const PIZZA_WEBSITE_URL = "https://pizza.hertzbeat.com/";
 
 function AboutPage() {
 	const { t } = useTranslation();
@@ -379,6 +380,16 @@ function AboutPage() {
 				<span className="shrink-0 font-mono text-[13px] text-muted">
 					v{updateInfo?.currentVersion ?? "—"}
 				</span>
+			</SettingsRow>
+			<SettingsRow title={t("settings.about.website")}>
+				<button
+					type="button"
+					onClick={() => void openExternal(PIZZA_WEBSITE_URL)}
+					className="flex items-center gap-1.5 text-[13px] text-link hover:underline"
+				>
+					<Globe className="h-3.5 w-3.5" />
+					pizza.hertzbeat.com
+				</button>
 			</SettingsRow>
 			<SettingsRow title={t("settings.about.repository")}>
 				<button
