@@ -90,6 +90,8 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
 
 /** OAuth client settings for servers that do not support dynamic client registration. */
 export interface McpOAuthConfig {
+	/** Explicit protected-resource metadata, for local adapters using a hosted OAuth broker. */
+	resourceMetadataUrl?: string;
 	/** RFC 8707 resource in authorization and token requests. Default true; false is for legacy OAuth providers such as Google. Resource binding is still validated. */
 	resourceIndicator?: boolean;
 	/** Require a token before connecting when the server publishes tool schemas anonymously (Google Workspace). */
@@ -247,11 +249,13 @@ function validateOAuth(value: unknown): string | undefined {
 			return 'oauth.clientRegistration "cimd" requires oauth.callbackUrl on localhost or 127.0.0.1 with path /callback';
 		}
 	}
-	const metadataUrl = value.authServerMetadataUrl;
-	if (metadataUrl !== undefined) {
-		const url = typeof metadataUrl === "string" && URL.canParse(metadataUrl) ? new URL(metadataUrl) : undefined;
-		if (!url || !(url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname)))) {
-			return "oauth.authServerMetadataUrl must be an https URL, or http on localhost, 127.0.0.1, or [::1]";
+	for (const name of ["authServerMetadataUrl", "resourceMetadataUrl"] as const) {
+		const metadataUrl = value[name];
+		if (metadataUrl !== undefined) {
+			const url = typeof metadataUrl === "string" && URL.canParse(metadataUrl) ? new URL(metadataUrl) : undefined;
+			if (!url || url.username || url.password || url.hash || !(url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname)))) {
+				return `oauth.${name} must be an https URL, or http on localhost, 127.0.0.1, or [::1], without credentials or fragment`;
+			}
 		}
 	}
 	const inlineMeta = value.authorizationServerMetadata;

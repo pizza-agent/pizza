@@ -56,7 +56,7 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
   40+ provider —— Anthropic、OpenAI、Google、DeepSeek、GLM、Kimi 等 —— API key 或 OAuth 订阅登录都可以。
 
 - **天生可折腾**
-  MCP servers、skills、hooks、extensions、主题，外加 JSON-RPC / FS-RPC 模式和 SDK 可以嵌入。
+  应用连接（MCP 协议）、skills、hooks、extensions、主题，外加 JSON-RPC / FS-RPC 模式和 SDK 可以嵌入。
 
 ## 快速开始
 

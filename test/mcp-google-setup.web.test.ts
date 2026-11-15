@@ -1,18 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildGoogleMcpConfig, googleMcpNeedsSetup, parseGoogleOAuthClient } from "../apps/web/src/lib/mcp-google-setup.js";
-import { MCP_CONNECTOR_CATALOG, PIZZA_GMAIL_MCP_URL, PIZZA_GMAIL_MCP_OAUTH_CALLBACK_URL } from "../src/builtin-extensions/connectors/catalog.js";
+import { MCP_CONNECTOR_CATALOG, googleWorkspaceConnector, LEGACY_GOOGLE_WORKSPACE_CONNECTORS, PIZZA_GOOGLE_BROKER_CLIENT_ID, PIZZA_GMAIL_MCP_URL, PIZZA_GMAIL_MCP_OAUTH_CALLBACK_URL } from "../src/builtin-extensions/connectors/catalog.js";
 
 const config = { url: PIZZA_GMAIL_MCP_URL, oauth: {} };
 const credentials = { clientId: "pizza-example.apps.googleusercontent.com", clientSecret: "fixture-only-secret", callbackUrl: PIZZA_GMAIL_MCP_OAUTH_CALLBACK_URL };
 
 describe("Gmail setup", () => {
-	it.each(MCP_CONNECTOR_CATALOG.filter((entry) => entry.oauthSetup === "google"))("configures $name without borrowing Gmail's resource or check tool", (entry) => {
-		expect(googleMcpNeedsSetup(entry.config)).toBe(true);
-		const configured = buildGoogleMcpConfig(entry.config, credentials);
-		expect(configured.url).toBe(entry.config.url);
-		expect(configured.oauth).toMatchObject({ ...(entry.config.oauth as object), ...credentials });
-		expect(googleMcpNeedsSetup(configured)).toBe(false);
-		if (entry.name !== "gmail-workspace") expect((configured.oauth as Record<string, unknown>).authCheck).toBeUndefined();
+	it.each(MCP_CONNECTOR_CATALOG.filter(entry => String(entry.config.adapter ?? "").match(/^(gmail|google-)/)))("connects $name without publisher credentials", entry => {
+		expect(entry.oauthSetup).toBeUndefined();
+		expect(googleMcpNeedsSetup(entry.config)).toBe(false);
+		expect(entry.config.oauth).toMatchObject({ clientId: PIZZA_GOOGLE_BROKER_CLIENT_ID, resourceIndicator: true });
+		expect((entry.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
 	});
  it("connects marketplace Gmail without a per-user Google Cloud form", () => {
   const entry = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "gmail")!;
@@ -22,7 +20,8 @@ describe("Gmail setup", () => {
   expect((entry.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
  });
 	it("requires configuration before sign-in, then preserves the user's server options", () => {
-		expect(googleMcpNeedsSetup(config)).toBe(true);
+		expect(googleMcpNeedsSetup(config)).toBe(false);
+		expect(googleMcpNeedsSetup({ ...config, oauth: { clientId: credentials.clientId } })).toBe(true);
 		const configured = buildGoogleMcpConfig({ ...config, timeout: 120, description: "My mailbox", oauth: { scope: "custom-scope", callbackPort: 1234 } }, credentials);
 		expect(googleMcpNeedsSetup(configured)).toBe(false);
 		expect(configured).toMatchObject({ timeout: 120, description: "My mailbox", oauth: { ...credentials, scope: "custom-scope", authorizationParams: { access_type: "offline", prompt: "consent" }, authCheck: { tool: "list_labels" } } });
@@ -30,6 +29,11 @@ describe("Gmail setup", () => {
 	});
 	it("imports the downloaded Web client and uses its registered loopback callback", () => {
 		expect(parseGoogleOAuthClient(JSON.stringify({ web: { client_id: credentials.clientId, client_secret: credentials.clientSecret, redirect_uris: ["https://example.com/callback", "http://localhost:9876/gmail/callback"] } }))).toEqual({ clientId: credentials.clientId, clientSecret: credentials.clientSecret, callbackUrl: "http://localhost:9876/gmail/callback" });
+	});
+	it("can explicitly switch a broker entry to an advanced user's own Google client", () => {
+		const entry = LEGACY_GOOGLE_WORKSPACE_CONNECTORS.find(entry => entry.name === "google-drive")!;
+		const configured = buildGoogleMcpConfig(entry.config, credentials);
+		expect(configured.oauth).toMatchObject({ ...credentials, resourceIndicator: false, authServerMetadataUrl: "https://accounts.google.com/.well-known/openid-configuration" });
 	});
 	it.each(["not json", '{"installed":{"client_id":"desktop-client"}}', '{"web":{"client_id":"no-secret"}}'])("rejects an incomplete or incompatible client file", (text) => {
 		expect(() => parseGoogleOAuthClient(text)).toThrow();

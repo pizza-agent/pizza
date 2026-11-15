@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>In the frozen sample archive, what is the name of the shared document whose contents say that the launch budget was approved?</question>
+    <answer>Launch decision.txt</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>For the archived launch note, what approved budget amount appears in its text? Answer as an integer.</question>
+    <answer>12500</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the archived launch document, who owns the release checklist? Return the person&#x27;s full name.</question>
+    <answer>Alice Chen</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which revision identifies the archived release readiness document after finding it in the document index?</question>
+    <answer>revision-2025-final</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Using the archived launch spreadsheet, what is the sum of its two approved line items? Answer as an integer.</question>
+    <answer>12500</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the title of the slide page containing the archived launch decision, after locating its presentation?</question>
+    <answer>Approved launch</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>On the archived launch calendar, what is the date of the release approval meeting? Return YYYY-MM-DD.</question>
+    <answer>2025-06-12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the archived release approval meeting&#x27;s location after finding its calendar event and reading its details?</question>
+    <answer>Room Cedar</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the archived launch chat space, what release tag was announced in the approval message?</question>
+    <answer>v2.4.0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the archived release owner&#x27;s contact email after finding Alice Chen and reading her selected contact fields?</question>
+    <answer>alice@example.com</answer>
+  </qa_pair>
+</evaluation>

@@ -9,7 +9,7 @@ if (!input && !registration) {
 	if (process.env.PIZZA_REQUIRE_GOOGLE_DESKTOP_CLIENT === "1")
 		throw Error("Release requires the Google Desktop client registration");
 	console.log(
-		"[google-desktop-oauth] No desktop registration supplied; release Gmail sign-in requires PIZZA_GOOGLE_DESKTOP_CLIENT_FILE.",
+		"[google-desktop-oauth] No optional legacy desktop registration supplied; Google sign-in uses the hosted Pizza broker.",
 	);
 } else {
 	let value;

@@ -29,7 +29,8 @@ import {
 	stepUpScope,
 } from "../../core/mcp/oauth/index.js";
 import { mcpNamespace } from "../../core/mcp/servers.js";
-import { registeredOAuthConnector, googleWorkspaceConnector } from "../connectors/catalog.js";
+import { registeredOAuthConnector, googleWorkspaceConnector, PIZZA_GOOGLE_BROKER_CLIENT_ID, PIZZA_GOOGLE_BROKER_ISSUER } from "../connectors/catalog.js";
+import { googleApiServiceForResource } from "../connectors/google-services.js";
 import { PIZZA_OAUTH_LOGO } from "./oauth-logo.js";
 
 const CALLBACK_HOST = "127.0.0.1";
@@ -97,6 +98,7 @@ function oauthErrorHtml(message: string, details?: string): string {
 }
 
 export interface McpOAuthSettings {
+	resourceMetadataUrl?: URL;
 	resourceIndicator?: boolean;
 	authorizationResourceIndicator?: boolean;
 	authorizationParams?: Record<string, string>;
@@ -402,7 +404,7 @@ export function createMcpAuthProvider(options: {
 					serverUrl,
 					// Providers such as Zoom publish PRM on a different host; keep the learned URL across restart.
 					// Fetch it afresh and let authorizeMcp validate the persisted issuer/resource binding.
-					resourceMetadataUrl: challenge?.resourceMetadataUrl ?? (state.discovery?.resourceMetadataUrl ? new URL(state.discovery.resourceMetadataUrl) : undefined),
+					resourceMetadataUrl: settings.resourceMetadataUrl ?? challenge?.resourceMetadataUrl ?? (state.discovery?.resourceMetadataUrl ? new URL(state.discovery.resourceMetadataUrl) : undefined),
 					authorizationServerMetadataUrl: settings.authServerMetadataUrl,
 					authorizationServerMetadata: settings.authorizationServerMetadata,
 					scope: challenge?.scope,
@@ -520,7 +522,7 @@ async function listenForCallback(
 		extraPaths,
 		renderPage: (page: OAuthCallbackPage) =>
 			page.ok
-				? oauthSuccessHtml("Your credentials have been saved. Return to Pizza to use your MCP server. You may close this page.")
+				? oauthSuccessHtml("Your credentials have been saved. Return to Pizza to use your connected app. You may close this page.")
 				: oauthErrorHtml(page.message, page.details),
 	};
 	try {
@@ -542,15 +544,21 @@ export async function signInMcpServer(options: {
 	const { serverUrl, settings, signal } = options;
 	if (signal?.aborted) throw new McpSignInCancelledError();
 	const registeredConnector = registeredOAuthConnector({ url: serverUrl }) ?? googleWorkspaceConnector({ url: serverUrl });
-	if (registeredConnector && (!settings.clientId?.trim() || !settings.clientSecret?.trim())) {
+	const googleBroker = !!(registeredConnector?.oauthSetup === "google" || googleApiServiceForResource(serverUrl)) && settings.clientId === PIZZA_GOOGLE_BROKER_CLIENT_ID;
+	if (googleBroker) {
+		const response = await timedFetch()(`${PIZZA_GOOGLE_BROKER_ISSUER}/health`, { headers: { Accept: "application/json" }, redirect: "error", signal });
+		const configured = response.ok ? (await response.json() as { configured?: boolean }).configured === true : false;
+		if (!response.ok) await response.body?.cancel();
+		if (!configured) {
+			throw new Error("Pizza's Google connection is awaiting publisher setup. You do not need to enter a Google client ID or secret.");
+		}
+	}
+	if (registeredConnector && !googleBroker && (!settings.clientId?.trim() || !settings.clientSecret?.trim())) {
 		const name = registeredConnector.oauthSetup === "google" ? "a Google OAuth client" : registeredConnector.name;
 		throw new Error(`Set up ${name} in Pizza with your own OAuth client ID, client secret, and registered callback URL before signing in. ${registeredConnector.docsUrl}`);
 	}
-	if (serverUrl === "https://gmail.googleapis.com/gmail/v1/users/me" && (!settings.clientId || !settings.clientSecret)) {
+	if (!googleBroker && serverUrl === "https://gmail.googleapis.com/gmail/v1/users/me" && (!settings.clientId || !settings.clientSecret)) {
 		throw new Error("This Pizza build is missing its Google Desktop OAuth registration. The publisher must build with PIZZA_GOOGLE_DESKTOP_CLIENT_FILE pointing to the Desktop client JSON.");
-	}
-	if (new URL(serverUrl).hostname === "gmailmcp.googleapis.com" && (!settings.clientId || !settings.clientSecret)) {
-		throw new Error("Set up a Google OAuth client for Gmail in Pizza before signing in (oauth.clientId and oauth.clientSecret are required).");
 	}
 	if (new URL(serverUrl).origin === "https://api.x.com" && !settings.clientId) {
 		throw new Error("Set up your X app's OAuth 2.0 Client ID in Pizza before signing in. A Native app uses PKCE without a client secret; Web and Automated apps also require their client secret.");
@@ -628,7 +636,7 @@ export async function signInMcpServer(options: {
 			serverUrl,
 			fetch: timedFetch(),
 			signal,
-			resourceMetadataUrl: options.challenge?.resourceMetadataUrl,
+			resourceMetadataUrl: settings.resourceMetadataUrl ?? options.challenge?.resourceMetadataUrl,
 			authorizationServerMetadataUrl: settings.authServerMetadataUrl,
 			authorizationServerMetadata: settings.authorizationServerMetadata,
 			scope: mergeScopes(

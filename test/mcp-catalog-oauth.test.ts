@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MCP_CONNECTOR_CATALOG } from "../src/builtin-extensions/connectors/catalog.js";
+import { MCP_CONNECTOR_CATALOG, googleWorkspaceConnector } from "../src/builtin-extensions/connectors/catalog.js";
 import { createMcpAuthProvider, signInMcpServer, type McpOAuthSettings } from "../src/builtin-extensions/mcp/oauth.js";
 import { discoverOAuthServerInfo, MemoryOAuthStateStore, parseWwwAuthenticate, refreshAuthorization, type AuthorizationServerMetadata } from "../src/core/mcp/oauth/index.js";
 import { metadataResponse } from "../infra/mcp-oauth/metadata.mjs";
@@ -14,12 +14,13 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Official provider OAuth compatibility", () => {
 	it("covers every standard marketplace resource with a recorded live discovery fixture", () => {
-		expect(records.map((record) => record.name).sort()).toEqual(MCP_CONNECTOR_CATALOG
+		expect(records.filter(record => !googleWorkspaceConnector({ url: record.url })).map((record) => record.name).sort()).toEqual(MCP_CONNECTOR_CATALOG
 			.filter((entry) => !entry.config.adapter && !(entry.config.oauth as Record<string, unknown>)?.clientId)
 			.map((entry) => entry.name).sort());
 	});
 	it.each(records)("uses $name discovery through registration, PKCE exchange and refresh", async (record) => {
-		const entry = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === record.name)!;
+		// Historical Google fixtures still exercise saved advanced configurations.
+		const entry = googleWorkspaceConnector({ url: record.url }) ?? MCP_CONNECTOR_CATALOG.find(entry => entry.name === record.name)!;
 		const storedResponses = new Map(record.responses.map((response) => [response.url, response]));
 		const settings = { ...(entry.config.oauth as object) } as McpOAuthSettings;
 		if (settings.authServerMetadataUrl) settings.authServerMetadataUrl = new URL(settings.authServerMetadataUrl);

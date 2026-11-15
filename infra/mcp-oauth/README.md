@@ -1,8 +1,10 @@
-# Pizza MCP OAuth client metadata
+# Pizza MCP OAuth metadata and Google sign-in
 
 Public endpoint: `https://pizza.hertzbeat.com/oauth/client.json`.
 
-CIMD lets an MCP authorization server read Pizza's client identity from this URL instead of registering a new client. This service publishes public JSON only. It has no login page, token exchange, database, client secret, or user credentials.
+CIMD lets an MCP authorization server read Pizza's client identity from this URL instead of registering a new client. These metadata routes remain public JSON and receive no credentials. Separate `/oauth/google/` routes now host Google's Web OAuth registration so desktop users never configure an app secret. See [Google broker deployment and security](google-broker.md).
+
+The domain homepage also serves the [Pizza website](../website/README.md). Wrangler builds its static assets before checking or deploying this Worker; `/oauth/` remains reserved for authorization.
 
 ## Deploy to Cloudflare Workers
 
@@ -11,13 +13,14 @@ The Worker is named `pizza-mcp-oauth-metadata`. Its Wrangler configuration binds
 Use Node.js 22.12 or later (for example, `nvm use 22.21.1`). From the repository root:
 
 ```sh
+npm ci --prefix infra/website
 npm ci --prefix infra/mcp-oauth
 npm exec --prefix infra/mcp-oauth -- wrangler login --device
 npm run check --prefix infra/mcp-oauth
 npm run deploy --prefix infra/mcp-oauth
 ```
 
-Wrangler is pinned in this service's own package and lock file. No database, secrets or other Cloudflare products are required. The `workers.dev` hostname and preview URLs are disabled; OAuth client IDs use the canonical custom domain.
+Wrangler is pinned in this service's own package and lock file. Google sign-in uses SQLite Durable Objects, a rate limiter and publisher secrets; CIMD remains available without Google configuration. The `workers.dev` hostname and preview URLs are disabled; OAuth client IDs use the canonical custom domain.
 
 Device login opens Cloudflare in your default browser and prints a short confirmation code. Complete the login and approve Wrangler while the terminal is waiting. This flow does not use a localhost callback. Check the result with `npm exec --prefix infra/mcp-oauth -- wrangler whoami`.
 
@@ -32,7 +35,7 @@ npm exec --prefix infra/mcp-oauth -- wrangler rollback
 
 ## Optional Node deployment
 
-Run the dependency-free metadata service with Node.js 22 or later:
+For CIMD only, run the dependency-free metadata service with Node.js 22 or later (the Google broker requires the Worker bindings):
 
 ```sh
 node infra/mcp-oauth/server.mjs
@@ -72,11 +75,11 @@ Pizza defaults to `oauth.clientRegistration: "auto"`. A configured `clientId` ta
 
 `oauth.clientRegistration: "cimd"` requires CIMD and reports deployment/support errors. `"dcr"` forces DCR. `oauth.clientMetadataUrl`, or `PIZZA_MCP_OAUTH_CLIENT_METADATA_URL`, can override the default document family for another Pizza deployment. It must end in `/client.json`; deploy both document forms at the same base path.
 
-Legacy saved logins without an issuer/client binding require one new login after upgrading. Credentials remain on the user's machine. Google/X/GitHub business OAuth and device flow retain their provider-specific registrations.
+Legacy saved logins without an issuer/client binding require one new login after upgrading. Desktop MCP credentials remain on the user's machine. Built-in Google API adapters use the hosted Google broker; Google Web registration and encrypted upstream refresh tokens remain in Cloudflare. Existing private Google registrations, X OAuth and GitHub device flow keep their own registrations.
 
 Explicit sign-in starts a fresh browser authorization, so re-authentication and account switching do not silently reuse an existing refresh token. A new sign-in or sign-out invalidates earlier operations. Refresh tokens are rotated under a cross-process lock, and token writes check that the request still belongs to the active login.
 
-Standard MCP requests include the RFC 8707 resource in authorization and token requests, including legacy discovery without resource metadata. `oauth.resourceIndicator: false` is an explicit compatibility setting for direct business APIs such as the Gmail REST adapter. `authorizationResourceIndicator: false` omits it only in the browser authorization request, preserving token audience binding.
+Standard MCP requests include the RFC 8707 resource in authorization and token requests, including legacy discovery without resource metadata. `oauth.resourceIndicator: false` is an explicit compatibility setting for advanced direct Google OAuth registrations. Built-in Google adapters keep resource binding enabled against the Pizza broker. `authorizationResourceIndicator: false` omits it only in the browser authorization request, preserving token audience binding.
 
 ## Verify the client and service
 

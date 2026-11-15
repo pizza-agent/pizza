@@ -4,8 +4,8 @@
 
 | 服务 | 注册方式 | Pizza 接入方式 | 必要条件 |
 | --- | --- | --- | --- |
-| Google 普通 API / Gmail 适配器 | 预注册 Desktop OAuth 应用 | 系统浏览器、PKCE、本机回调、刷新 | 发布方打包对应 Desktop 注册文件；发布范围和权限需符合 Google 应用审核要求 |
-| Google Workspace 官方 MCP | 预注册 AI-agent OAuth 应用 | 各产品远程 MCP，共用授权引擎，按产品分别申请 scope | Developer Preview 项目、启用产品与 MCP API、Web 客户端勾选 AI-powered agent、注册回调 |
+| Google 正式 API / 本地 MCP 适配器 | Pizza 服务端预注册 Web 应用 | Cloudflare OAuth 中转、双段 PKCE、本机回调和刷新 | 发布方启用正式 API；终端用户只登录，无需填写密钥或申请 MCP 预览 |
+| Google Workspace 官方 MCP（历史兼容配置） | 预注册 AI-agent Web 应用 | 原有远程 MCP 配置保留兼容 | 仍要求预览资格；已从内置市场撤下 |
 | X | 预注册 Native/Public 应用 | PKCE、本机回调、offline.access 刷新；无需额外 xurl 进程 | 应用已开启 OAuth 2.0，回调完全匹配，API 账号具备相应访问权限 |
 | GitHub | 预注册 OAuth 应用，开启 Device Flow | 设备码登录；offline_access 获取可刷新的短期令牌 | 发布方的应用开启设备码流程；组织策略可能要求批准 |
 
@@ -31,14 +31,14 @@
 
 ## 实现与验证范围
 
-- 新增八个 Google Workspace 预览入口，并保留普通 Gmail 适配器。配置界面支持导入用户自己的 Web OAuth JSON，不向客户端分发发布方 Web secret。
+- 内置八项 Google 正式 API 适配器：Gmail、Drive、Docs、Sheets、Slides、Calendar、Chat、People，共 55 个 MCP 工具。统一使用 Cloudflare OAuth 中转，发布方 Web secret 和原始 Google refresh token 不下发；已有用户自建注册仍兼容。
 - GitHub 新安装请求 offline_access；为 public device flow 显式选择 none 认证，避免全局 secret-only 声明错误阻止设备令牌刷新。confidential 授权码流程仍使用 secret。
 - 真实公开元数据用于离线回归，覆盖注册选择、PKCE 回调、模拟 code exchange、资源绑定和刷新；GitHub 单独覆盖无 secret 设备令牌刷新。
-- 目前只有 Notion 完成真实账号的整条验证。Google/X/GitHub 的本次结果是官方资料、线上匿名探测与模拟凭据测试，不能替代它们各自的真实账号授权。
-- 当前 DEV 构建仍缺少 Gmail Desktop 注册文件。发布方需使用 PIZZA_GOOGLE_DESKTOP_CLIENT_FILE 完成打包，才能测试内置普通 Gmail 的真实登录；Workspace 预览入口可在设置中使用用户自己的合格客户端。
+- Notion 已完成真实账号的整条验证。Google Drive 的正式 API 本地 MCP 已通过真实浏览器授权、Cloudflare 回调、桌面兑换、文件读取、刷新轮换和 DEV 重启恢复；历史官方 MCP 数据读取曾被拒绝，因此已切到正式 API。X/GitHub 尚无本次真实账号授权验证。详见 [Google 实号记录](google-broker.md#real-account-verification-2026-11-15)。
+- 内置 Gmail 已统一走 Cloudflare 中转，不再要求打包 Desktop 注册文件。旧 Desktop 自建配置仅保留兼容。
 
 ## Google 用户无需填写 client secret 的选择
 
-- **Desktop 公共客户端 + PKCE**：Google 当前 Desktop 文档将换取和刷新令牌的 `client_secret` 标为可选。Pizza 发布方预注册应用并内置 client ID，用户只需浏览器登录。适合普通 Google API / 本地适配器；当前 Pizza Gmail 实现仍要求打包的 Desktop 注册文件，不能把协议支持等同于已完成无 secret 实测。
-- **官方 Workspace MCP + 服务端 OAuth 中转**：官方现成接入示例使用 Web 应用的 ID 和 secret。要让终端用户免填，可由 Pizza 在服务端持有 Web secret、处理授权码交换和刷新，桌面端完成用户登录。可采用 Cloudflare Worker，需另行实现授权事务绑定及安全回传；目前部署的 CIMD 元数据 Worker 并不提供这些功能。
+- **Desktop 公共客户端 + PKCE**：Google 当前 Desktop 文档将换取和刷新令牌的 `client_secret` 标为可选。Pizza 发布方预注册应用并内置 client ID，用户只需浏览器登录。适合普通 Google API / 本地适配器；这属于可选的高级自建配置，内置 Gmail 使用下述服务端中转。
+- **正式 Google API + 服务端 OAuth 中转（当前默认）**：已实现 Cloudflare Worker，服务端持有 Web secret、处理授权码交换和刷新，桌面端完成用户登录。包含双段 PKCE、一次性授权码、浏览器绑定、资源校验和加密的 Durable Object 会话。部署及 Google 发布方注册见 [Google broker](google-broker.md)。是否可用以线上 health 和真实账号测试为准，部署代码不等于 Google 项目已配置。
 - 官方 Workspace MCP 还要求 OAuth 客户端开启 AI-powered agent 选项。Desktop public client 能否同时满足该要求，尚未真实授权核实，不能直接承诺用 Desktop 注册替代官方 Web 示例。

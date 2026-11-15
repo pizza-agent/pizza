@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../infra/mcp-oauth/worker.mjs";
 import { createNativeClientMetadata, oauthCallbackId } from "../src/core/mcp/oauth/client-metadata.js";
 
@@ -36,4 +36,25 @@ describe("Cloudflare OAuth metadata Worker", () => {
 		const response = worker.fetch(new Request("https://other.example/oauth/client.json"));
 		expect(await response.json()).toEqual(createNativeClientMetadata(base));
 	});
+	it.each(["/", "/zh/", "/media/pizza-studio.webp"])("serves website assets for %s", async path => {
+		const fetch = vi.fn(async () => new Response("website asset", { headers: { "Content-Type": "text/html" } }));
+		const request = new Request(new URL(path, base));
+		const response = await worker.fetch(request, { ASSETS: { fetch } });
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe("website asset");
+		expect(fetch).toHaveBeenCalledWith(request);
+	});
+	it.each(["/oauth/client.json", "/oauth/unknown", "/oauth/google/health", "/oauth/google/resources/drive"])("reserves %s ahead of every website fallback", async path => {
+		const fetch = vi.fn(async () => new Response("must not override OAuth"));
+		const response = await worker.fetch(new Request(new URL(path, base)), { ASSETS: { fetch } });
+		expect(fetch).not.toHaveBeenCalled();
+		expect(await response.text()).not.toContain("must not override OAuth");
+	});
+	it("does not accept account data at a website route", async () => {
+		const fetch = vi.fn();
+		const response = await worker.fetch(new Request(new URL("/", base), { method: "POST", body: "private input" }), { ASSETS: { fetch } });
+		expect(response.status).toBe(405);
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
 });

@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run",
+    "test:runtime": "node test-google-runtime.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "miniflare": "5.20261113.0-beta",
     "wrangler": "4.162.0"
   }
 }

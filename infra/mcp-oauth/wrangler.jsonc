@@ -2,10 +2,24 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pizza-mcp-oauth-metadata",
   "account_id": "5e1b7a36607665efbb52a4078e3d5fa5",
-  "main": "worker.mjs",
+  "main": "cloudflare.mjs",
+  "build": { "command": "npm --prefix ../website run build" },
+  "assets": {
+    "directory": "../website/dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/oauth", "/oauth/*"]
+  },
   "compatibility_date": "2026-11-14",
   "workers_dev": false,
   "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "GOOGLE_SESSIONS", "class_name": "GoogleOAuthSession" }]
+  },
+  "migrations": [{ "tag": "google-oauth-v1", "new_sqlite_classes": ["GoogleOAuthSession"] }],
+  "ratelimits": [{ "name": "GOOGLE_RATE_LIMITER", "namespace_id": "497012345", "simple": { "limit": 60, "period": 60 } }],
+  "observability": { "enabled": false },
   "routes": [
     { "pattern": "pizza.hertzbeat.com", "custom_domain": true }
   ]

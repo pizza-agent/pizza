@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /oauth/
+Sitemap: https://pizza.hertzbeat.com/sitemap.xml

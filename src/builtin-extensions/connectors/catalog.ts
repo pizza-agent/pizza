@@ -1,10 +1,13 @@
+import { googleApiCatalogEntries } from "./google-services.js";
+export { GOOGLE_API_SERVICES, PIZZA_GOOGLE_BROKER_ISSUER, PIZZA_GOOGLE_BROKER_CLIENT_ID, googleApiService, googleApiServiceForResource } from "./google-services.js";
+
 /**
  * Official OAuth MCP marketplace catalog.
  *
  * Single source of truth for installable connectors. Entries are NOT auto-registered
- * into a session — they appear under Plugins → MCPs → Marketplace until the user
- * installs one (`_agentcli server add` / UI Install), which writes mcp.json and
- * makes Remove available like any other user-managed server.
+ * into a session. They appear under Apps → App directory until the user connects
+ * one (`_agentcli server add` / UI Connect), which writes mcp.json and
+ * makes Remove available like any other user-managed connection.
  *
  * Skipped (no third-party public MCP for Pizza):
  * - Cursor Origin (`api.origin.cursor.com`) — Cursor-hosted only
@@ -93,25 +96,6 @@ const catalog: readonly McpConnectorCatalogEntry[] = [
 				scope: PIZZA_GITHUB_MCP_SCOPE,
 				callbackUrl: PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL,
 				authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA,
-			},
-		},
-	},
-	{
-		name: "gmail",
-		type: "http",
-		docsUrl: "https://developers.google.com/workspace/gmail/api/guides",
-		description: "Search emails, read conversations, and prepare drafts and replies.",
-		config: {
-			url: PIZZA_GMAIL_API_MCP_URL,
-			adapter: "gmail",
-			oauth: {
-				clientId: PIZZA_GMAIL_DESKTOP_CLIENT_ID,
-				resourceIndicator: false,
-				callbackUrl: "http://127.0.0.1/callback",
-				scope: PIZZA_GMAIL_MCP_SCOPE,
-				authServerMetadataUrl: "https://accounts.google.com/.well-known/openid-configuration",
-				authorizationParams: { access_type: "offline", prompt: "consent" },
-				authCheck: { tool: "list_labels" },
 			},
 		},
 	},
@@ -420,7 +404,7 @@ const catalog: readonly McpConnectorCatalogEntry[] = [
 		description: "Search Google Drive files and work with documents through the official MCP preview.",
 		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
 		oauthSetup: "google",
-		config: { url: "https://drivemcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+		config: { url: "https://drivemcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}, "authCheck": {"tool": "list_recent_files", "arguments": {"pageSize": 1, "excludeContentSnippets": true}}} },
 	},
 	{
 		name: "google-docs",
@@ -478,7 +462,14 @@ const catalog: readonly McpConnectorCatalogEntry[] = [
 	},
 ];
 
-export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = catalog.map(entry => ({...entry,config:{...entry.config,description:entry.description}}));
+/** Kept only for saved remote configurations and their existing refresh bindings. Not marketplace entries. */
+export const LEGACY_GOOGLE_WORKSPACE_CONNECTORS = catalog.filter(entry => entry.oauthSetup === "google");
+
+/** Stable Google API adapters replace the preview-only marketplace entries. Legacy profiles remain available for saved configurations. */
+export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = [
+	...catalog.filter(entry => entry.oauthSetup !== "google").map(entry => ({ ...entry, config: { ...entry.config, description: entry.description } })),
+	...googleApiCatalogEntries(),
+];
 
 /** Match the actual resource, so renamed servers keep setup and unrelated names do not inherit it. */
 export function registeredOAuthConnector(config: Record<string, unknown>): McpConnectorCatalogEntry | undefined {
@@ -489,8 +480,9 @@ export function registeredOAuthConnector(config: Record<string, unknown>): McpCo
 }
 
 /** Official Workspace preview resources require a developer-registered AI-agent client. */
-export function googleWorkspaceConnector(config: Record<string, unknown>): McpConnectorCatalogEntry | undefined {
+export function googleWorkspaceConnector(config: { url?: unknown; adapter?: unknown }): McpConnectorCatalogEntry | undefined {
 	if (typeof config.url !== "string" || !URL.canParse(config.url)) return undefined;
 	const url = new URL(config.url).href;
-	return MCP_CONNECTOR_CATALOG.find((entry) => entry.oauthSetup === "google" && new URL(String(entry.config.url)).href === url && !config.adapter);
+	// Raw direct-Google defaults remain available for advanced users' existing Web registrations.
+	return catalog.find((entry) => entry.oauthSetup === "google" && new URL(String(entry.config.url)).href === url && !config.adapter);
 }

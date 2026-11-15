@@ -55,7 +55,7 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
   40+ providers — Anthropic, OpenAI, Google, DeepSeek, GLM, Kimi, and more — via API key or OAuth subscription login.
 
 - **Hackable by default**
-  MCP servers, skills, hooks, extensions, themes — plus JSON-RPC / FS-RPC modes and an SDK for embedding.
+  App connections via MCP, skills, hooks, extensions, themes — plus JSON-RPC / FS-RPC modes and an SDK for embedding.
 
 ## Quick Start
 

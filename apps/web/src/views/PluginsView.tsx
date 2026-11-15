@@ -30,7 +30,7 @@ import {
 	type ExtensionPermissionKind,
 	type ExtensionPermissionState,
 } from "@/lib/transport";
-import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck, Loader2 } from "lucide-react";
+import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, AppWindow, MousePointer2, RotateCw, ShieldCheck, Loader2 } from "lucide-react";
 import { ChannelDialog } from "@/components/ChannelDialog";
 import {
 	listChannels,
@@ -51,7 +51,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
 	{ key: "skills", icon: BookOpen },
-	{ key: "mcps", icon: Monitor },
+	{ key: "mcps", icon: AppWindow },
 	{ key: "extensions", icon: Puzzle },
 	{ key: "channels", icon: Radio },
 ];

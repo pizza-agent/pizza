@@ -40,4 +40,29 @@ describe("Authenticated services with public tool discovery", () => {
 	it("rejects a non-boolean authentication requirement", () => {
 		expect(validateMcpServerConfig("docs", { url: "https://docs.example/mcp", oauth: { requireSignIn: "true" } })).toContain("must be a boolean");
 	});
+	it("does not report a schema-only connection as usable when the authenticated read check is denied", async () => {
+		const pair = createInMemoryTransportPair();
+		pair.server.onMessage(message => {
+			if (!("id" in message) || !("method" in message)) return;
+			const result = message.method === "initialize"
+				? { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "preview", version: "1" } }
+				: message.method === "tools/list" ? { tools: [{ name: "list_recent_files", annotations: { readOnlyHint: true }, inputSchema: { type: "object" } }] }
+				: { isError: true, content: [{ type: "text", text: "The caller does not have permission" }] };
+			void pair.server.send({ jsonrpc: "2.0", id: message.id, result });
+		});
+		await pair.server.start();
+		const url = "https://drivemcp.googleapis.com/mcp/v1";
+		const credentials = new McpOAuthCredentialStore(new InMemoryAuthStorageBackend());
+		await credentials.forServer("drive", url).save({ serverUrl: url,
+			credentialBinding: { issuer: "https://pizza.hertzbeat.com/oauth/google", clientId: "pizza-desktop-google", resource: url },
+			tokens: { access_token: "fixture-authorized", token_type: "Bearer" },
+		});
+		const connection = new McpServerConnection({ entry: { name: "drive", source: "global", config: { url } }, cwd: process.cwd(), credentials,
+			createTransport: () => pair.client, onTools: () => {} });
+		try {
+			await expect(connection.getClient()).rejects.toThrow("The caller does not have permission");
+			expect(connection.state).toBe("failed");
+			expect(connection.tools).toEqual([]);
+		} finally { await connection.close(); await pair.server.close(); }
+	});
 });

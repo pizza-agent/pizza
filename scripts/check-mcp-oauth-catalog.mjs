@@ -6,7 +6,9 @@ import { resolve } from "node:path";
 import { MCP_CONNECTOR_CATALOG } from "../dist/src/builtin-extensions/connectors/catalog.js";
 import { discoverOAuthServerInfo, parseWwwAuthenticate, selectResource } from "../dist/src/core/mcp/oauth/discovery.js";
 
-const entries = MCP_CONNECTOR_CATALOG.filter((entry) => !entry.config.adapter && !entry.config.oauth?.clientId);
+// Local Google API adapters have separate broker and API contract tests.
+const entries = MCP_CONNECTOR_CATALOG
+	.filter((entry) => !entry.config.adapter && !entry.config.oauth?.clientId);
 const records = [];
 for (let offset = 0; offset < entries.length; offset += 4) {
 	await Promise.all(entries.slice(offset, offset + 4).map(async (entry) => {

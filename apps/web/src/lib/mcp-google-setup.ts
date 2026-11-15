@@ -1,6 +1,6 @@
-import { googleWorkspaceConnector } from "@pizza/mcp-connector-catalog";
+import { googleWorkspaceConnector, PIZZA_GOOGLE_BROKER_CLIENT_ID } from "@pizza/mcp-connector-catalog";
 
-// Advanced setup for manually added Google-hosted preview MCPs. Marketplace Gmail uses the bundled desktop adapter.
+// Advanced setup for manually added Google-hosted preview MCPs. Marketplace Google products use local API adapters and the hosted OAuth broker.
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
 function loopbackCallback(value: string): boolean {
@@ -15,6 +15,8 @@ export function googleMcpNeedsSetup(config: Record<string, unknown>): boolean {
 	if (!googleWorkspaceConnector(config)) return false;
 	if (record(config.headers) && Object.keys(config.headers).some((key) => key.toLowerCase() === "authorization")) return false;
 	const oauth = record(config.oauth) ? config.oauth : {};
+	// Built-ins and older unconfigured entries now use Pizza's hosted Web registration.
+	if (!oauth.clientId || oauth.clientId === PIZZA_GOOGLE_BROKER_CLIENT_ID) return false;
 	return typeof oauth.clientId !== "string" || !oauth.clientId.trim() || typeof oauth.clientSecret !== "string" || !oauth.clientSecret.trim();
 }
 
@@ -35,7 +37,13 @@ export function buildGoogleMcpConfig(config: Record<string, unknown>, client: { 
 	const entry = googleWorkspaceConnector(config);
 	if (!entry) throw new Error("Select a supported Google Workspace MCP resource before configuring its OAuth client.");
 	const defaults = entry.config;
-	const oauth = { ...(defaults.oauth as Record<string, unknown>), ...(record(config.oauth) ? config.oauth : {}), clientId, clientSecret, callbackUrl: client.callbackUrl };
+	const previous = { ...(record(config.oauth) ? config.oauth : {}) };
+	if (previous.clientId === PIZZA_GOOGLE_BROKER_CLIENT_ID) {
+		delete previous.authServerMetadataUrl;
+		delete previous.authorizationServerMetadata;
+		delete previous.resourceIndicator;
+	}
+	const oauth = { ...(defaults.oauth as Record<string, unknown>), ...previous, clientId, clientSecret, callbackUrl: client.callbackUrl };
 	// The callback URL is the source of truth when editing an existing fixed-port client.
 	delete (oauth as Record<string, unknown>).callbackPort;
 	return { ...defaults, ...config, oauth };

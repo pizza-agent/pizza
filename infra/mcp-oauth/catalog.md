@@ -1,6 +1,6 @@
 # Official OAuth connectors
 
-Reviewed on 2026-11-15. The built-in MCP marketplace offers 45 entries. Installing a connector stores its configuration; users authorize each account in their browser. Entries are never connected automatically on startup.
+Reviewed on 2026-11-15. The built-in MCP marketplace offers 44 entries. Installing a connector stores its configuration; users authorize each account in their browser. Entries are never connected automatically on startup.
 
 | Connector | Setup | Source |
 | --- | --- | --- |
@@ -41,15 +41,13 @@ Reviewed on 2026-11-15. The built-in MCP marketplace offers 45 entries. Installi
 | zoom-tasks | Own OAuth app required | [Official documentation](https://developers.zoom.us/docs/mcp/servers/connect-to-zoom-mcp-servers/) |
 | zoom-whiteboard | Own OAuth app required | [Official documentation](https://developers.zoom.us/docs/mcp/servers/connect-to-zoom-mcp-servers/) |
 | zoom-revenue | Own OAuth app required | [Official documentation](https://developers.zoom.us/docs/mcp/servers/connect-to-zoom-mcp-servers/) |
-
-| gmail-workspace | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-drive | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-docs | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-sheets | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-slides | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-calendar | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-chat | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
-| google-people | Workspace preview / own AI-agent OAuth app | [Official documentation](https://developers.google.com/workspace/guides/configure-mcp-servers) |
+| google-drive | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/drive/api/guides/about-sdk) |
+| google-docs | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/docs/api/how-tos/overview) |
+| google-sheets | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/sheets/api/guides/concepts) |
+| google-slides | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/slides/api/guides/overview) |
+| google-calendar | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/calendar/api/guides/overview) |
+| google-chat | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/workspace/chat/api/guides) |
+| google-people | Stable API adapter / Pizza-hosted Google sign-in | [Official documentation](https://developers.google.com/people) |
 
 ## Compatibility details
 
@@ -70,20 +68,20 @@ npm run build
 node scripts/check-mcp-oauth-catalog.mjs
 ```
 
-It checks the 42 standard OAuth endpoints, including 13 registered-app entries and 8 Google Workspace preview entries, without browser login, client registration, account access, or local credentials. GitHub device flow, Gmail’s local adapter and X’s product registration are covered by their dedicated tests.
+It checks the 34 standard remote OAuth endpoints, including 13 registered-app entries, without browser login, client registration, account access, or local credentials. GitHub device flow, Gmail’s local adapter and X’s product registration are covered by their dedicated tests.
 
 Public discovery responses are recorded in test/fixtures/mcp/official-oauth-discovery.json. The offline provider matrix tests client selection, callback state/issuer checks, code redemption, client authentication, resource binding and refresh rotation against these real metadata shapes with simulated account credentials. To refresh those public fixtures, run the checker with --record and the fixture path.
 
-A separate pre-authorization smoke check reached the official authorization pages for all 20 new automatic-registration entries using Pizza’s actual CIMD service or live DCR. No accounts were authorized by that check. Notion additionally passed real-account consent, callback, tool discovery, read-only identity calls, refresh and restart recovery. The other providers still require account-level authorization to verify their tools end to end.
+A separate pre-authorization smoke check reached the official authorization pages for all 20 new automatic-registration entries using Pizza’s actual CIMD service or live DCR. No accounts were authorized by that check. Notion additionally passed real-account consent, callback, tool discovery, read-only identity calls, refresh and restart recovery. Google Drive’s local API adapter passed real broker consent, callback, file-list reads, token refresh and DEV restart recovery. Its historical official-MCP read was permission-denied, prompting the stable API migration. Other providers still require account-level authorization to verify their tools end to end.
 
 ## Reviewed services with remaining requirements
 
 - [Figma](https://help.figma.com/hc/en-us/articles/39216419318551-Get-started-with-the-Figma-MCP-server): remote access requires approving new clients. Pizza has no approved registration yet; another product’s client identity is never reused.
 - [PayPal](https://developer.paypal.com/ai-tools/mcp-server): the documented production Streamable HTTP endpoint returned 404 during anonymous initialize and GET requests. Its discovery document alone is insufficient evidence of a working MCP endpoint, so it is not offered as a working connector.
 - [Zoom](https://developers.zoom.us/docs/mcp/servers/connect-to-zoom-mcp-servers/): product-specific MCP servers are offered as separate catalog entries, each requiring a manually registered General OAuth app, product licenses and scopes.
-- Google Workspace preview entries are built in with their own AI-agent Web OAuth setup and product scopes. Their anonymous tool schemas do not prove account authorization, so requireSignIn prevents a connection without a token. The regular Gmail desktop adapter remains available separately. Google Classroom returned no tools in the anonymous catalog during this check and is not offered as a verified entry.
+- The eight stable Google API adapters use Pizza-hosted Web OAuth and product scopes; end users do not configure application credentials. Each connector requires sign-in and a read-only access check. Official Workspace MCP preview endpoints remain supported only for existing advanced configurations. Google Classroom returned no tools in the anonymous catalog during this check and is not offered as a verified entry.
 - Microsoft 365 needs product-specific OAuth registration and MCP endpoints or API adapters; Pizza’s CIMD identity alone does not provide Microsoft account access.
 
 ## Google, X and GitHub follow-up
 
-See [provider-auth.md](./provider-auth.md) for the official-source review and live probes. GitHub requests offline_access on new installs and refreshes device-issued tokens without a client secret. X retains its Native public-client PKCE flow. Google Workspace previews require a user-registered AI-agent client; a public discovery response is not an authorized account.
+See [provider-auth.md](./provider-auth.md) for the official-source review and live probes. GitHub requests offline_access on new installs and refreshes device-issued tokens without a client secret. X retains its Native public-client PKCE flow. Google API adapters use Pizza’s Cloudflare broker with a publisher-registered AI-agent client; a public discovery response is not an authorized account. See [Google broker deployment](google-broker.md).
