@@ -1,5 +1,5 @@
 /**
- * Official MCP connector catalog (Notion, GitHub, Gmail, X).
+ * Official OAuth MCP connector catalog.
  *
  * Connectors are marketplace-only: nothing is auto-registered via
  * `pizza.registerMcpServer()`. Users install from Plugins → MCPs → Marketplace

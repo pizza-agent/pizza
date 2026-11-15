@@ -116,6 +116,17 @@ export function eventToMessage(event: EventBase): AgentMessage | null {
 					const b = block as { type?: string };
 					return b.type === "text" || b.type === "thinking" || b.type === "tool_call" || b.type === "toolCall";
 				})
+				// Aborted/failed turns carry partial tool_calls that never ran.
+				// pi-ai drops the whole assistant message for these stop reasons, so
+				// any tool result (real or sanitizer-synthesized) would arrive as an
+				// orphan `tool` role message — strict providers 400 every later
+				// request. Strip the calls here: the sanitizer then finds nothing to
+				// pair, and downstream dropping behaves consistently.
+				.filter((block) => {
+					if (payload.stop_reason !== "aborted" && payload.stop_reason !== "error") return true;
+					const t = (block as { type?: string }).type;
+					return t !== "tool_call" && t !== "toolCall";
+				})
 				.map((block) => {
 					const blockType = (block as { type?: string }).type;
 					if (blockType !== "tool_call" && blockType !== "toolCall") {

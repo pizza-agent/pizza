@@ -32,6 +32,8 @@ export interface PromptBuilderDeps {
 	commandRegistry: CommandRegistry;
 	/** Shell fallback of the cli tool; undefined when disabled. */
 	shell: ShellOptions | undefined;
+	/** Whether the Co-Authored-By: Pizza trailer is auto-appended to git commits. */
+	gitCommitCoAuthor?: boolean;
 }
 
 export type PromptBuilder = (definitions: ExtensionToolDefinition[]) => string;
@@ -68,6 +70,14 @@ export function createPromptBuilder(deps: PromptBuilderDeps): PromptBuilder {
 					promptGuidelines.push(normalized);
 				}
 			}
+		}
+
+		// Git attribution: the spawnHook already appends the trailer; the model
+		// only needs to know not to add its own (git dedupes anyway).
+		if (deps.gitCommitCoAuthor && shell) {
+			promptGuidelines.push(
+				"When you run git commit, a 'Co-Authored-By: pizza-agent[bot]' trailer is automatically appended — do not add the trailer yourself",
+			);
 		}
 
 		// Main-agent identity + long-term memory index + guidelines.

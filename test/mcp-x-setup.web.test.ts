@@ -9,29 +9,35 @@ const client = { clientId: "x-native-client", clientSecret: "", callbackUrl: PIZ
 
 describe("X OAuth setup", () => {
 	it.each([
-		{ oauth: {}, expectedId: PIZZA_X_MCP_OAUTH_CLIENT_ID, expectedSecret: undefined },
-		{ oauth: { clientId: " " }, expectedId: PIZZA_X_MCP_OAUTH_CLIENT_ID, expectedSecret: undefined },
+		{ oauth: {}, expectedId: undefined, expectedSecret: undefined },
+		{ oauth: { clientId: " " }, expectedId: undefined, expectedSecret: undefined },
 		{ oauth: { clientId: "my-native-client" }, expectedId: "my-native-client", expectedSecret: undefined },
 		{ oauth: { clientId: "my-web-client", clientSecret: "custom-secret" }, expectedId: "my-web-client", expectedSecret: "custom-secret" },
 		{ oauth: { clientSecret: "custom-secret" }, expectedId: undefined, expectedSecret: "custom-secret" },
-	])("resolves product defaults without replacing a custom client's identity: $expectedId", async ({ oauth, expectedId, expectedSecret }) => {
+	])("resolves connector defaults without replacing a custom client's identity: $expectedId", async ({ oauth, expectedId, expectedSecret }) => {
 		const connection = new McpServerConnection({ entry: { name: "x", source: "global", config: { url: PIZZA_X_MCP_URL, oauth } }, cwd: process.cwd(), credentials: new McpOAuthCredentialStore(new InMemoryAuthStorageBackend()), createTransport: createDefaultTransport, onTools: () => {} });
 		try {
 			expect(connection.oauthSettings()).toMatchObject({ clientId: expectedId, clientSecret: expectedSecret, callbackUrl: PIZZA_X_MCP_OAUTH_CALLBACK_URL, scope: "tweet.read users.read offline.access" });
 		} finally { await connection.close(); }
 	});
-	it("accepts a Native app without a secret and requests refresh access", () => {
-		expect(xMcpNeedsSetup(config)).toBe(false);
-		expect(MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x")?.oauthSetup).toBeUndefined();
+	it("routes the catalog entry through setup and accepts a Native app without a secret", () => {
+		expect(xMcpNeedsSetup(config)).toBe(true);
+		expect(MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x")?.oauthSetup).toBe("x");
 		const result = buildXMcpConfig(config, client);
 		expect(xMcpNeedsSetup(result)).toBe(false);
 		expect(result).toMatchObject({ url: PIZZA_X_MCP_URL, enabled: true, oauth: { clientId: client.clientId, callbackUrl: client.callbackUrl, scope: "tweet.read users.read offline.access" } });
 		expect((result.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
 	});
-	it("uses the public product defaults for old HTTP installs without configuration", () => {
-		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: {} })).toBe(false);
-		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientId: " " } })).toBe(false);
+	it("routes bare and retired-client installs back into setup", () => {
+		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: {} })).toBe(true);
+		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientId: " " } })).toBe(true);
 		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientSecret: "custom-secret" } })).toBe(true);
+		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientId: PIZZA_X_MCP_OAUTH_CLIENT_ID } })).toBe(true);
+		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientId: "my-native-client" } })).toBe(false);
+		expect(xMcpNeedsSetup({ url: PIZZA_X_MCP_URL, oauth: { clientId: "my-web-client", clientSecret: "s" } })).toBe(false);
+	});
+	it("rejects the retired public client id in setup", () => {
+		expect(() => buildXMcpConfig(config, { ...client, clientId: PIZZA_X_MCP_OAUTH_CLIENT_ID })).toThrow();
 	});
 	it("keeps confidential client credentials when explicitly provided", () => {
 		expect(buildXMcpConfig(config, { ...client, clientSecret: "fixture-secret" })).toMatchObject({ oauth: { clientSecret: "fixture-secret" } });

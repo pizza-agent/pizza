@@ -1,4 +1,10 @@
 import { createServer, type Server, type ServerResponse } from "node:http";
+import { validateOAuthResponseIssuer } from "./errors.js";
+
+export interface OAuthCallbackIssuer {
+	expected: string;
+	required: boolean;
+}
 
 export interface OAuthCallback {
 	code: string;
@@ -48,6 +54,7 @@ export class OAuthCallbackServer {
 			reject: (error: Error) => void;
 			timer: ReturnType<typeof setTimeout>;
 			path: string | undefined;
+			issuer: OAuthCallbackIssuer | undefined;
 		}
 	>();
 
@@ -91,14 +98,14 @@ export class OAuthCallbackServer {
 		return instance;
 	}
 
-	waitForCallback(state: string, path?: string): Promise<OAuthCallback> {
+	waitForCallback(state: string, path?: string, issuer?: OAuthCallbackIssuer): Promise<OAuthCallback> {
 		if (this.pending.has(state)) throw new Error("OAuth state is already pending");
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(state);
 				reject(new Error("OAuth callback timed out"));
 			}, this.timeoutMs);
-			this.pending.set(state, { resolve, reject, timer, path });
+			this.pending.set(state, { resolve, reject, timer, path, issuer });
 		});
 	}
 
@@ -147,6 +154,14 @@ export class OAuthCallbackServer {
 			this.reply(response, 400, { ok: false, message: "Unexpected redirect URI" });
 			return;
 		}
+		const iss = url.searchParams.get("iss") ?? undefined;
+		try {
+			if (pending.issuer) validateOAuthResponseIssuer(pending.issuer.expected, iss, pending.issuer.required);
+		} catch (error) {
+			pending.reject(error as Error);
+			this.reply(response, 400, { ok: false, message: "Invalid authorization response issuer" });
+			return;
+		}
 		const error = url.searchParams.get("error");
 		if (error) {
 			const description = url.searchParams.get("error_description") ?? error;
@@ -164,7 +179,6 @@ export class OAuthCallbackServer {
 			this.reply(response, 400, { ok: false, message: "Missing authorization code" });
 			return;
 		}
-		const iss = url.searchParams.get("iss");
 		if (this.deferSuccess) {
 			this.responses.add(response);
 			response.once("close", () => this.responses.delete(response));

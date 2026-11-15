@@ -226,6 +226,7 @@ async function runGitAllowFailure(cwd: string, args: string[]): Promise<GitExecR
 			cwd,
 			encoding: "utf8",
 			maxBuffer: GIT_MAX_BUFFER,
+			windowsHide: true,
 		});
 		return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
 	} catch (error) {

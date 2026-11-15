@@ -745,20 +745,29 @@ export class SchedulerEngine {
 					reason,
 				};
 				appendRun(this.scope, this.workspaceId, run);
-				this.tasks.set(current.id, {
-					...taskAfterDispatch,
-					lastRunAt: at,
-					lastRunStatus: status,
-					lastRunEventId: dispatched.eventId,
-					runCount: (current.runCount ?? 0) + 1,
-					updatedAt: this.now(),
-				});
-				this.persist();
+				// Re-read before writing: a delete/pause/edit during the dispatched
+				// run must win over the in-memory copy — otherwise this completion
+				// silently resurrects (and reschedules) the deleted task.
+				const fresh = readTaskFresh(this.scope, this.workspaceId, current.id);
+				if (fresh) {
+					const migrated = taskAfterDispatch.sessionTarget !== current.sessionTarget
+						? { ...fresh, sessionTarget: taskAfterDispatch.sessionTarget }
+						: fresh;
+					this.tasks.set(current.id, {
+						...migrated,
+						lastRunAt: at,
+						lastRunStatus: status,
+						lastRunEventId: dispatched.eventId,
+						runCount: (fresh.runCount ?? 0) + 1,
+						updatedAt: this.now(),
+					});
+					this.persist();
+				}
 				this.emit({ type: "task.completed", payload: run });
 			}
 
-			const updated = this.tasks.get(current.id)!;
-			if (updated.enabled && !this.disposed) {
+			const updated = this.tasks.get(current.id);
+			if (updated?.enabled && !this.disposed) {
 				if (this.capReached(updated)) {
 					// maxRuns reached after this run — auto-disable instead of
 					// rescheduling, so runaway recurring tasks die on their own.
@@ -782,14 +791,17 @@ export class SchedulerEngine {
 				reason: e instanceof Error ? e.message : String(e),
 			};
 			appendRun(this.scope, this.workspaceId, run);
-			this.tasks.set(current.id, {
-				...current,
-				lastRunAt: at,
-				lastRunStatus: "failed",
-				updatedAt: this.now(),
-				runCount: (current.runCount ?? 0) + 1,
-			});
-			this.persist();
+			const fresh = readTaskFresh(this.scope, this.workspaceId, current.id);
+			if (fresh) {
+				this.tasks.set(current.id, {
+					...fresh,
+					lastRunAt: at,
+					lastRunStatus: "failed",
+					updatedAt: this.now(),
+					runCount: (fresh.runCount ?? 0) + 1,
+				});
+				this.persist();
+			}
 			this.emit({ type: "task.completed", payload: run });
 		} finally {
 			this.running.delete(current.id);

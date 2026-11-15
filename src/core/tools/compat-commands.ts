@@ -438,7 +438,7 @@ function tryRunGrepWithRg(options: GrepOptions, context: CompatCommandContext): 
 	for (const pattern of options.patterns) rgArgs.push("--regexp", pattern);
 	rgArgs.push(...options.paths);
 
-	const child = spawnSync(rgPath, rgArgs, { cwd: context.cwd, encoding: "utf-8" });
+	const child = spawnSync(rgPath, rgArgs, { cwd: context.cwd, encoding: "utf-8", windowsHide: true });
 	if (child.error) return null;
 	return {
 		stdout: child.stdout ?? "",
@@ -853,7 +853,7 @@ function tryRunFindWithFd(options: FindOptions, context: CompatCommandContext): 
 	fdArgs.push(namePredicate.value);
 	for (const inputPath of options.paths) fdArgs.push(resolve(context.cwd, inputPath));
 
-	const child = spawnSync(fdPath, fdArgs, { cwd: context.cwd, encoding: "utf-8" });
+	const child = spawnSync(fdPath, fdArgs, { cwd: context.cwd, encoding: "utf-8", windowsHide: true });
 	if (child.error || (child.status !== 0 && child.status !== 1)) return null;
 	const lines = (child.stdout ?? "")
 		.split(/\r?\n/)

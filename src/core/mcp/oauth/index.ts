@@ -1,16 +1,19 @@
 export {
 	type OAuthCallback,
 	type OAuthCallbackPage,
+	type OAuthCallbackIssuer,
 	OAuthCallbackServer,
 	type OAuthCallbackServerOptions,
 } from "./callback.js";
 export { authorizeDevice, type OAuthDevicePrompt } from "./device.js";
+export { clientMetadataBaseUrl, clientMetadataDocumentUrl, createNativeClientMetadata, oauthCallbackId } from "./client-metadata.js";
 export {
 	buildAuthorizationServerDiscoveryUrls,
 	discoverAuthorizationServerMetadata,
 	discoverOAuthServerInfo,
 	discoverProtectedResourceMetadata,
 	parseWwwAuthenticate,
+	canonicalOAuthResource,
 	resourceUrlFromServerUrl,
 	selectResource,
 } from "./discovery.js";
@@ -20,6 +23,7 @@ export {
 	OAuthInsecureEndpointError,
 	OAuthIssuerMismatchError,
 	OAuthRegistrationError,
+	validateOAuthResponseIssuer,
 } from "./errors.js";
 export {
 	type AddClientAuthentication,
@@ -50,8 +54,11 @@ export type {
 	OAuthClientInformationFull,
 	OAuthClientInformationMixed,
 	OAuthClientMetadata,
+	OAuthAuthorizationContext,
+	OAuthCredentialBinding,
 	OAuthDiscoveryState,
 	OAuthProtectedResourceMetadata,
 	OAuthServerInfo,
 	OAuthTokens,
+	OAuthTokenSaveContext,
 } from "./types.js";

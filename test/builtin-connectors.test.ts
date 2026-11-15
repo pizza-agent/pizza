@@ -31,19 +31,18 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(registered).toEqual([]);
 	});
 
-	it("ships the official marketplace connector names", () => {
-		expect(MCP_CONNECTOR_CATALOG.map((entry) => entry.name).sort()).toEqual([
-			"github",
-			"gmail",
-			"notion",
-			"x",
-		]);
-		expect(BUILTIN_MCP_CONNECTORS.map((entry) => entry.name).sort()).toEqual([
-			"github",
-			"gmail",
-			"notion",
-			"x",
-		]);
+	it("offers official OAuth services across development, work, analytics and payments", () => {
+		const names = MCP_CONNECTOR_CATALOG.map((entry) => entry.name);
+		expect(new Set(names).size).toBe(names.length);
+		expect(names).toEqual(expect.arrayContaining([
+			"notion", "github", "gmail", "x", "linear", "atlassian", "cloudflare", "supabase", "stripe", "todoist", "posthog", "slack",
+		]));
+		expect(BUILTIN_MCP_CONNECTORS.map((entry) => entry.name)).toEqual(names);
+		for (const entry of MCP_CONNECTOR_CATALOG) {
+			expect(new URL(String(entry.config.url)).protocol).toBe("https:");
+			expect(new URL(entry.docsUrl!).protocol).toBe("https:");
+			expect((entry.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
+		}
 	});
 
 	it("ships valid MCP server configs for marketplace install", () => {
@@ -59,10 +58,17 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(names.has("finance")).toBe(false);
 	});
 
-	it("connects X directly with Pizza's public Native client and no developer setup", () => {
+	it("routes X through registered-app setup without a baked client id", () => {
 		const x = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x");
-		expect(x).toMatchObject({ type: "http", config: { url: "https://api.x.com/mcp", oauth: { clientId: "SkkxeTJzMUZYcmhLd2daa201Y3E6MTpjaQ", scope: "tweet.read users.read offline.access", callbackUrl: "http://127.0.0.1:8766/callback" } } });
-		expect(x?.oauthSetup).toBeUndefined();
+		expect(x).toMatchObject({
+			type: "http",
+			oauthSetup: "x",
+			config: {
+				url: "https://api.x.com/mcp",
+				oauth: { scope: "tweet.read users.read offline.access", callbackUrl: "http://127.0.0.1:8766/callback" },
+			},
+		});
+		expect((x?.config.oauth as Record<string, unknown>).clientId).toBeUndefined();
 		expect((x?.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
 		expect(x?.config.command).toBeUndefined();
 		expect(x?.config.env).toBeUndefined();
@@ -74,7 +80,7 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(oauth).toMatchObject({
 			clientId: PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID,
 			deviceAuthorizationUrl: "https://github.com/login/device/code",
-			scope: "repo read:user",
+			scope: "repo read:user offline_access",
 			callbackUrl: PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL,
 			authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA,
 		});

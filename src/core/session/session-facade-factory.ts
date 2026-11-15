@@ -56,6 +56,7 @@ import type { ForkSource } from "../facade/fork.js";
 import { createLlmClientFactory } from "../facade/llm-client.js";
 import { resolveInitialModel } from "../facade/model-resolution.js";
 import { createPromptBuilder } from "../facade/prompt-builder.js";
+import { annotateGitCommits, gitSupportsCommitTrailer } from "../git-attribution.js";
 import { setupEventStore } from "../facade/store-setup.js";
 import { getEventDatabasePath } from "../event-store/workspace.js";
 import { ToolAssembly } from "../facade/tool-assembly.js";
@@ -301,11 +302,26 @@ export async function createSessionFacade(
 	// they survive cli tool rebuilds (otherwise a rebuild between approval and
 	// execution would silently re-resolve against a changed command table).
 	const resolvedCommandCache = new Map<string, ResolvedCliCommand>();
+	// Sign commits Pizza authors: when enabled and git is new enough for
+	// --trailer (>= 2.32), every `git commit` the agent runs gets a
+	// `Co-Authored-By: Pizza` trailer appended. Implemented as a spawnHook —
+	// deterministic, unlike a prompt instruction — and composed AFTER any
+	// user-supplied spawnHook so callers see the final command. Harmless on
+	// non-repos (git commit fails there anyway).
+	const annotateCommits = settingsManager.getGitCommitCoAuthor() && gitSupportsCommitTrailer();
 	const shell: ShellOptions | undefined = toolsOption.shell
 		? {
 				commandPrefix: settingsManager.getShellCommandPrefix(),
 				shellPath: settingsManager.getShellPath(),
 				...options.shell,
+				...(annotateCommits
+					? {
+							spawnHook: (ctx) => {
+								const annotated = { ...ctx, command: annotateGitCommits(ctx.command) };
+								return options.shell?.spawnHook?.(annotated) ?? annotated;
+							},
+						}
+					: {}),
 			}
 		: undefined;
 	// The `_cron` command (scheduled prompts) gets a LAZY engine getter. The
@@ -364,6 +380,7 @@ export async function createSessionFacade(
 		sessionManager,
 		commandRegistry,
 		shell,
+		gitCommitCoAuthor: annotateCommits,
 	});
 	const toolAssembly = new ToolAssembly({
 		cwd,

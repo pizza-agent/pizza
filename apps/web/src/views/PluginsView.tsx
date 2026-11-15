@@ -30,7 +30,7 @@ import {
 	type ExtensionPermissionKind,
 	type ExtensionPermissionState,
 } from "@/lib/transport";
-import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, MousePointer2, RotateCw, ShieldCheck, Loader2 } from "lucide-react";
+import { Puzzle, BookOpen, Radio, Settings, Plus, Search, ExternalLink, Download, Power, Trash2, Hash, Send, Monitor, AppWindow, MousePointer2, RotateCw, ShieldCheck, Loader2 } from "lucide-react";
 import { ChannelDialog } from "@/components/ChannelDialog";
 import {
 	listChannels,
@@ -50,8 +50,8 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
+	{ key: "mcps", icon: AppWindow },
 	{ key: "skills", icon: BookOpen },
-	{ key: "mcps", icon: Monitor },
 	{ key: "extensions", icon: Puzzle },
 	{ key: "channels", icon: Radio },
 ];
@@ -690,7 +690,6 @@ function ExtensionPermissionGuide({
 							{!checking && !permission.granted && (
 								<Button
 									size="sm"
-									tone="accent"
 									variant="soft"
 									iconRight={<ExternalLink className="h-3.5 w-3.5" />}
 									loading={rowBusy}
@@ -1373,7 +1372,7 @@ function ChannelsTab() {
 			/>
 			<p className="text-sm text-muted">{t("channels.description")}</p>
 			<div className="flex items-center justify-end">
-				<Button size="sm" tone="accent" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={handleAdd}>
+				<Button size="sm" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={handleAdd}>
 					{t("channels.add")}
 				</Button>
 			</div>
@@ -1408,7 +1407,7 @@ function ChannelsTab() {
 // page title) at /settings?page=plugins. Own chrome lives in SettingsView.
 export function PluginsContent() {
 	const { t } = useTranslation();
-	const [tab, setTab] = useState<PluginTab>("skills");
+	const [tab, setTab] = useState<PluginTab>("mcps");
 
 	return (
 		<>

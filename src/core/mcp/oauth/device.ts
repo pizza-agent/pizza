@@ -1,7 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { McpFetch } from "../auth-provider.js";
 import { isObject } from "../protocol/jsonrpc.js";
-import { OAuthError, OAuthInsecureEndpointError } from "./errors.js";
+import { OAuthError } from "./errors.js";
+import { secureOAuthEndpoint } from "./discovery.js";
 import { parseOAuthTokens, type OAuthTokens } from "./types.js";
 
 export interface OAuthDevicePrompt {
@@ -11,11 +12,7 @@ export interface OAuthDevicePrompt {
 }
 
 function endpoint(value: string): URL {
-	const url = new URL(value);
-	if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
-		throw new OAuthInsecureEndpointError(value);
-	}
-	return url;
+	return secureOAuthEndpoint(value);
 }
 
 /** RFC 8628: a native client never needs to distribute a GitHub client secret. */
@@ -33,6 +30,7 @@ export async function authorizeDevice(options: {
 	const request = async (url: URL, params: Record<string, string>, signal?: AbortSignal) => {
 		const response = await (options.fetch ?? globalThis.fetch)(url, {
 			method: "POST",
+			redirect: "error",
 			headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
 			body: new URLSearchParams(params), signal,
 		});

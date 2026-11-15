@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, ExternalLink, Loader2, LogIn, LogOut, Pencil, Plus, Power, RotateCw, Search, Server, Trash2, Wrench } from "lucide-react";
+import { Check, LogIn, LogOut, Pencil, Plug, Plus, RotateCw, Search, AppWindow, Trash2, Wrench } from "lucide-react";
 import { Badge, Button, Card, ErrorBanner, Field, Modal, MoreMenu, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { sendCommandAwait, openExternal } from "@/lib/transport";
+import { sendCommandAwait } from "@/lib/transport";
 import { confirmDialog } from "@/lib/confirm";
 import i18n from "@/i18n";
 import { McpToolParameters } from "@/components/McpToolParameters";
+import { AppIcon } from "@/components/AppIcon";
 import { MCP_MARKETPLACE_CATALOG, type McpCatalogEntry } from "@/lib/mcp-catalog";
 import { oauthSetupDefinition, requiredOAuthSetup } from "@/lib/mcp-oauth-setup";
 import { useMcpAuthSession } from "@/lib/use-mcp-auth-session";
@@ -37,6 +38,10 @@ function catalogDescription(entry: McpCatalogEntry): string {
 	return i18n.t(`plugins.mcp.catalogDescriptions.${entry.name}`, { defaultValue: entry.description });
 }
 
+function catalogNote(entry: McpCatalogEntry): string | undefined {
+	return entry.connectionNote ? i18n.t(`plugins.mcp.catalogNotes.${entry.name}`, { defaultValue: entry.connectionNote }) : undefined;
+}
+
 function serverDescription(server: McpServer): string | undefined {
 	const entry = MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === server.name);
 	return entry && server.description === entry.config.description ? catalogDescription(entry) : server.description;
@@ -52,7 +57,7 @@ async function command(args: string[], timeoutMs = 60000) {
 		timeoutMs,
 	);
 	const text = response.data?.text;
-	if (!text) throw new Error("Empty MCP response");
+	if (!text) throw new Error(i18n.t("plugins.mcp.emptyResponse"));
 	const result = JSON.parse(text);
 	if (!result.ok) {
 		const err = new Error(result.error?.message ?? text) as Error & {
@@ -75,6 +80,14 @@ function canSignOut(server: McpServer): boolean {
 	return Boolean(server.oauth) && server.enabled && server.state === "connected";
 }
 
+/** Brand icon key for an installed app: match the catalog by name or URL, else generic. */
+function serverIconName(server: McpServer): string {
+	const entry =
+		MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === server.name) ??
+		(server.url ? MCP_MARKETPLACE_CATALOG.find((entry) => entry.config.url === server.url) : undefined);
+	return entry?.name ?? server.name;
+}
+
 function InstalledMcpCard({
 	server,
 	busy,
@@ -83,7 +96,7 @@ function InstalledMcpCard({
 	onSignOut,
 	onViewTools,
 	onEdit,
-	onToggleEnabled,
+	onConnect,
 	onRemove,
 }: {
 	server: McpServer;
@@ -93,7 +106,7 @@ function InstalledMcpCard({
 	onSignOut: (server: McpServer) => void;
 	onViewTools: (name: string) => void;
 	onEdit: (server: McpServer) => void;
-	onToggleEnabled: (server: McpServer) => void;
+	onConnect: (server: McpServer) => void;
 	onRemove: (server: McpServer) => void;
 }) {
 	const { t } = useTranslation();
@@ -106,7 +119,7 @@ function InstalledMcpCard({
 			server.state !== "connected" &&
 			server.state !== "disabled");
 	const menuItems = [
-		...(showSignIn
+		...(showSignIn && !needsSignIn(server)
 			? [
 					{
 						icon: LogIn,
@@ -127,12 +140,6 @@ function InstalledMcpCard({
 				]
 			: []),
 		{
-			icon: Power,
-			label: server.enabled ? t("plugins.mcp.disable") : t("plugins.mcp.enable"),
-			disabled: busy,
-			onClick: () => onToggleEnabled(server),
-		},
-		{
 			icon: Wrench,
 			label: t("plugins.mcp.tools"),
 			disabled: busy || !server.enabled,
@@ -142,7 +149,7 @@ function InstalledMcpCard({
 			? [
 					{
 						icon: Pencil,
-						label: t("plugins.mcp.edit"),
+						label: t(server.config?.adapter ? "plugins.mcp.editApp" : "plugins.mcp.edit"),
 						disabled: busy,
 						onClick: () => onEdit(server),
 					},
@@ -161,8 +168,8 @@ function InstalledMcpCard({
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
 				<div className={cn("min-w-0 flex-1 transition-opacity", !server.enabled && "opacity-60")}>
-					<div className="flex items-center gap-2">
-						<Server className={cn("h-4 w-4 shrink-0", server.enabled ? "text-accent" : "text-muted")} />
+					<div className="flex items-center gap-2.5">
+						<AppIcon name={serverIconName(server)} />
 						<span className="truncate text-sm font-medium text-fg">{server.name}</span>
 					</div>
 					{(serverDescription(server) || server.url) && (
@@ -171,11 +178,6 @@ function InstalledMcpCard({
 						</p>
 					)}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
-						{server.enabled ? (
-							<Badge tone="success">{t("plugins.mcp.enabled")}</Badge>
-						) : (
-							<Badge tone="neutral">{t("plugins.mcp.disabled")}</Badge>
-						)}
 						<Badge
 							tone={
 								server.state === "connected"
@@ -188,7 +190,7 @@ function InstalledMcpCard({
 							{t(`plugins.mcp.states.${server.state}`, server.state)}
 						</Badge>
 						{extensionScoped && <Badge tone="neutral">{t("plugins.mcp.builtin")}</Badge>}
-						<Badge tone="neutral">{server.config?.adapter === "gmail" ? t("plugins.mcp.localAdapter") : server.type}</Badge>
+						<Badge tone="neutral">{server.type === "stdio" ? t("plugins.mcp.stdioShort") : t("plugins.mcp.httpShort")}</Badge>
 						<span className="text-[10px] text-muted">
 							{t("plugins.mcp.toolCount", { count: server.tools })}
 						</span>
@@ -201,17 +203,28 @@ function InstalledMcpCard({
 					)}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					{needsSignIn(server) && (
+					{!server.enabled ? (
 						<Button
 							size="sm"
-							tone="accent"
+							disabled={busy}
+							iconLeft={<Plug className="h-3.5 w-3.5" />}
+							onClick={() => onConnect(server)}
+						>
+							{t("plugins.mcp.install")}
+						</Button>
+					) : needsSignIn(server) ? (
+						<Button
+							size="sm"
 							disabled={busy || loginActive}
+							iconLeft={<LogIn className="h-3.5 w-3.5" />}
 							onClick={() => onSignIn(server.name)}
 						>
 							{t("plugins.mcp.signIn")}
 						</Button>
+					) : null}
+					{menuItems.length > 0 && (
+						<MoreMenu disabled={busy} title={t("plugins.mcp.actions")} items={menuItems} />
 					)}
-					<MoreMenu disabled={busy} title={t("plugins.mcp.actions")} items={menuItems} />
 				</div>
 			</div>
 		</Card>
@@ -223,72 +236,55 @@ function DirectoryMcpCard({
 	installed,
 	enabled,
 	installing,
+	busy,
 	onInstall,
+	onEnable,
 }: {
 	entry: McpCatalogEntry;
 	installed: boolean;
 	enabled?: boolean;
 	installing: boolean;
+	busy: boolean;
 	onInstall: () => void;
+	onEnable: () => void;
 }) {
 	const { t } = useTranslation();
-	const items = [
-		...(entry.docsUrl
-			? [
-					{
-						icon: ExternalLink,
-						label: t("plugins.mcp.view"),
-						onClick: () => openExternal(entry.docsUrl!),
-					},
-				]
-			: []),
-		...(installed
-			? []
-			: [
-					{
-						icon: installing ? Loader2 : Download,
-						label: installing ? t("plugins.mcp.installing") : t("plugins.mcp.install"),
-						onClick: onInstall,
-						disabled: installing,
-					},
-				]),
-	];
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
 				<div className={cn("min-w-0 flex-1 transition-opacity", installed && enabled === false && "opacity-60")}>
-					<div className="flex items-center gap-2">
-						<Server className="h-4 w-4 shrink-0 text-accent" />
+					<div className="flex items-center gap-2.5">
+						<AppIcon name={entry.name} />
 						<span className="truncate text-sm font-medium text-fg">{entry.name}</span>
 					</div>
 					<p className="mt-2 line-clamp-2 text-xs text-muted">{catalogDescription(entry)}</p>
+					{entry.connectionNote && <p className="mt-2 text-xs text-muted">{catalogNote(entry)}</p>}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
-						{installed ? (
-							<>
-								<Badge tone="success">{t("plugins.mcp.installed")}</Badge>
-								{enabled === false ? (
-									<Badge tone="neutral">{t("plugins.mcp.disabled")}</Badge>
-								) : (
-									<Badge tone="success">{t("plugins.mcp.enabled")}</Badge>
-								)}
-							</>
-						) : installing ? (
-							<Badge tone="accent">{t("plugins.mcp.installing")}</Badge>
-						) : (
-							<Badge tone="accent">{t("plugins.mcp.catalogType")}</Badge>
-						)}
 						{entry.builtin && (
 							<Badge tone="neutral">{t("plugins.mcp.builtin")}</Badge>
 						)}
-						<Badge tone="neutral">{entry.config.adapter === "gmail" ? t("plugins.mcp.localAdapter") : entry.type}</Badge>
+						<Badge tone="neutral">{entry.type === "stdio" ? t("plugins.mcp.stdioShort") : t("plugins.mcp.httpShort")}</Badge>
 						{entry.oauthSetup && <Badge tone="neutral">{t(oauthSetupDefinition(entry.oauthSetup).text("SetupRequired"))}</Badge>}
 					</div>
 				</div>
-				{items.length > 0 && (
-					<div className="flex shrink-0 items-center gap-2">
-						<MoreMenu title={t("plugins.mcp.actions")} items={items} />
-					</div>
-				)}
+				<div className="flex shrink-0 items-center gap-2">
+					{installed ? (
+						enabled === false ? (
+							<Button size="sm" disabled={busy} iconLeft={<Plug className="h-3.5 w-3.5" />} onClick={onEnable}>
+								{t("plugins.mcp.install")}
+							</Button>
+						) : (
+							<span className="flex items-center gap-1 text-xs text-success">
+								<Check className="h-3.5 w-3.5" />
+								{t("plugins.mcp.installed")}
+							</span>
+						)
+					) : (
+						<Button size="sm" loading={installing} disabled={installing} iconLeft={installing ? undefined : <Plug className="h-3.5 w-3.5" />} onClick={onInstall}>
+							{installing ? t("plugins.mcp.installing") : t("plugins.mcp.install")}
+						</Button>
+					)}
+				</div>
 			</div>
 		</Card>
 	);
@@ -304,6 +300,7 @@ export function McpTab() {
 	const [query, setQuery] = useState("");
 	const [editing, setEditing] = useState(false);
 	const [existing, setExisting] = useState(false);
+	const [editingAdapter, setEditingAdapter] = useState(false);
 	const [name, setName] = useState("");
 	const [scope, setScope] = useState("global");
 	const [transport, setTransport] = useState("http");
@@ -324,6 +321,7 @@ export function McpTab() {
 	const [oauthSetup, setOAuthSetup] = useState<{
 		provider: string;
 		name: string; config: Record<string, unknown>; scope: string;
+		docsUrl?: string; note?: string;
 		clientId: string; clientSecret: string; callbackUrl: string; busy: boolean; error: string;
 	} | null>(null);
 	const attachRoot = useCallback((node: HTMLDivElement | null) => {
@@ -435,9 +433,11 @@ export function McpTab() {
 	function openOAuthSetup(serverName: string, config: Record<string, unknown>, scope: string, provider: string) {
 		const oauth = config.oauth as Record<string, unknown> | undefined;
 		const defaults = oauthSetupDefinition(provider).defaults;
+		const catalog = MCP_MARKETPLACE_CATALOG.find((entry) => entry.config.url === config.url && entry.config.adapter === config.adapter);
 		const hasCustomSecret = typeof oauth?.clientSecret === "string" && !!oauth.clientSecret.trim();
 		setOAuthSetup({ name: serverName, config, scope, provider,
-			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
+			docsUrl: catalog?.docsUrl, note: catalog && catalogNote(catalog),
+			clientId: typeof oauth?.clientId === "string" && oauth.clientId !== oauthSetupDefinition(provider).staleClientId ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
 			clientSecret: typeof oauth?.clientSecret === "string" ? oauth.clientSecret : "",
 			callbackUrl: typeof oauth?.callbackUrl === "string" ? oauth.callbackUrl : String(defaults.callbackUrl), busy: false, error: "" });
 	}
@@ -474,6 +474,7 @@ export function McpTab() {
 	);
 	function edit(server?: McpServer) {
 		setExisting(!!server);
+		setEditingAdapter(!!server?.config?.adapter);
 		setName(server?.name ?? "");
 		setScope(server?.scope ?? "global");
 		setTransport(!server || server.config?.url ? "http" : "stdio");
@@ -493,9 +494,10 @@ export function McpTab() {
 			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
 				throw new Error(t("plugins.mcp.invalidConfig"));
 			if (transport === "http") {
-				const url = new URL(endpoint);
-				if (!["http:", "https:"].includes(url.protocol))
-					throw new Error(t("plugins.mcp.invalidUrl"));
+				const message = t(editingAdapter ? "plugins.mcp.invalidAdapterUrl" : "plugins.mcp.invalidUrl");
+				let url: URL;
+				try { url = new URL(endpoint); } catch { throw new Error(message); }
+				if (!["http:", "https:"].includes(url.protocol)) throw new Error(message);
 				parsed.url = endpoint;
 			}
 			if (!name.trim() || name.trim().startsWith("-"))
@@ -544,7 +546,6 @@ export function McpTab() {
 				</Button>
 				<Button
 					size="sm"
-					tone="accent"
 					disabled={busy}
 					onClick={() => edit()}
 					iconLeft={<Plus className="h-3.5 w-3.5" />}
@@ -564,13 +565,13 @@ export function McpTab() {
 				<Modal
 					open={editing}
 					onClose={() => { if (!saving) setEditing(false); }}
-					title={t(existing ? "plugins.mcp.edit" : "plugins.mcp.add")}
+					title={t(existing ? (editingAdapter ? "plugins.mcp.editApp" : "plugins.mcp.edit") : "plugins.mcp.add")}
 					size="lg"
 					backdrop={false}
 					anchor={dialogAnchor}
 					footer={<div className="flex w-full items-center justify-between gap-2">
 						<Button type="button" tone="neutral" variant="ghost" size="sm" disabled={saving} onClick={() => setEditing(false)}>{t("plugins.mcp.cancel")}</Button>
-						<Button type="button" size="sm" loading={saving} onClick={() => formRef.current?.requestSubmit()} tone="accent" disabled={saving}>
+						<Button type="button" size="sm" loading={saving} onClick={() => formRef.current?.requestSubmit()} disabled={saving}>
 							{t(saving ? "plugins.mcp.saving" : "plugins.mcp.save")}
 						</Button>
 					</div>}
@@ -583,18 +584,18 @@ export function McpTab() {
 							void save();
 						}}
 					>
-						<p className="text-sm text-muted">{t("plugins.mcp.formHint")}</p>
+						<p className="text-sm text-muted">{t(editingAdapter ? "plugins.mcp.adapterFormHint" : "plugins.mcp.formHint")}</p>
 						{formError && <ErrorBanner message={formError} />}
-						<div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-							<div>
+						<div className={cn("grid grid-cols-1 gap-4", !editingAdapter && "sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]")}>
+							{!editingAdapter && <div>
 								<span className="label">{t("plugins.mcp.transport")}</span>
 								<fieldset disabled={saving} className="min-w-0 disabled:opacity-50">
 									<Select
 										value={transport}
 										title={t("plugins.mcp.transport")}
 										options={[
-											{ value: "http", label: t("plugins.mcp.httpShort"), hint: "Streamable HTTP" },
-											{ value: "stdio", label: t("plugins.mcp.stdioShort"), hint: "stdio" },
+											{ value: "http", label: t("plugins.mcp.remoteTransport"), hint: "Streamable HTTP" },
+											{ value: "stdio", label: t("plugins.mcp.localTransport"), hint: "command / args / env" },
 										]}
 										onChange={(value) => {
 											setTransport(value);
@@ -603,14 +604,14 @@ export function McpTab() {
 										}}
 									/>
 								</fieldset>
-							</div>
-							<Field label={t("plugins.mcp.name")}>
+							</div>}
+							<Field label={t(editingAdapter ? "plugins.mcp.appName" : "plugins.mcp.name")}>
 								<input required autoFocus={!existing} disabled={existing || saving}
 									value={name} onChange={(e) => setName(e.target.value)}
 									className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-50" />
 							</Field>
 						</div>
-						{transport === "http" && (
+						{!editingAdapter && transport === "http" && (
 							<Field label={t("plugins.mcp.url")} hint={t("plugins.mcp.httpHint")}>
 								<input
 									autoFocus={existing}
@@ -645,8 +646,8 @@ export function McpTab() {
 						)}
 
 						<details key={transport} open={transport === "stdio"} className="rounded-lg border border-border p-3">
-							<summary className="cursor-pointer text-sm font-medium">{t("plugins.mcp.advanced")}</summary>
-						<div className="mt-3"><Field label={t("plugins.mcp.config")}>
+							<summary className="cursor-pointer text-sm font-medium">{t(editingAdapter ? "plugins.mcp.adapterAdvanced" : "plugins.mcp.advanced")}</summary>
+						<div className="mt-3"><Field label={t(editingAdapter ? "plugins.mcp.adapterConfig" : "plugins.mcp.config")}>
 							<textarea
 								required
 								disabled={saving}
@@ -669,7 +670,7 @@ export function McpTab() {
 								className="block w-full rounded-lg border border-border bg-surface p-3 font-mono text-xs text-fg focus:border-accent focus:outline-none"
 							/>
 						</Field></div>
-						<p className="mt-2 text-xs text-muted">{t("plugins.mcp.configHint")}</p>
+						<p className="mt-2 text-xs text-muted">{t(editingAdapter ? "plugins.mcp.adapterConfigHint" : "plugins.mcp.configHint")}</p>
 						</details>
 					</form>
 				</Modal>
@@ -691,7 +692,7 @@ export function McpTab() {
 							{filteredInstalled.length === 0 ? (
 								<Card className="mb-6">
 									<div className="py-6 text-center">
-										<Server className="mx-auto mb-2 h-8 w-8 text-muted/40" />
+										<AppWindow className="mx-auto mb-2 h-8 w-8 text-muted/40" />
 										<p>{t("plugins.mcp.empty")}</p>
 										<p className="mt-2 text-sm text-muted">
 											{t("plugins.mcp.emptyHint")}
@@ -714,13 +715,9 @@ export function McpTab() {
 											}
 											onViewTools={(name) => void viewTools(name)}
 											onEdit={edit}
-											onToggleEnabled={(s) =>
+											onConnect={(s) =>
 												void act(async () => {
-													await command([
-														"server",
-														s.enabled ? "disable" : "enable",
-														s.name,
-													]);
+													await command(["server", "enable", s.name]);
 												})
 											}
 											onRemove={(s) =>
@@ -757,7 +754,7 @@ export function McpTab() {
 					{filteredCatalog.length === 0 ? (
 						<Card>
 							<div className="py-6 text-center">
-								<Server className="mx-auto mb-2 h-8 w-8 text-muted/40" />
+								<AppWindow className="mx-auto mb-2 h-8 w-8 text-muted/40" />
 								<p className="font-mono text-xs text-muted">{t("plugins.mcp.emptyDirectory")}</p>
 							</div>
 						</Card>
@@ -770,7 +767,13 @@ export function McpTab() {
 									installed={installedNames.has(entry.name)}
 									enabled={installedByName.get(entry.name)?.enabled}
 									installing={installingName === entry.name}
+									busy={busy}
 									onInstall={() => void installCatalogEntry(entry)}
+									onEnable={() =>
+										void act(async () => {
+											await command(["server", "enable", entry.name]);
+										})
+									}
 								/>
 							))}
 						</div>
@@ -782,12 +785,13 @@ export function McpTab() {
 					footer={<><Button tone="neutral" variant="ghost" disabled={oauthSetup.busy} onClick={() => setOAuthSetup(null)}>{t("plugins.mcp.cancel")}</Button><Button loading={oauthSetup.busy} disabled={!oauthSetup.clientId.trim() || (oauthSetupDefinition(oauthSetup.provider).secretRequired && !oauthSetup.clientSecret.trim())} onClick={() => void saveOAuthSetup()}>{t("plugins.mcp.googleSetupConnect")}</Button></>}>
 					<div className="space-y-4">
 						<p className="text-sm text-muted">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupIntro"))}</p>
+						{oauthSetup.note && <p className="text-sm text-muted">{oauthSetup.note}</p>}
 						<ol className="list-decimal space-y-2 pl-5 text-sm text-muted">
 							<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupApp"))}</li>
 								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupClient"))}</li>
 								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupAccess"))}</li>
 							</ol>
-						<a className="text-sm text-link underline" href={oauthSetupDefinition(oauthSetup.provider).docsUrl} target="_blank" rel="noreferrer">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupDocs"))}</a>
+						<a className="text-sm text-link underline" href={oauthSetup.docsUrl ?? oauthSetupDefinition(oauthSetup.provider).docsUrl} target="_blank" rel="noreferrer">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupDocs"))}</a>
 						{oauthSetupDefinition(oauthSetup.provider).importClient && <Field label={t("plugins.mcp.googleClientImport")}>
 							<input type="file" accept=".json,application/json" disabled={oauthSetup.busy} className="w-full text-xs" onChange={async (event) => {
 								const file = event.target.files?.[0]; if (!file) return;
@@ -869,7 +873,6 @@ export function McpTab() {
 								/>
 								<Button
 									size="sm"
-									tone="accent"
 									disabled={!loginAnswer.trim() || loginSubmitting}
 									loading={loginSubmitting}
 									onClick={() => void submitLoginAnswer()}
@@ -883,11 +886,12 @@ export function McpTab() {
 				</Modal>
 			)}
 			{details && (
-				<Modal open title={`${details.name} · ${t("plugins.mcp.tools")}`} onClose={closeDetails} size="lg"
+				<Modal open title={`${details.name} · ${t("plugins.mcp.toolDetailsTitle")}`} onClose={closeDetails} size="lg"
 					backdrop={false}
 					anchor={dialogAnchor}
 					footer={<Button tone="neutral" variant="ghost" size="sm" onClick={closeDetails}>{t("plugins.mcp.close")}</Button>}>
 					<div className="max-h-[calc(85dvh-10rem)] space-y-4 overflow-y-auto pr-1">
+						<p className="mb-4 text-xs text-muted">{t("plugins.mcp.toolDetailsHint")}</p>
 						{details.loading ? <p role="status" className="py-8 text-center text-sm text-muted">{t("plugins.mcp.loadingTools")}</p>
 						: details.error ? <div className="space-y-3">
 							<p role="alert" className="text-sm text-danger">{details.error}</p>

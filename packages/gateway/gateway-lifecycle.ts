@@ -176,6 +176,7 @@ function spawnGateway(socketPath: string, agentDir: string, cliPathOverride?: st
 	const child = spawn(command, commandArgs, {
 		detached: true,
 		stdio,
+		windowsHide: true,
 		env,
 	});
 	if (logFd !== undefined) {

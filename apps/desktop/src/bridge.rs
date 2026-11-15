@@ -1,4 +1,5 @@
 use crate::gateway_channel;
+use crate::hidden_process;
 use crate::pid_lock;
 use crate::remote;
 use crate::remote_deploy;
@@ -1385,6 +1386,7 @@ fn spawn_background_sidecar(
 		"scheduler_guard: spawning {} {:?} cwd={}",
 		program, args, cwd
 	));
+	hidden_process::hide_console(&mut cmd);
 	let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {e}"))?;
 	let stdin = child.stdin.take().ok_or("no stdin")?;
 	let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -1676,6 +1678,7 @@ async fn init_workspace(
 	));
 
 	log_file(&format!("init_sidecar: spawning {} {:?}", program, args));
+	hidden_process::hide_console(&mut cmd);
 	let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {e}"))?;
 	log_file(&format!("init_sidecar: pid={:?}", child.id()));
 	let stdin = child.stdin.take().ok_or("no stdin")?;
@@ -4595,8 +4598,10 @@ pub async fn open_in_editor(cwd: String, file_path: String) -> Result<(), String
 		],
 	);
 
-	std::process::Command::new(opener)
-		.args(&args)
+	let mut open_cmd = std::process::Command::new(opener);
+	open_cmd.args(&args);
+	hidden_process::hide_console(&mut open_cmd);
+	open_cmd
 		.status()
 		.map_err(|e| format!("Failed to open file: {e}"))?;
 
@@ -5736,6 +5741,7 @@ pub async fn oauth_login(
 		.stdin(std::process::Stdio::piped())
 		.stdout(std::process::Stdio::piped())
 		.stderr(std::process::Stdio::null());
+	hidden_process::hide_console(&mut cmd);
 
 	let mut child = cmd
 		.spawn()

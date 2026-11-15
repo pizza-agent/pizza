@@ -36,7 +36,7 @@ describe("MCP OAuth client workflow", () => {
 		});
 		const product = make(PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID);
 		const custom = make("custom-client");
-		expect(product.oauthSettings()).toMatchObject({ deviceAuthorizationUrl: "https://github.com/login/device/code", scope: "repo read:user", authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA });
+		expect(product.oauthSettings()).toMatchObject({ deviceAuthorizationUrl: "https://github.com/login/device/code", scope: "repo read:user offline_access", authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA });
 		expect(custom.oauthSettings().deviceAuthorizationUrl).toBeUndefined();
 		await product.close();
 		await custom.close();

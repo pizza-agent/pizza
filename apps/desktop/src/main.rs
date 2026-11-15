@@ -4,6 +4,7 @@
 mod bridge;
 mod browser_view;
 mod gateway_channel;
+mod hidden_process;
 mod pid_lock;
 mod remote;
 mod remote_deploy;

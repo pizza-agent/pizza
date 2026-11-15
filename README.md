@@ -10,6 +10,8 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+[Website](https://pizza.hertzbeat.com/) · [Desktop demo](https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.mp4) · [Terminal demo](https://pizza.hertzbeat.com/media/demos/pizza-terminal-legacy-2026-11-15.gif)
+
 ## About It
 
 ### Under the hood
@@ -55,7 +57,7 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
   40+ providers — Anthropic, OpenAI, Google, DeepSeek, GLM, Kimi, and more — via API key or OAuth subscription login.
 
 - **Hackable by default**
-  MCP servers, skills, hooks, extensions, themes — plus JSON-RPC / FS-RPC modes and an SDK for embedding.
+  App connections via MCP, skills, hooks, extensions, themes — plus JSON-RPC / FS-RPC modes and an SDK for embedding.
 
 ## Quick Start
 

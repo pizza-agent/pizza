@@ -21,6 +21,8 @@ function schemaType(value: unknown): string {
 export function McpToolParameters({ schema }: { schema?: Record<string, unknown> }) {
 	const { t } = useTranslation();
 	if (!schema) return <p className="text-xs text-muted">{t("plugins.mcp.schemaUnavailable")}</p>;
+	const hasCompositeInput = ["$ref", "anyOf", "oneOf", "allOf"].some(key => key in schema) ||
+		schema.additionalProperties === true || (typeof schema.additionalProperties === "object" && schema.additionalProperties !== null);
 	const properties = Object.entries(record(schema.properties));
 	const required = Array.isArray(schema.required) ? schema.required : [];
 	return (
@@ -41,7 +43,7 @@ export function McpToolParameters({ schema }: { schema?: Record<string, unknown>
 						{parameter.default !== undefined && <p className="break-all text-xs text-muted">{t("plugins.mcp.defaultValue")}: <code>{JSON.stringify(parameter.default)}</code></p>}
 					</div>;
 				})}
-			</div> : <p className="text-xs text-muted">{t(Object.keys(schema).some((key) => ["$ref", "anyOf", "oneOf", "allOf", "additionalProperties"].includes(key)) ? "plugins.mcp.seeSchema" : "plugins.mcp.noParameters")}</p>}
+			</div> : <p className="text-xs text-muted">{t(hasCompositeInput ? "plugins.mcp.seeSchema" : "plugins.mcp.noParameters")}</p>}
 			<details className="text-xs text-muted">
 				<summary className="cursor-pointer hover:text-fg">{t("plugins.mcp.fullSchema")}</summary>
 				<pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-3">{JSON.stringify(schema, null, 2)}</pre>

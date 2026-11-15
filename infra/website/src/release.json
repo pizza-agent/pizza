@@ -1,0 +1,7 @@
+{
+  "version": "0.5.4",
+  "page": "https://github.com/pizza-agent/pizza/releases/tag/0.5.4",
+  "macos": "https://github.com/pizza-agent/pizza/releases/download/0.5.4/Pizza_0.5.4_macos_arm64.dmg",
+  "windows": "https://github.com/pizza-agent/pizza/releases/download/0.5.4/Pizza_0.5.4_windows_x64-setup.exe",
+  "linux": "https://github.com/pizza-agent/pizza/releases/download/0.5.4/Pizza_0.5.4_linux_x64.AppImage"
+}
