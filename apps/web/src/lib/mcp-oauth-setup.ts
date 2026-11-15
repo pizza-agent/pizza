@@ -1,5 +1,5 @@
 /** Provider configuration UI descriptors; rendering does not branch on provider names. */
-import { MCP_CONNECTOR_CATALOG, registeredOAuthConnector } from "@pizza/mcp-connector-catalog";
+import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_OAUTH_CLIENT_ID, registeredOAuthConnector } from "@pizza/mcp-connector-catalog";
 import { buildGoogleMcpConfig, googleMcpNeedsSetup, parseGoogleOAuthClient } from "./mcp-google-setup";
 import { buildXMcpConfig, xMcpNeedsSetup } from "./mcp-x-setup";
 interface ClientFields {
@@ -16,6 +16,8 @@ interface SetupDefinition {
 	importClient?: (text: string) => { clientId: string; clientSecret: string; callbackUrl?: string };
 	text: (name: string) => string;
 	secretLabel?: string;
+	/** Retired built-in client id; never offered as a default and rejected on save. */
+	staleClientId?: string;
 }
 const entries: Record<string, SetupDefinition> = {
 	registered: {
@@ -59,6 +61,7 @@ const entries: Record<string, SetupDefinition> = {
 		defaults: MCP_CONNECTOR_CATALOG.find((e) => e.name === "x")!.config.oauth as Record<string, unknown>,
 		docsUrl: MCP_CONNECTOR_CATALOG.find((e) => e.name === "x")?.docsUrl,
 		secretRequired: false,
+		staleClientId: PIZZA_X_MCP_OAUTH_CLIENT_ID,
 		text: (name) => `plugins.mcp.x${name}`,
 		secretLabel: "plugins.mcp.xClientSecret",
 	},

@@ -437,7 +437,7 @@ export function McpTab() {
 		const hasCustomSecret = typeof oauth?.clientSecret === "string" && !!oauth.clientSecret.trim();
 		setOAuthSetup({ name: serverName, config, scope, provider,
 			docsUrl: catalog?.docsUrl, note: catalog && catalogNote(catalog),
-			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
+			clientId: typeof oauth?.clientId === "string" && oauth.clientId !== oauthSetupDefinition(provider).staleClientId ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
 			clientSecret: typeof oauth?.clientSecret === "string" ? oauth.clientSecret : "",
 			callbackUrl: typeof oauth?.callbackUrl === "string" ? oauth.callbackUrl : String(defaults.callbackUrl), busy: false, error: "" });
 	}

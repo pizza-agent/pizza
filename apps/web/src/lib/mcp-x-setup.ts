@@ -1,4 +1,4 @@
-import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_URL } from "@pizza/mcp-connector-catalog";
+import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_OAUTH_CLIENT_ID, PIZZA_X_MCP_URL } from "@pizza/mcp-connector-catalog";
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const x = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "x")!;
@@ -13,15 +13,16 @@ export function xMcpNeedsSetup(config: Record<string, unknown>): boolean {
 	if (config.url !== PIZZA_X_MCP_URL) return false;
 	if (record(config.headers) && Object.keys(config.headers).some((key) => key.toLowerCase() === "authorization")) return false;
 	const oauth = record(config.oauth) ? config.oauth : {};
-	// Older public HTTP installs inherit Pizza's client ID from the runtime defaults.
-	// An incomplete custom confidential client must not borrow the product ID.
-	return (typeof oauth.clientId !== "string" || !oauth.clientId.trim()) &&
-		typeof oauth.clientSecret === "string" && !!oauth.clientSecret.trim();
+	// A usable connection keeps its own client ID. Configs missing one — or still
+	// pinned to the retired public client — must be routed into setup again.
+	const clientId = typeof oauth.clientId === "string" ? oauth.clientId.trim() : "";
+	return !clientId || clientId === PIZZA_X_MCP_OAUTH_CLIENT_ID;
 }
 
 export function buildXMcpConfig(config: Record<string, unknown>, client: { clientId: string; clientSecret: string; callbackUrl: string }): Record<string, unknown> {
 	const clientId = client.clientId.trim();
 	if (!clientId) throw new Error("Enter the OAuth 2.0 Client ID from your X app's User authentication settings.");
+	if (clientId === PIZZA_X_MCP_OAUTH_CLIENT_ID) throw new Error("Pizza's built-in X app is no longer supported. Enter your own X app's Client ID.");
 	const callback = new URL(client.callbackUrl);
 	if (callback.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(callback.hostname) ||
 		!callback.port || callback.search || callback.hash || callback.username || callback.password) {

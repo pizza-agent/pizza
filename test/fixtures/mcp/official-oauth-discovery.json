@@ -1008,6 +1008,30 @@
           "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
         }
       ]
+    },
+    {
+      "name": "x",
+      "url": "https://api.x.com/mcp",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://api.x.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://api.x.com/mcp",
+      "issuer": "https://api.x.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://api.x.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://api.x.com\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://api.x.com/mcp\",\"scopes_supported\":[\"tweet.read\",\"tweet.write\",\"users.read\",\"users.email\",\"follows.read\",\"space.read\",\"mute.read\",\"like.read\",\"list.read\",\"list.write\",\"block.read\",\"block.write\",\"bookmark.read\",\"bookmark.write\",\"dm.read\",\"dm.write\",\"calls.read\",\"calls.write\",\"broadcast.read\",\"broadcast.write\",\"developer.billing.write\",\"developer.write\",\"media.write\",\"offline.access\"]}"
+        },
+        {
+          "url": "https://api.x.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"authorization_endpoint\":\"https://x.com/i/oauth2/authorize\",\"code_challenge_methods_supported\":[\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"issuer\":\"https://api.x.com\",\"response_types_supported\":[\"code\"],\"scopes_supported\":[\"tweet.read\",\"tweet.write\",\"users.read\",\"users.email\",\"follows.read\",\"space.read\",\"mute.read\",\"like.read\",\"list.read\",\"list.write\",\"block.read\",\"block.write\",\"bookmark.read\",\"bookmark.write\",\"dm.read\",\"dm.write\",\"calls.read\",\"calls.write\",\"broadcast.read\",\"broadcast.write\",\"developer.billing.write\",\"developer.write\",\"media.write\",\"offline.access\",\"ads.read\",\"ads.write\"],\"token_endpoint\":\"https://api.x.com/2/oauth2/token\",\"token_endpoint_auth_methods_supported\":[\"none\",\"client_secret_basic\"]}"
+        }
+      ]
     }
   ]
 }
