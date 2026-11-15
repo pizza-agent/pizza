@@ -38,6 +38,12 @@ export class DefaultRetryPolicy implements RetryPolicy {
 
 	isRetryable(error: { message: string; statusCode?: number }): boolean {
 		if (error.statusCode && [429, 500, 502, 503, 504].includes(error.statusCode)) return true;
+		// Client/protocol failures are never retryable — the request itself is
+		// malformed and re-sending cannot fix it (e.g. an orphaned tool message
+		// from an interrupted turn). Without this, "5\d{2}" pattern-matches
+		// digits inside request_id UUIDs and burns all retry attempts.
+		if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) return false;
+		if (/^\s*4\d{2}\s*[: ]|invalid_request_error|bad request/i.test(error.message)) return false;
 		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|5\d{2}|service.?unavailable|server.?error|internal.?error|network.?error|connection.?(error|refused|lost)|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|socket connection was closed|closed unexpectedly|timed? out|timeout|terminated|retry delay/i.test(
 			error.message,
 		);
