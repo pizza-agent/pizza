@@ -50,7 +50,7 @@ Illustration prompt:
 - Verified the mobile menu, FAQ expansion, clipboard feedback, real video playback, dialog positioning, Escape-to-close, and focus return.
 - Body/CTA contrast ratios: light body 5.59, light CTA 5.20, dark body 7.97, dark CTA 7.46.
 - Website build and 48 OAuth/static-route regression tests passed. The Google OAuth chain also passed the existing real workerd/SQLite runtime fixture test.
-- Deployed Worker version `21513613-a045-4bf2-b3df-a27131f789da`. Both language pages, scripts, styles, images and video return 200. All three installer URLs return 200. Unknown pages return 404, website POST returns 405, and OAuth metadata/readiness still return the expected JSON.
+- Deployed Worker version `386afa59-bc10-4361-ba4b-85175bc66810`. Both language pages, scripts, styles, images and video return 200. All three installer URLs return 200. Unknown pages return 404, website POST returns 405, and OAuth metadata/readiness still return the expected JSON.
 - Google PageSpeed's Lighthouse API was attempted but returned quota-exceeded (429); no Lighthouse score is claimed. Production dependencies audit: zero reported vulnerabilities.
 
 ## Publishing a native desktop recording
@@ -105,3 +105,31 @@ The current recording tells one 35-second story: **give the personal assistant a
 The previous long recording remains an immutable R2 archive, without active website or README links. No demo video binaries are included in the repository.
 
 Current-cut verification: all 840 video frames decode without errors; the MP4 is exactly 35.00 seconds and fast-start metadata precedes video data. Remote video/poster hashes match the exports, and seeking returns 206. In the live browser, the new URL played with duration 35, readyState 4 and no media error; progress-bar navigation reached the workspace scene and the assistant summary. English and Chinese pages point to the new media.
+
+## README features on the website
+
+The page keeps the existing brand, routes, real 35-second desktop video, light/dark tokens and download flow. The design explorer is placed immediately after the hero and first in the navigation. Its desktop panel places the explanation beside the diagram, with a single-column mobile layout and deliberate headline wrapping. It leads into the real product demo and everyday capabilities, with model choice and extensibility under the open-source section. The layout retains variance 7 / motion 4 / density 3. It uses native CSS and the existing React/Phosphor stack, without new dependencies or simulated product screenshots.
+
+| README topic | Website expression |
+| --- | --- |
+| Persistent assistant and cross-workspace collaboration | `WorkspaceStory`: assistant → project workspaces → combined results, followed by continuing-conversation notes |
+| Automatic context compaction and token efficiency | Continuing-conversation notes and the single CLI execution-tool panel |
+| SSH hosts as workspaces | Remote-workspace capability block |
+| Slack, Discord, Telegram, Lark, voice and webhooks | Channel capability block, with setup requirements stated |
+| Recurring tasks | Scheduling capability block |
+| Reactor and immutable SQLite event log | Event-driven design panel: append sample events and see the three projections |
+| Git-like branch memory | Memory panel: select either continuation while keeping the original path visible |
+| A single CLI execution tool | Command diagram for `_read`, `_write`, `_edit` and `_tell` |
+| GUI, TUI, JSON-RPC and print sharing a runtime | Shared-runtime diagram around `SessionFacade` |
+| 40+ model providers, keys and subscription login | Model choice under the open-source section |
+| MCP, skills, hooks, extensions, themes and SDK interfaces | Extensibility notes and the existing app-connections section |
+
+The architecture graphics are explicitly labeled as illustrations. Event-step and branch controls operate only on these explanatory diagrams. The four design panels are server-rendered in both languages and use accessible tabs with Arrow Left/Right, Home and End navigation. Existing navigation labels and anchor IDs are preserved; capabilities and design get additional anchors. No analytics or OAuth behavior changes are introduced.
+
+
+Feature/design verification (2026-11-15):
+
+- Website build and English/Chinese pre-render checks passed. The design section precedes the product demo in both pages, its navigation link is first, and all four architecture panels appear in the generated HTML.
+- Browser checks passed for event append/reset, branch selection, tab clicks, and Arrow Left/Right, Home/End navigation. Desktop and 390px mobile layouts were inspected in English/Chinese and light/dark themes. Temporary theme and viewport changes were restored.
+- The 20 focused Worker route tests passed. The real workerd fixtures passed R2 media serving/seeking and encrypted SQLite OAuth/refresh behavior. Existing video, account metadata and health endpoints remain available.
+- The external PageSpeed/Lighthouse API returned quota-exceeded (429); no new Lighthouse score is reported. The client bundle is approximately 76.15 kB gzip, with no added dependencies.
