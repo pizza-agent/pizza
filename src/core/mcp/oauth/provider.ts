@@ -43,6 +43,8 @@ export interface McpOAuthProviderOptions {
 	authorizationRedirectUrl?: (metadata: AuthorizationServerMetadata) => string;
 	clientId?: string;
 	clientSecret?: string;
+	/** Explicit method for a pre-registered flow, such as a public device client. */
+	clientAuthenticationMethod?: "none" | "client_secret_basic" | "client_secret_post";
 	store?: McpOAuthStateStore;
 	onRedirect(url: URL): void | Promise<void>;
 }
@@ -92,7 +94,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
 		this.clientMetadataDocument = options.clientMetadataDocument;
 		this.authorizationRedirectUrl = options.authorizationRedirectUrl;
 		this.configuredClient = options.clientId
-			? { client_id: options.clientId, ...(options.clientSecret ? { client_secret: options.clientSecret } : {}) }
+			? { client_id: options.clientId, ...(options.clientSecret ? { client_secret: options.clientSecret } : {}),
+				...(options.clientAuthenticationMethod ? { token_endpoint_auth_method: options.clientAuthenticationMethod } : {}) }
 			: undefined;
 		this.store = options.store ?? new MemoryOAuthStateStore();
 		this.onRedirect = options.onRedirect;

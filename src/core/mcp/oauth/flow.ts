@@ -66,7 +66,7 @@ export interface OAuthClientProvider {
 }
 
 export interface OAuthFlowOptions {
-	/** Disable only for direct business API adapters whose OAuth provider does not implement RFC 8707. */
+	/** Disable for legacy OAuth providers that do not implement RFC 8707 (Google); resource binding remains enforced. */
 	resourceIndicator?: boolean;
 	/** Compatibility option for providers that reject resource on their authorization endpoint. Tokens and resource discovery remain bound. */
 	authorizationResourceIndicator?: boolean;

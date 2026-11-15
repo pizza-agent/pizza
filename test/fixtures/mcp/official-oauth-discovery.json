@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-15T01:27:39.540Z",
+  "recordedAt": "2026-11-15T01:45:56.741Z",
   "records": [
     {
       "name": "notion",
@@ -664,7 +664,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/zoom/streamable",
           "status": 200,
-          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/zoom\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"docs:write:collaborator\",\"my_notes:read:content\",\"agentic_search:read:search\",\"docs:update:collaborator\",\"meeting:read:assets\",\"docs:read:list_file_collaborators\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"docs:delete:collaborator\",\"docs:read:export\",\"docs:write:import\",\"meeting:write:meeting\",\"hub:write:content\",\"hub:read:content\",\"meeting:delete:meeting\",\"agentic_search:read:ask\",\"meeting:read:search\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\",\"workflow:read:definition\",\"workflow:write:definition\",\"workflow:read:list_definitions\"]}\n"
+          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/zoom\\/streamable\",\"scopes_supported\":[\"docs:write:collaborator\",\"my_notes:read:content\",\"agentic_search:read:search\",\"docs:update:collaborator\",\"meeting:read:assets\",\"docs:read:list_file_collaborators\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"docs:delete:collaborator\",\"docs:read:export\",\"docs:write:import\",\"meeting:write:meeting\",\"hub:write:content\",\"hub:read:content\",\"meeting:delete:meeting\",\"agentic_search:read:ask\",\"meeting:read:search\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\",\"workflow:read:definition\",\"workflow:write:definition\",\"workflow:read:list_definitions\"],\"bearer_methods_supported\":[\"header\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -688,7 +688,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/meeting/streamable",
           "status": 200,
-          "body": "{\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"meeting:write:meeting\",\"meeting:read:search\",\"meeting:delete:meeting\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"meeting:read:assets\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/meeting\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"]}\n"
+          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/meeting\\/streamable\",\"scopes_supported\":[\"meeting:write:meeting\",\"meeting:read:search\",\"meeting:delete:meeting\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"meeting:read:assets\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\"],\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -712,7 +712,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/canvas/streamable",
           "status": 200,
-          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/canvas\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"docs:delete:content\",\"canvas:read:data_table\",\"docs:delete:collaborator\",\"docs:read:list_children\",\"docs:read:list_file_collaborators\",\"docs:read:export\",\"docs:read:file\",\"canvas:delete:data_table\",\"canvas:write:file_search\",\"docs:write:file\",\"docs:update:content\",\"docs:delete:file\",\"canvas:update:data_table\",\"docs:write:content\",\"canvas:write:data_table\",\"docs:write:import\",\"docs:write:collaborator\",\"docs:update:file\",\"canvas:read:comment\",\"hub:write:move\",\"docs:update:file_owner\",\"docs:update:collaborator\",\"canvas:write:comment\",\"docs:read:general_access\",\"docs:update:general_access\"]}\n"
+          "body": "{\"scopes_supported\":[\"docs:delete:content\",\"canvas:read:data_table\",\"docs:delete:collaborator\",\"docs:read:list_children\",\"docs:read:list_file_collaborators\",\"docs:read:export\",\"docs:read:file\",\"canvas:delete:data_table\",\"canvas:write:file_search\",\"docs:write:file\",\"docs:update:content\",\"docs:delete:file\",\"canvas:update:data_table\",\"docs:write:content\",\"canvas:write:data_table\",\"docs:write:import\",\"docs:write:collaborator\",\"docs:update:file\",\"canvas:read:comment\",\"hub:write:move\",\"docs:update:file_owner\",\"docs:update:collaborator\",\"canvas:write:comment\",\"docs:read:general_access\",\"docs:update:general_access\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/canvas\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -736,7 +736,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/chat/streamable",
           "status": 200,
-          "body": "{\"scopes_supported\":[\"team_chat:read:list_contacts\",\"team_chat:write:members\",\"team_chat:update:user_message\",\"chat_channel:read\",\"chat_channel:write\",\"team_chat:read:channel\",\"team_chat:write:user_channel\",\"team_chat:read:list_user_sessions\",\"team_chat:read:list_user_channels\",\"team_chat:write:user_message\",\"team_chat:read:list_members\",\"team_chat:read:list_user_messages\",\"team_chat:update:channel_member_role\",\"team_chat:read:list_user_files\",\"team_chat:update:user_channel\",\"team_chat:write:contact_information\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/chat\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"]}\n"
+          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/chat\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"team_chat:read:list_contacts\",\"team_chat:write:members\",\"team_chat:update:user_message\",\"chat_channel:read\",\"chat_channel:write\",\"team_chat:read:channel\",\"team_chat:write:user_channel\",\"team_chat:read:list_user_sessions\",\"team_chat:read:list_user_channels\",\"team_chat:write:user_message\",\"team_chat:read:list_members\",\"team_chat:read:list_user_messages\",\"team_chat:update:channel_member_role\",\"team_chat:read:list_user_files\",\"team_chat:update:user_channel\",\"team_chat:write:contact_information\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -760,7 +760,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/tasks/streamable",
           "status": 200,
-          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/tasks\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"tasks:read:list_tasks\",\"tasks:update:task\",\"tasks:delete:comment\",\"tasks:write:task\",\"tasks:write:assignees\",\"tasks:write:collaborators\",\"tasks:write:comment\",\"tasks:read:comments\",\"tasks:read:task\",\"tasks:delete:assignees\",\"tasks:delete:trash_task\",\"tasks:delete:collaborator\",\"tasks:read:list_collaborators\",\"tasks:read:assignees\"]}\n"
+          "body": "{\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"tasks:read:list_tasks\",\"tasks:update:task\",\"tasks:delete:comment\",\"tasks:write:task\",\"tasks:write:assignees\",\"tasks:write:collaborators\",\"tasks:write:comment\",\"tasks:read:comments\",\"tasks:read:task\",\"tasks:delete:assignees\",\"tasks:delete:trash_task\",\"tasks:delete:collaborator\",\"tasks:read:list_collaborators\",\"tasks:read:assignees\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/tasks\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -784,7 +784,7 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/whiteboard/streamable",
           "status": 200,
-          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/whiteboard\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"whiteboard:update:whiteboard\",\"whiteboard:read:content\",\"whiteboard:write:content\",\"whiteboard:write:whiteboard\",\"whiteboard:read:list_whiteboards\",\"whiteboard:delete:collaborator\",\"whiteboard:delete:content\",\"whiteboard:delete:whiteboard\",\"whiteboard:write:collaborator\",\"whiteboard:read:list_collaborators\",\"whiteboard:update:collaborator\",\"whiteboard:read:whiteboard\"]}\n"
+          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/whiteboard\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"scopes_supported\":[\"whiteboard:update:whiteboard\",\"whiteboard:read:content\",\"whiteboard:write:content\",\"whiteboard:write:whiteboard\",\"whiteboard:read:list_whiteboards\",\"whiteboard:delete:collaborator\",\"whiteboard:delete:content\",\"whiteboard:delete:whiteboard\",\"whiteboard:write:collaborator\",\"whiteboard:read:list_collaborators\",\"whiteboard:update:collaborator\",\"whiteboard:read:whiteboard\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
@@ -808,12 +808,204 @@
         {
           "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/revenue_accelerator/streamable",
           "status": 200,
-          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/revenue_accelerator\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"zra:read:conversation_analysis\",\"zra:read:list_conversations\",\"zra:read:list_deal_activities\",\"zra:read:deal\",\"zra:read:list_conversation_comments\",\"zra:read:crm_customer_contact\",\"zra:read:indicator\",\"zra:read:conversations\",\"zra:read:team\",\"zra:read:conversation_scorecards\",\"zra:read:user\",\"zra:read:list_deals\"]}\n"
+          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/revenue_accelerator\\/streamable\",\"scopes_supported\":[\"zra:read:conversation_analysis\",\"zra:read:list_conversations\",\"zra:read:list_deal_activities\",\"zra:read:deal\",\"zra:read:list_conversation_comments\",\"zra:read:crm_customer_contact\",\"zra:read:indicator\",\"zra:read:conversations\",\"zra:read:team\",\"zra:read:conversation_scorecards\",\"zra:read:user\",\"zra:read:list_deals\"],\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"]}\n"
         },
         {
           "url": "https://zoom.us/.well-known/oauth-authorization-server",
           "status": 200,
           "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "gmail-workspace",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://gmailmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://gmailmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://gmailmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://mail.google.com/\",\"https://www.googleapis.com/auth/gmail.compose\",\"https://www.googleapis.com/auth/gmail.drafts\",\"https://www.googleapis.com/auth/gmail.drafts.create\",\"https://www.googleapis.com/auth/gmail.drafts.readonly\",\"https://www.googleapis.com/auth/gmail.labels\",\"https://www.googleapis.com/auth/gmail.labels.create\",\"https://www.googleapis.com/auth/gmail.labels.readonly\",\"https://www.googleapis.com/auth/gmail.messages\",\"https://www.googleapis.com/auth/gmail.messages.delete\",\"https://www.googleapis.com/auth/gmail.messages.modify\",\"https://www.googleapis.com/auth/gmail.messages.readonly\",\"https://www.googleapis.com/auth/gmail.metadata\",\"https://www.googleapis.com/auth/gmail.modify\",\"https://www.googleapis.com/auth/gmail.readonly\",\"https://www.googleapis.com/auth/gmail.send\",\"https://www.googleapis.com/auth/gmail.send.self\",\"https://www.googleapis.com/auth/gmail.settings.basic\",\"https://www.googleapis.com/auth/gmail.settings.filters\",\"https://www.googleapis.com/auth/gmail.settings.filters.readonly\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-drive",
+      "url": "https://drivemcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://drivemcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://drivemcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://drivemcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/drive.readonly\",\"https://www.googleapis.com/auth/drive.file\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-docs",
+      "url": "https://docsmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://docsmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://docsmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://docsmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/drive.readonly\",\"https://www.googleapis.com/auth/documents.readonly\",\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/documents\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-sheets",
+      "url": "https://sheetsmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://sheetsmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://sheetsmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://sheetsmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/drive.readonly\",\"https://www.googleapis.com/auth/spreadsheets.readonly\",\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/spreadsheets\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-slides",
+      "url": "https://slidesmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://slidesmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://slidesmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://slidesmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/drive.readonly\",\"https://www.googleapis.com/auth/presentations.readonly\",\"https://www.googleapis.com/auth/drive\",\"https://www.googleapis.com/auth/drive.file\",\"https://www.googleapis.com/auth/presentations\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-calendar",
+      "url": "https://calendarmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://calendarmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://calendarmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://calendarmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/calendar\",\"https://www.googleapis.com/auth/calendar.acls\",\"https://www.googleapis.com/auth/calendar.calendarlist\",\"https://www.googleapis.com/auth/calendar.calendarlist.readonly\",\"https://www.googleapis.com/auth/calendar.calendars\",\"https://www.googleapis.com/auth/calendar.calendars.readonly\",\"https://www.googleapis.com/auth/calendar.events\",\"https://www.googleapis.com/auth/calendar.events.freebusy\",\"https://www.googleapis.com/auth/calendar.events.readonly\",\"https://www.googleapis.com/auth/calendar.freebusy\",\"https://www.googleapis.com/auth/calendar.readonly\",\"https://www.googleapis.com/auth/calendar.settings.readonly\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-chat",
+      "url": "https://chatmcp.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://chatmcp.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://chatmcp.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://chatmcp.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/chat.spaces\",\"https://www.googleapis.com/auth/chat.spaces.readonly\",\"https://www.googleapis.com/auth/chat.memberships\",\"https://www.googleapis.com/auth/chat.memberships.readonly\",\"https://www.googleapis.com/auth/chat.messages\",\"https://www.googleapis.com/auth/chat.messages.readonly\",\"https://www.googleapis.com/auth/chat.messages.create\",\"https://www.googleapis.com/auth/chat.users.readstate\",\"https://www.googleapis.com/auth/chat.users.readstate.readonly\",\"https://www.googleapis.com/auth/chat.users.spacesettings\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "google-people",
+      "url": "https://people.googleapis.com/mcp/v1",
+      "setup": "google",
+      "status": 200,
+      "challenge": null,
+      "resource": "https://people.googleapis.com/mcp/v1",
+      "issuer": "https://accounts.google.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://people.googleapis.com/.well-known/oauth-protected-resource/mcp/v1",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https://accounts.google.com/\"],\"bearer_methods_supported\":[\"header\"],\"resource\":\"https://people.googleapis.com/mcp/v1\",\"scopes_supported\":[\"https://www.googleapis.com/auth/directory.readonly\",\"https://www.googleapis.com/auth/userinfo.profile\",\"https://www.googleapis.com/auth/contacts.readonly\"]}"
+        },
+        {
+          "url": "https://accounts.google.com/.well-known/openid-configuration",
+          "status": 200,
+          "body": "{\"issuer\":\"https://accounts.google.com\",\"authorization_endpoint\":\"https://accounts.google.com/o/oauth2/v2/auth\",\"token_endpoint\":\"https://oauth2.googleapis.com/token\",\"response_types_supported\":[\"code\",\"token\",\"id_token\",\"code token\",\"code id_token\",\"token id_token\",\"code token id_token\",\"none\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"authorization_response_iss_parameter_supported\":true}"
         }
       ]
     }

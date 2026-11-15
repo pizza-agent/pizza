@@ -13,6 +13,11 @@ const { records } = JSON.parse(readFileSync(new URL("./fixtures/mcp/official-oau
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Official provider OAuth compatibility", () => {
+	it("covers every standard marketplace resource with a recorded live discovery fixture", () => {
+		expect(records.map((record) => record.name).sort()).toEqual(MCP_CONNECTOR_CATALOG
+			.filter((entry) => !entry.config.adapter && !(entry.config.oauth as Record<string, unknown>)?.clientId)
+			.map((entry) => entry.name).sort());
+	});
 	it.each(records)("uses $name discovery through registration, PKCE exchange and refresh", async (record) => {
 		const entry = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === record.name)!;
 		const storedResponses = new Map(record.responses.map((response) => [response.url, response]));
@@ -45,7 +50,7 @@ describe("Official provider OAuth compatibility", () => {
 			}
 			if (init?.method === "POST" && url === metadata.token_endpoint) {
 				const params = init.body as URLSearchParams;
-				expect(params.get("resource")).toBe(record.resource);
+				expect(params.get("resource")).toBe(settings.resourceIndicator === false ? null : record.resource);
 				const state = store.load()!;
 				const method = state.clientInformation?.token_endpoint_auth_method;
 				const headers = new Headers(init.headers);

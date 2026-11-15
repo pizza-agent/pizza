@@ -90,8 +90,10 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
 
 /** OAuth client settings for servers that do not support dynamic client registration. */
 export interface McpOAuthConfig {
-	/** RFC 8707 resource in authorization and token requests. Default true; false is for direct business API adapters only. */
+	/** RFC 8707 resource in authorization and token requests. Default true; false is for legacy OAuth providers such as Google. Resource binding is still validated. */
 	resourceIndicator?: boolean;
+	/** Require a token before connecting when the server publishes tool schemas anonymously (Google Workspace). */
+	requireSignIn?: boolean;
 	/** Include RFC 8707 resource in browser authorization requests. Default true; X requires false. Token requests still bind the resource. */
 	authorizationResourceIndicator?: boolean;
 	/** Additional provider options, for example Google's access_type=offline. */
@@ -193,6 +195,7 @@ function validateOAuth(value: unknown): string | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)) return "oauth must be an object";
 	if (value.resourceIndicator !== undefined && typeof value.resourceIndicator !== "boolean") return "oauth.resourceIndicator must be a boolean";
+	if (value.requireSignIn !== undefined && typeof value.requireSignIn !== "boolean") return "oauth.requireSignIn must be a boolean";
 	if (value.authorizationResourceIndicator !== undefined && typeof value.authorizationResourceIndicator !== "boolean") return "oauth.authorizationResourceIndicator must be a boolean";
 	const paramsError = validateAuthorizationParams(value.authorizationParams);
 	if (paramsError) return paramsError;

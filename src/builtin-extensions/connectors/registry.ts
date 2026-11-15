@@ -8,6 +8,7 @@ import {
 	PIZZA_GMAIL_MCP_URL,
 	PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID,
 	PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL,
+	PIZZA_GITHUB_MCP_SCOPE,
 	PIZZA_GITHUB_OAUTH_AS_METADATA,
 } from "./catalog.js";
 import { GmailApiTransport } from "./gmail.js";
@@ -34,7 +35,7 @@ const policies: ConnectorPolicy[] = MCP_CONNECTOR_CATALOG.map((def) => ({
 			return {
 				...configured,
 				deviceAuthorizationUrl: configured.deviceAuthorizationUrl ?? PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL,
-				scope: configured.scope ?? "repo read:user",
+				scope: configured.scope ?? PIZZA_GITHUB_MCP_SCOPE,
 				authorizationServerMetadata: configured.authorizationServerMetadata ?? PIZZA_GITHUB_OAUTH_AS_METADATA,
 			};
 		}

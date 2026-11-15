@@ -343,6 +343,9 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 	}
 
 	private async connectOnce(): Promise<McpClient> {
+		if (resolveConnectorOAuth(this.entry)?.requireSignIn && this.authProvider && !(await this.authProvider.token())) {
+			throw new McpOAuthAuthorizationRequiredError();
+		}
 		const client = new McpClient({
 			name: "pizza",
 			version: VERSION,

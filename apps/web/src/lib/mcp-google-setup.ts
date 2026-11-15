@@ -1,12 +1,6 @@
-import { PIZZA_GMAIL_MCP_URL } from "@pizza/mcp-connector-catalog";
+import { googleWorkspaceConnector } from "@pizza/mcp-connector-catalog";
 
 // Advanced setup for manually added Google-hosted preview MCPs. Marketplace Gmail uses the bundled desktop adapter.
-const gmail = { config: { url: PIZZA_GMAIL_MCP_URL, oauth: {
- callbackUrl: "http://127.0.0.1:8765/callback",
- scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose",
- authServerMetadataUrl: "https://accounts.google.com/.well-known/openid-configuration",
- authorizationParams: { access_type: "offline", prompt: "consent" }, authCheck: { tool: "list_labels" },
-} } };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
 function loopbackCallback(value: string): boolean {
@@ -18,7 +12,7 @@ function loopbackCallback(value: string): boolean {
 }
 
 export function googleMcpNeedsSetup(config: Record<string, unknown>): boolean {
-	if (config.url !== PIZZA_GMAIL_MCP_URL) return false;
+	if (!googleWorkspaceConnector(config)) return false;
 	if (record(config.headers) && Object.keys(config.headers).some((key) => key.toLowerCase() === "authorization")) return false;
 	const oauth = record(config.oauth) ? config.oauth : {};
 	return typeof oauth.clientId !== "string" || !oauth.clientId.trim() || typeof oauth.clientSecret !== "string" || !oauth.clientSecret.trim();
@@ -38,8 +32,11 @@ export function buildGoogleMcpConfig(config: Record<string, unknown>, client: { 
 	const clientSecret = client.clientSecret.trim();
 	if (!clientId.endsWith(".apps.googleusercontent.com") || !clientSecret) throw new Error("Enter the Google OAuth client ID and client secret.");
 	if (!loopbackCallback(client.callbackUrl)) throw new Error("Use an HTTP callback on localhost or 127.0.0.1 with an explicit port, without query or fragment.");
-	const oauth = { ...(gmail.config.oauth as Record<string, unknown>), ...(record(config.oauth) ? config.oauth : {}), clientId, clientSecret, callbackUrl: client.callbackUrl };
+	const entry = googleWorkspaceConnector(config);
+	if (!entry) throw new Error("Select a supported Google Workspace MCP resource before configuring its OAuth client.");
+	const defaults = entry.config;
+	const oauth = { ...(defaults.oauth as Record<string, unknown>), ...(record(config.oauth) ? config.oauth : {}), clientId, clientSecret, callbackUrl: client.callbackUrl };
 	// The callback URL is the source of truth when editing an existing fixed-port client.
 	delete (oauth as Record<string, unknown>).callbackPort;
-	return { ...gmail.config, ...config, oauth };
+	return { ...defaults, ...config, oauth };
 }

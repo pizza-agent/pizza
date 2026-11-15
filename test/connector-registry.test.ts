@@ -14,7 +14,7 @@ describe("connector policy compatibility", () => {
 				oauth: { clientId: PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID, deviceAuthorizationUrl: undefined, scope: undefined },
 			},
 		});
-		expect(oauth).toMatchObject({ deviceAuthorizationUrl: PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL, scope: "repo read:user" });
+		expect(oauth).toMatchObject({ deviceAuthorizationUrl: PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL, scope: "repo read:user offline_access" });
 	});
 	it("does not apply product registration or flow defaults to a custom app", () => {
 		const configured = { clientId: "custom-app", clientSecret: "fixture" };

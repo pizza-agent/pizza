@@ -73,7 +73,7 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(oauth).toMatchObject({
 			clientId: PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID,
 			deviceAuthorizationUrl: "https://github.com/login/device/code",
-			scope: "repo read:user",
+			scope: "repo read:user offline_access",
 			callbackUrl: PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL,
 			authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA,
 		});

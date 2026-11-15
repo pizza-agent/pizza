@@ -29,7 +29,7 @@ import {
 	stepUpScope,
 } from "../../core/mcp/oauth/index.js";
 import { mcpNamespace } from "../../core/mcp/servers.js";
-import { registeredOAuthConnector } from "../connectors/catalog.js";
+import { registeredOAuthConnector, googleWorkspaceConnector } from "../connectors/catalog.js";
 import { PIZZA_OAUTH_LOGO } from "./oauth-logo.js";
 
 const CALLBACK_HOST = "127.0.0.1";
@@ -366,6 +366,7 @@ function createProvider(
 		},
 		clientId: settings.clientId,
 		clientSecret: settings.clientSecret,
+		clientAuthenticationMethod: settings.deviceAuthorizationUrl && !settings.clientSecret ? "none" : undefined,
 		store,
 		onRedirect,
 	});
@@ -540,9 +541,10 @@ export async function signInMcpServer(options: {
 }): Promise<void> {
 	const { serverUrl, settings, signal } = options;
 	if (signal?.aborted) throw new McpSignInCancelledError();
-	const registeredConnector = registeredOAuthConnector({ url: serverUrl });
-	if (registeredConnector && (!settings.clientId?.trim() || !settings.clientSecret?.trim() || !settings.callbackUrl?.trim())) {
-		throw new Error(`Set up ${registeredConnector.name} in Pizza with your own OAuth client ID, client secret, and registered callback URL before signing in. ${registeredConnector.docsUrl}`);
+	const registeredConnector = registeredOAuthConnector({ url: serverUrl }) ?? googleWorkspaceConnector({ url: serverUrl });
+	if (registeredConnector && (!settings.clientId?.trim() || !settings.clientSecret?.trim())) {
+		const name = registeredConnector.oauthSetup === "google" ? "a Google OAuth client" : registeredConnector.name;
+		throw new Error(`Set up ${name} in Pizza with your own OAuth client ID, client secret, and registered callback URL before signing in. ${registeredConnector.docsUrl}`);
 	}
 	if (serverUrl === "https://gmail.googleapis.com/gmail/v1/users/me" && (!settings.clientId || !settings.clientSecret)) {
 		throw new Error("This Pizza build is missing its Google Desktop OAuth registration. The publisher must build with PIZZA_GOOGLE_DESKTOP_CLIENT_FILE pointing to the Desktop client JSON.");

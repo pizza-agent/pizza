@@ -35,6 +35,8 @@ export interface McpConnectorCatalogEntry {
  */
 export const PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID = "Ov23liOMOJRUwOb2ulTH";
 export const PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL = "https://github.com/login/device/code";
+/** Device-issued expiring tokens refresh without distributing a confidential client secret. */
+export const PIZZA_GITHUB_MCP_SCOPE = "repo read:user offline_access";
 
 /** Loopback callback registered on the Pizza GitHub OAuth App (any port allowed by GitHub). */
 export const PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL = "http://127.0.0.1/callback";
@@ -88,7 +90,7 @@ const catalog: readonly McpConnectorCatalogEntry[] = [
 			oauth: {
 				clientId: PIZZA_GITHUB_MCP_OAUTH_CLIENT_ID,
 				deviceAuthorizationUrl: PIZZA_GITHUB_MCP_OAUTH_DEVICE_URL,
-				scope: "repo read:user",
+				scope: PIZZA_GITHUB_MCP_SCOPE,
 				callbackUrl: PIZZA_GITHUB_MCP_OAUTH_CALLBACK_URL,
 				authorizationServerMetadata: PIZZA_GITHUB_OAUTH_AS_METADATA,
 			},
@@ -402,6 +404,78 @@ const catalog: readonly McpConnectorCatalogEntry[] = [
 		oauthSetup: "registered",
 		config: { url: "https://mcp.zoom.us/mcp/revenue_accelerator/streamable", oauth: { clientName: "Pizza" } },
 	},
+	{
+		name: "gmail-workspace",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Use the official Google Workspace Gmail MCP preview for mail and drafts.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://gmailmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}, "authCheck": {"tool": "list_labels"}} },
+	},
+	{
+		name: "google-drive",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Search Google Drive files and work with documents through the official MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://drivemcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-docs",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Read and edit Google Docs through the official Workspace MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://docsmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/documents.readonly https://www.googleapis.com/auth/documents", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-sheets",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Read and edit spreadsheet data through the official Google Sheets MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://sheetsmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/spreadsheets", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-slides",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Read and update presentations through the official Google Slides MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://slidesmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/presentations.readonly https://www.googleapis.com/auth/presentations", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-calendar",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Find calendars, inspect availability, and read events through the official MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://calendarmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.freebusy https://www.googleapis.com/auth/calendar.events.readonly", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-chat",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Search Google Chat conversations and work with messages through the official MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://chatmcp.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.memberships.readonly https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/chat.messages.create https://www.googleapis.com/auth/chat.users.readstate https://www.googleapis.com/auth/chat.users.spacesettings", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
+	{
+		name: "google-people",
+		type: "http",
+		docsUrl: "https://developers.google.com/workspace/guides/configure-mcp-servers",
+		description: "Look up your Google profile, contacts, and directory through the official MCP preview.",
+		connectionNote: "Developer Preview: enable the product API and MCP API in an eligible Google Cloud project. Create a Web OAuth client with the AI-powered agent option and register the callback. This differs from the regular Gmail adapter.",
+		oauthSetup: "google",
+		config: { url: "https://people.googleapis.com/mcp/v1", oauth: {"clientName": "Pizza", "resourceIndicator": false, "requireSignIn": true, "scope": "https://www.googleapis.com/auth/directory.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/contacts.readonly", "authServerMetadataUrl": "https://accounts.google.com/.well-known/openid-configuration", "authorizationParams": {"access_type": "offline", "prompt": "consent"}} },
+	},
 ];
 
 export const MCP_CONNECTOR_CATALOG: readonly McpConnectorCatalogEntry[] = catalog.map(entry => ({...entry,config:{...entry.config,description:entry.description}}));
@@ -412,4 +486,11 @@ export function registeredOAuthConnector(config: Record<string, unknown>): McpCo
 	const url = new URL(config.url).href;
 	return MCP_CONNECTOR_CATALOG.find((entry) => entry.oauthSetup === "registered" &&
 		new URL(String(entry.config.url)).href === url && entry.config.adapter === config.adapter);
+}
+
+/** Official Workspace preview resources require a developer-registered AI-agent client. */
+export function googleWorkspaceConnector(config: Record<string, unknown>): McpConnectorCatalogEntry | undefined {
+	if (typeof config.url !== "string" || !URL.canParse(config.url)) return undefined;
+	const url = new URL(config.url).href;
+	return MCP_CONNECTOR_CATALOG.find((entry) => entry.oauthSetup === "google" && new URL(String(entry.config.url)).href === url && !config.adapter);
 }

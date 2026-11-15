@@ -24,9 +24,11 @@ for (let offset = 0; offset < entries.length; offset += 4) {
 			result.status = response.status;
 			result.challenge = response.headers.get("www-authenticate");
 			await response.body?.cancel();
-			if (response.status !== 401 || !result.challenge) throw new Error(`Expected an OAuth challenge; received HTTP ${response.status}`);
-			const challenge = parseWwwAuthenticate(result.challenge);
 			const settings = entry.config.oauth ?? {};
+			if (!(response.status === 401 && result.challenge) && !(response.status === 200 && settings.requireSignIn)) {
+				throw new Error(`Expected an OAuth challenge or explicitly public schema endpoint; received HTTP ${response.status}`);
+			}
+			const challenge = parseWwwAuthenticate(result.challenge);
 			const discoveryOptions = {
 				authorizationServerMetadataUrl: settings.authServerMetadataUrl ? new URL(settings.authServerMetadataUrl) : undefined,
 				signal,

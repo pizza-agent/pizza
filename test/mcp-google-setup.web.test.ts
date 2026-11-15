@@ -6,6 +6,14 @@ const config = { url: PIZZA_GMAIL_MCP_URL, oauth: {} };
 const credentials = { clientId: "pizza-example.apps.googleusercontent.com", clientSecret: "fixture-only-secret", callbackUrl: PIZZA_GMAIL_MCP_OAUTH_CALLBACK_URL };
 
 describe("Gmail setup", () => {
+	it.each(MCP_CONNECTOR_CATALOG.filter((entry) => entry.oauthSetup === "google"))("configures $name without borrowing Gmail's resource or check tool", (entry) => {
+		expect(googleMcpNeedsSetup(entry.config)).toBe(true);
+		const configured = buildGoogleMcpConfig(entry.config, credentials);
+		expect(configured.url).toBe(entry.config.url);
+		expect(configured.oauth).toMatchObject({ ...(entry.config.oauth as object), ...credentials });
+		expect(googleMcpNeedsSetup(configured)).toBe(false);
+		if (entry.name !== "gmail-workspace") expect((configured.oauth as Record<string, unknown>).authCheck).toBeUndefined();
+	});
  it("connects marketplace Gmail without a per-user Google Cloud form", () => {
   const entry = MCP_CONNECTOR_CATALOG.find((entry) => entry.name === "gmail")!;
   expect(entry.oauthSetup).toBeUndefined();
