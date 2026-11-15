@@ -1111,6 +1111,7 @@
       "title": "About",
       "tagline": "An open-source, event-driven agent — without while true. Every conversation, tool call, and file edit is an event in an immutable log.",
       "version": "Version",
+      "website": "Website",
       "repository": "GitHub repository",
       "license": "License",
       "updateAvailable": "New version {{version}} available",
