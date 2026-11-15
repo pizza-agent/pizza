@@ -267,6 +267,12 @@ export function createGatewayServer(options: GatewayServerOptions): GatewayServe
 		onAlert: (alert) => {
 			console.error(`[watchdog] ${alert.kind} ${alert.workspace}: ${alert.message}`);
 			emitter.emit("watchdog", alert);
+			// Also expose the alert on the same event stream channels already
+			// subscribe to, so a panel/sidecar can render it without another RPC.
+			broadcastEvent(alert.workspace, {
+				type: "WATCHDOG_ALERT",
+				payload: alert,
+			} as GatewayRpcFrame);
 		},
 	});
 

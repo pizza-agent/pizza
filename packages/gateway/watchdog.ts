@@ -8,14 +8,21 @@
  *
  * - a model turn has produced no output for too long
  * - a tool has produced no progress for too long
- * - the same tool call (same name and arguments) repeats in one turn
+ * - the same tool call (same name and arguments) repeats in one user task
  *
- * Alerts are emitted once per turn/rule; the caller decides whether to log,
- * surface, or act on them. Keeping this outside the core runtime means a
- * standalone CLI session, which has no gateway, does not pay for it.
+ * The gateway forwards raw store events (AGENT_MESSAGE_START,
+ * TOOL_EXECUTION_START, …), not pi's lowercase AgentEvent names. Keep this
+ * switch aligned with rpc-mode.ts / channels/runtime.ts.
+ *
+ * Relationship to core enforcement: the reactor already aborts a stream after
+ * 10 minutes of silence and stops after six consecutive identical tool rounds.
+ * The gateway watchdog alerts earlier (120s / six identical calls in one user
+ * task) and never aborts; it is observability for the gateway boundary, not a
+ * replacement for the reactor's guard.
+ *
+ * Keeping this outside the core runtime means a standalone CLI session, which
+ * has no gateway, does not pay for it.
  */
-
-import type { AgentEvent } from "../../src/core/agent/types.js";
 
 export type WatchdogAlertKind = "stream_idle" | "tool_idle" | "repeated_tool_call";
 
@@ -24,7 +31,10 @@ export interface WatchdogAlert {
 	kind: WatchdogAlertKind;
 	message: string;
 	at: number;
+	/** User-task counter (USER_MESSAGE → AGENT_TURN_COMPLETED). */
 	turn: number;
+	toolCallId?: string;
+	toolName?: string;
 }
 
 export interface GatewayWatchdogOptions {
@@ -36,7 +46,7 @@ export interface GatewayWatchdogOptions {
 	streamIdleMs?: number;
 	/** Alert when a running tool reports no progress for this long. Default 10min. */
 	toolIdleMs?: number;
-	/** Alert when the same tool call repeats this many times in one turn. Default 5. */
+	/** Alert when the same tool call repeats this many times in one user task. Default 6. */
 	repeatedToolCalls?: number;
 	onAlert?: (alert: WatchdogAlert) => void;
 	/** Test hook; defaults to Date.now. */
@@ -44,59 +54,93 @@ export interface GatewayWatchdogOptions {
 }
 
 const DEFAULT_TICK_MS = 5_000;
+/** Earlier than the reactor's 10-minute stream-idle abort: alert only. */
 const DEFAULT_STREAM_IDLE_MS = 120_000;
 const DEFAULT_TOOL_IDLE_MS = 10 * 60_000;
-const DEFAULT_REPEATED_TOOL_CALLS = 5;
+/** Matches the reactor's six-identical-round loop guard, but is alert-only and scoped to one user task. */
+const DEFAULT_REPEATED_TOOL_CALLS = 6;
+
+interface ToolWatch {
+	toolCallId: string;
+	toolName: string;
+	lastProgressAt: number;
+}
 
 interface WorkspaceWatch {
-	turn: number;
-	active: boolean;
+	/** USER_MESSAGE → AGENT_TURN_COMPLETED scope. */
+	taskTurn: number;
+	taskActive: boolean;
 	modelActive: boolean;
-	toolActive: boolean;
-	lastProgressAt: number;
-	lastToolProgressAt: number;
+	lastModelProgressAt: number;
+	tools: Map<string, ToolWatch>;
 	toolCounts: Map<string, number>;
 	alerted: Set<string>;
 }
 
 function newState(): WorkspaceWatch {
 	return {
-		turn: 0,
-		active: false,
+		taskTurn: 0,
+		taskActive: false,
 		modelActive: false,
-		toolActive: false,
-		lastProgressAt: 0,
-		lastToolProgressAt: 0,
+		lastModelProgressAt: 0,
+		tools: new Map(),
 		toolCounts: new Map(),
 		alerted: new Set(),
 	};
 }
 
-function asAgentEvent(event: unknown): AgentEvent | undefined {
-	if (!event || typeof event !== "object") return undefined;
-	const type = (event as { type?: unknown }).type;
-	return typeof type === "string" ? (event as AgentEvent) : undefined;
+interface RawStoreEvent {
+	type: string;
+	payload: Record<string, unknown>;
 }
 
-/** JSON with sorted object keys, so equal arguments compare equal. */
-function stableStringify(value: unknown): string {
-	if (value === null || typeof value !== "object") {
-		return JSON.stringify(value) ?? String(value);
-	}
-	if (Array.isArray(value)) {
-		return `[${value.map(stableStringify).join(",")}]`;
-	}
-	const record = value as Record<string, unknown>;
-	const keys = Object.keys(record).sort();
-	return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+function asStoreEvent(raw: unknown): RawStoreEvent | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const type = (raw as { type?: unknown }).type;
+	if (typeof type !== "string") return undefined;
+	const payload = (raw as { payload?: unknown }).payload;
+	return {
+		type,
+		payload: payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {},
+	};
 }
 
-function toolKey(event: Extract<AgentEvent, { type: "tool_execution_start" }>): string {
+function asString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Compute a stable hash of tool arguments for repeated-call detection. Uses
+ * FNV-1a (32-bit), matching the reactor's loop guard so the gateway does not
+ * retain large `_write` payloads as map keys.
+ */
+function hashArguments(args: unknown): string {
+	let text: string;
 	try {
-		return `${event.toolName}:${stableStringify(event.args)}`;
+		text = typeof args === "string" ? args : (JSON.stringify(args) ?? "");
 	} catch {
-		return `${event.toolName}:<unserializable>`;
+		return "unserializable";
 	}
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16);
+}
+
+function startTask(state: WorkspaceWatch, now: number): void {
+	state.taskTurn += 1;
+	state.taskActive = true;
+	state.modelActive = false;
+	state.lastModelProgressAt = now;
+	state.tools.clear();
+	state.toolCounts.clear();
+	state.alerted.clear();
+}
+
+function ensureTask(state: WorkspaceWatch, now: number): void {
+	if (!state.taskActive) startTask(state, now);
 }
 
 export class GatewayWatchdog {
@@ -138,7 +182,7 @@ export class GatewayWatchdog {
 
 	observe(workspace: string, rawEvent: unknown): void {
 		if (!this.enabled) return;
-		const event = asAgentEvent(rawEvent);
+		const event = asStoreEvent(rawEvent);
 		if (!event) return;
 		const now = this.now();
 		let state = this.states.get(workspace);
@@ -146,75 +190,87 @@ export class GatewayWatchdog {
 			state = newState();
 			this.states.set(workspace, state);
 		}
+		const payload = event.payload;
 
 		switch (event.type) {
-			case "agent_start":
-				state.active = false;
-				state.modelActive = false;
-				state.toolActive = false;
+			case "USER_MESSAGE":
+				// A user message starts a new task. Count repeated calls across all
+				// LLM/tool rounds until AGENT_TURN_COMPLETED, not per round.
+				startTask(state, now);
 				return;
-			case "turn_start":
-				state.turn += 1;
-				state.active = true;
+			case "AGENT_TURN_START":
+				ensureTask(state, now);
 				state.modelActive = false;
-				state.toolActive = false;
-				state.lastProgressAt = now;
-				state.lastToolProgressAt = now;
-				state.toolCounts.clear();
-				state.alerted.clear();
+				state.lastModelProgressAt = now;
 				return;
-			case "message_start":
-				if (!state.active) {
-					state.turn += 1;
-					state.active = true;
-					state.toolCounts.clear();
-					state.alerted.clear();
-				}
+			case "AGENT_MESSAGE_START":
+				ensureTask(state, now);
 				state.modelActive = true;
-				state.lastProgressAt = now;
+				state.lastModelProgressAt = now;
 				return;
-			case "message_update":
+			case "AGENT_MESSAGE_CHUNK":
+				ensureTask(state, now);
 				state.modelActive = true;
-				state.lastProgressAt = now;
+				state.lastModelProgressAt = now;
 				return;
-			case "message_end":
+			case "AGENT_MESSAGE_END":
+				ensureTask(state, now);
 				state.modelActive = false;
-				state.lastProgressAt = now;
+				state.lastModelProgressAt = now;
 				return;
-			case "tool_execution_start": {
-				state.active = true;
+			case "TOOL_EXECUTION_START": {
+				ensureTask(state, now);
+				const toolCallId = asString(payload.tool_call_id);
+				if (!toolCallId) return;
+				const toolName = asString(payload.tool_name) ?? "tool";
+				const toolKey = `${toolName}:${hashArguments(payload.arguments)}`;
 				state.modelActive = false;
-				state.toolActive = true;
-				state.lastProgressAt = now;
-				state.lastToolProgressAt = now;
-				const key = toolKey(event);
-				const count = (state.toolCounts.get(key) ?? 0) + 1;
-				state.toolCounts.set(key, count);
+				state.lastModelProgressAt = now;
+				state.tools.set(toolCallId, {
+					toolCallId,
+					toolName,
+					lastProgressAt: now,
+				});
+				const count = (state.toolCounts.get(toolKey) ?? 0) + 1;
+				state.toolCounts.set(toolKey, count);
 				if (count >= this.repeatedToolCalls) {
 					this.alert(
 						workspace,
 						state,
 						"repeated_tool_call",
-						`same ${event.toolName} call repeated ${count} times`,
+						`same ${toolName} call repeated ${count} times in one task`,
 						now,
-						key,
+						{ dedupeKey: toolKey, toolCallId, toolName },
 					);
 				}
 				return;
 			}
-			case "tool_execution_update":
-				state.lastProgressAt = now;
-				state.lastToolProgressAt = now;
+			case "TOOL_EXECUTION_UPDATE": {
+				ensureTask(state, now);
+				const toolCallId = asString(payload.tool_call_id);
+				if (!toolCallId) return;
+				const tool = state.tools.get(toolCallId);
+				if (tool) tool.lastProgressAt = now;
+				state.lastModelProgressAt = now;
 				return;
-			case "tool_execution_end":
-				state.toolActive = false;
-				state.lastProgressAt = now;
-				return;
-			case "turn_end":
-			case "agent_end":
-				state.active = false;
+			}
+			case "TOOL_EXECUTION_END": {
+				ensureTask(state, now);
+				const toolCallId = asString(payload.tool_call_id);
+				if (toolCallId) state.tools.delete(toolCallId);
 				state.modelActive = false;
-				state.toolActive = false;
+				state.lastModelProgressAt = now;
+				return;
+			}
+			case "AGENT_TURN_END":
+				state.modelActive = false;
+				state.tools.clear();
+				return;
+			case "AGENT_TURN_COMPLETED":
+				// End of the user task. A later USER_MESSAGE starts the next one.
+				state.taskActive = false;
+				state.modelActive = false;
+				state.tools.clear();
 				return;
 		}
 	}
@@ -223,25 +279,25 @@ export class GatewayWatchdog {
 	sweep(now = this.now()): void {
 		if (!this.enabled) return;
 		for (const [workspace, state] of this.states) {
-			if (!state.active) continue;
-			if (state.toolActive) {
-				if (now - state.lastToolProgressAt >= this.toolIdleMs) {
+			if (!state.taskActive) continue;
+			for (const tool of state.tools.values()) {
+				if (now - tool.lastProgressAt >= this.toolIdleMs) {
 					this.alert(
 						workspace,
 						state,
 						"tool_idle",
-						`tool produced no progress for ${now - state.lastToolProgressAt}ms`,
+						`tool ${tool.toolName} produced no progress for ${now - tool.lastProgressAt}ms`,
 						now,
+						{ dedupeKey: `tool:${tool.toolCallId}`, toolCallId: tool.toolCallId, toolName: tool.toolName },
 					);
 				}
-				continue;
 			}
-			if (state.modelActive && now - state.lastProgressAt >= this.streamIdleMs) {
+			if (state.modelActive && state.tools.size === 0 && now - state.lastModelProgressAt >= this.streamIdleMs) {
 				this.alert(
 					workspace,
 					state,
 					"stream_idle",
-					`model produced no output for ${now - state.lastProgressAt}ms`,
+					`model produced no output for ${now - state.lastModelProgressAt}ms`,
 					now,
 				);
 			}
@@ -254,12 +310,20 @@ export class GatewayWatchdog {
 		kind: WatchdogAlertKind,
 		message: string,
 		at: number,
-		dedupeKey: string = kind,
+		options: { dedupeKey?: string; toolCallId?: string; toolName?: string } = {},
 	): void {
-		const key = `${kind}:${dedupeKey}`;
+		const key = `${kind}:${options.dedupeKey ?? kind}`;
 		if (state.alerted.has(key)) return;
 		state.alerted.add(key);
-		const alert: WatchdogAlert = { workspace, kind, message, at, turn: state.turn };
+		const alert: WatchdogAlert = {
+			workspace,
+			kind,
+			message,
+			at,
+			turn: state.taskTurn,
+			...(options.toolCallId ? { toolCallId: options.toolCallId } : {}),
+			...(options.toolName ? { toolName: options.toolName } : {}),
+		};
 		try {
 			this.onAlert?.(alert);
 		} catch {

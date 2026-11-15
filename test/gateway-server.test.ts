@@ -307,7 +307,7 @@ describe("gateway server", () => {
 			agentIdleTimeout: 0,
 			agentHealthCheckInterval: 0,
 			schedulerGuardInterval: 0,
-			watchdog: { tickMs: 20, streamIdleMs: 20 },
+			watchdog: { tickMs: 20, streamIdleMs: 20, repeatedToolCalls: 2 },
 			createAgent: () => fakeAgent,
 		});
 		server.on("watchdog", (alert) => alerts.push(alert));
@@ -326,13 +326,45 @@ describe("gateway server", () => {
 		expect(listeners.length).toBeGreaterThan(0);
 
 		for (const listener of listeners) {
-			listener({ type: "turn_start" });
-			listener({ type: "message_start", message: { role: "assistant", content: [], timestamp: Date.now() } });
+			listener({ type: "USER_MESSAGE", payload: { content: "hello" } });
+			listener({ type: "AGENT_TURN_START", payload: { message_count: 1 } });
+			listener({
+				type: "AGENT_MESSAGE_START",
+				payload: { model: { provider: "test", model_id: "test" } },
+			});
 		}
 		await new Promise((resolve) => setTimeout(resolve, 120));
 
 		expect(alerts).toHaveLength(1);
 		expect(alerts[0]).toMatchObject({ kind: "stream_idle", workspace: projectDir });
+
+		// The same tool call across two LLM/tool rounds must still count within
+		// one user task. A per-turn reset would miss this sequence.
+		for (const listener of listeners) {
+			listener({ type: "AGENT_TURN_END", payload: { tool_calls_count: 0 } });
+			for (let i = 0; i < 2; i++) {
+				listener({ type: "AGENT_TURN_START", payload: { message_count: i + 2 } });
+				listener({
+					type: "TOOL_EXECUTION_START",
+					payload: { tool_call_id: `repeat_${i}`, tool_name: "read", arguments: { path: "a.ts" } },
+				});
+				listener({
+					type: "TOOL_EXECUTION_END",
+					payload: {
+						tool_call_id: `repeat_${i}`,
+						tool_name: "read",
+						result: [{ type: "text", text: "ok" }],
+						is_error: false,
+						duration_ms: 1,
+					},
+				});
+				listener({ type: "AGENT_TURN_END", payload: { tool_calls_count: 1 } });
+			}
+			listener({ type: "AGENT_TURN_COMPLETED", payload: { reason: "stop" } });
+		}
+
+		expect(alerts).toHaveLength(2);
+		expect(alerts[1]).toMatchObject({ kind: "repeated_tool_call", workspace: projectDir });
 	});
 
 	it("normalizes destination paths so path variants share ONE pool entry", async () => {
