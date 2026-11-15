@@ -2,10 +2,10 @@ import { cpSync, existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-/** Examples can contain separately installed deployment tools and local credentials. */
+/** Examples can contain separately installed deployment tools and local credentials. docs/ is local-only and infra/ never ships. */
 export function copyReleaseContent(source, target) {
 	const excluded = (part) => ["node_modules", ".wrangler", ".git", ".env"].includes(part) || part.startsWith(".env.") || part.startsWith(".dev.vars");
-	for (const entry of ["CHANGELOG.md", "docs", "examples", "infra"]) {
+	for (const entry of ["CHANGELOG.md", "examples"]) {
 		const path = resolve(source, entry);
 		if (!existsSync(path)) continue;
 		cpSync(path, resolve(target, entry), {
