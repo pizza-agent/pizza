@@ -3,7 +3,7 @@
 /**
  * Record the running native Pizza window on macOS, with actual user interactions.
  * Start the latest DEV desktop, select a public demo workspace and obtain its
- * window ID from the computer-use app inventory. Do not record personal content.
+ * screen-capture window ID from macOS CoreGraphics metadata. Do not record personal content.
  *
  * Usage: node scripts/record-desktop-demo.cjs <window-id> <seconds> /outside/repo/demo.mov
  * This only captures the window; operate Pizza normally while it records.

@@ -119,9 +119,9 @@ figcaption { font-size:11px; color:var(--muted); text-align:right; margin-top:16
 .footer-right { text-align:right; }
 .footer-right nav { display:flex; gap:24px; font-size:12px; }
 .footer-right a:hover { color:var(--accent); }
-.demo-dialog { margin:auto; max-height:calc(100dvh - 110px); background:var(--page); color:var(--ink); width:min(1180px,94vw); max-width:none; border:1px solid var(--line); border-radius:24px; padding:0; overflow:visible; }
+.demo-dialog { margin:auto; max-height:calc(100dvh - 110px); background:var(--page); color:var(--ink); width:min(1180px,94vw,calc((100dvh - 114px) * 1.5)); max-width:none; border:1px solid var(--line); border-radius:24px; padding:0; overflow:visible; }
 .demo-dialog::backdrop { background:rgba(15,14,12,.75); backdrop-filter:blur(5px); }
-.demo-dialog video { width:100%; display:block; border-radius:23px; max-height:83dvh; }
+.demo-dialog video { width:100%; height:auto; display:block; border-radius:23px; max-height:calc(100dvh - 114px); background:#171717; }
 .dialog-close { position:absolute; top:-48px; right:0; background:var(--page); color:var(--ink); }
 @media(prefers-reduced-motion:no-preference) {
  .hero-copy { animation:hero-in .7s cubic-bezier(.2,.65,.3,1) both; }

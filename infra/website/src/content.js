@@ -2,7 +2,7 @@ export const copy = {
  en: {
   nav: ['Meet Pizza', 'Apps', 'Questions'], skip: 'Skip to content', source: 'View source', language: '切换到中文', theme: 'Change color theme', menu: 'Open menu',
   eyebrow: 'Your open-source AI sidekick', title: ['A little Pizza.', 'A lot done.'], intro: 'Your desktop companion for code, ideas, and everyday work. Keeps the conversation going, with your apps connected.', download: 'Get Pizza', watch: 'See it in action',
-  productTitle: 'Good work starts with a conversation.', productBody: 'Go from a rough idea to something real. Pizza works in your projects, keeps the context, and helps you carry the work forward.', play: 'Play the desktop demo', close: 'Close demo', demo: 'Pizza desktop demonstration', demoCaption: 'The real Pizza desktop, working across projects.',
+  productTitle: 'Good work starts with a conversation.', productBody: 'Go from a rough idea to something real. Pizza works in your projects, keeps the context, and helps you carry the work forward.', play: 'Play the desktop demo', close: 'Close demo', demo: 'Pizza desktop demonstration', demoCaption: 'Pizza 0.5.5 development build, recorded on desktop: tasks, files, timeline, and app connections.',
   features: [
    ['Pick up where you left off.', 'One ongoing conversation, with context that carries forward. Come back to the work instead of starting from zero.'],
    ['Your projects. Together.', 'Move between local projects and remote workspaces. Let your agents collaborate while each stays with its own work.'],
@@ -22,7 +22,7 @@ export const copy = {
  zh: {
   nav: ['认识 Pizza', '应用连接', '常见问题'], skip: '跳转到正文', source: '查看源码', language: 'Switch to English', theme: '切换明暗主题', menu: '打开导航',
   eyebrow: '开源的 AI 工作伙伴', title: ['来一份 Pizza，', '事情有着落。'], intro: '写代码、找资料、整理想法。一个常驻桌面的 AI 伙伴，记得前面的工作，也连接你常用的应用。', download: '下载 Pizza', watch: '看看它如何工作',
-  productTitle: '好想法，聊着聊着就做出来了。', productBody: '从一句想法开始，在真实项目里推进。Pizza 跟得上你的上下文，也帮你把下一步落到实处。', play: '播放桌面演示', close: '关闭演示', demo: 'Pizza 桌面版操作演示', demoCaption: '真实的 Pizza 桌面界面，在多个项目之间协作。',
+  productTitle: '好想法，聊着聊着就做出来了。', productBody: '从一句想法开始，在真实项目里推进。Pizza 跟得上你的上下文，也帮你把下一步落到实处。', play: '播放桌面演示', close: '关闭演示', demo: 'Pizza 桌面版操作演示', demoCaption: 'Pizza 0.5.5 开发版桌面实录：任务处理、文件预览、时间线与应用连接。',
   features: [
    ['接着聊，也接着做。', '一段持续的对话，上下文跟着工作走。随时回来，继续推进，不必每次重新交代。'],
    ['项目各自有序，协作随时发生。', '本地项目和远程工作区都能接入。让不同项目的 Agent 互相协作，各自保留自己的工作上下文。'],

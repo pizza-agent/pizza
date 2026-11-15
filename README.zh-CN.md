@@ -10,7 +10,7 @@ Pizza 是一个事件驱动的 agent，没有 `while true`。你的每一次对�
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
-[官网](https://pizza.hertzbeat.com/zh/) · [桌面演示](https://pizza.hertzbeat.com/media/demos/pizza-desktop-legacy-2026-11-15.mp4) · [终端演示](https://pizza.hertzbeat.com/media/demos/pizza-terminal-legacy-2026-11-15.gif)
+[官网](https://pizza.hertzbeat.com/zh/) · [桌面演示](https://pizza.hertzbeat.com/media/demos/pizza-desktop-2026-11-15-8a07c8d.mp4) · [终端演示](https://pizza.hertzbeat.com/media/demos/pizza-terminal-legacy-2026-11-15.gif)
 
 
 ## 关于它
