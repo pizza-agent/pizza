@@ -1,5 +1,22 @@
 {
 	"bundle": {
+		"macOS": {
+			"dmg": {
+				"background": "installer/background.png",
+				"windowSize": {
+					"width": 720,
+					"height": 548
+				},
+				"appPosition": {
+					"x": 190,
+					"y": 215
+				},
+				"applicationFolderPosition": {
+					"x": 530,
+					"y": 215
+				}
+			}
+		},
 		"resources": {
 			"../../dist/pizza": "pizza"
 		}
