@@ -69,6 +69,7 @@ const policies: ConnectorPolicy[] = MCP_CONNECTOR_CATALOG.map((def) => ({
 policies.push({
 	matches: (entry) => "url" in entry.config && entry.config.url === PIZZA_GMAIL_MCP_URL,
 	oauth: (entry) => ({
+		resourceIndicator: false,
 		authServerMetadataUrl: "https://accounts.google.com/.well-known/openid-configuration",
 		authorizationParams: { access_type: "offline", prompt: "consent" },
 		authCheck: { tool: "list_labels" },

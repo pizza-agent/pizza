@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
@@ -15,20 +15,26 @@ import {
 	type McpOAuthStateStore,
 	type OAuthCallback,
 	type OAuthCallbackPage,
+	type OAuthCallbackIssuer,
 	OAuthCallbackServer,
+	clientMetadataBaseUrl,
+	clientMetadataDocumentUrl,
+	oauthCallbackId,
 	type OAuthChallenge,
 	type OAuthDevicePrompt,
 	type OAuthClientInformationMixed,
 	type OAuthClientMetadataDocument,
 	parseWwwAuthenticate,
+	validateOAuthResponseIssuer,
 	stepUpScope,
 } from "../../core/mcp/oauth/index.js";
 import { mcpNamespace } from "../../core/mcp/servers.js";
+import { registeredOAuthConnector } from "../connectors/catalog.js";
 import { PIZZA_OAUTH_LOGO } from "./oauth-logo.js";
 
 const CALLBACK_HOST = "127.0.0.1";
 const CALLBACK_PATH = "/callback";
-const CLIENT_METADATA_BASE_URL = "https://pi.dev/oauth";
+export const PIZZA_MCP_OAUTH_CLIENT_METADATA_URL = "https://pizza.hertzbeat.com/oauth/client.json";
 const FALLBACK_REDIRECT_URL = `http://${CALLBACK_HOST}${CALLBACK_PATH}`;
 const REFRESH_SKEW_MS = 30_000;
 const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
@@ -91,6 +97,7 @@ function oauthErrorHtml(message: string, details?: string): string {
 }
 
 export interface McpOAuthSettings {
+	resourceIndicator?: boolean;
 	authorizationResourceIndicator?: boolean;
 	authorizationParams?: Record<string, string>;
 	deviceAuthorizationUrl?: string;
@@ -101,7 +108,8 @@ export interface McpOAuthSettings {
 	callbackUrl?: string;
 	scope?: string;
 	clientName?: string;
-	clientRegistration?: "dcr" | "cimd";
+	clientRegistration?: "auto" | "dcr" | "cimd";
+	clientMetadataUrl?: string;
 	authServerMetadataUrl?: URL;
 	/** Inline AS metadata (e.g. GitHub); preferred over discovery. */
 	authorizationServerMetadata?: AuthorizationServerMetadata;
@@ -160,6 +168,36 @@ export interface McpOAuthServerStore extends McpOAuthStateStore {
 	withRefreshLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
+async function updateState(store: McpOAuthStateStore, update: (state: McpOAuthState | undefined) => McpOAuthState): Promise<void> {
+	if (store.update) await store.update(update);
+	else await store.save(update(await store.load()));
+}
+
+/** A sign-out or a new sign-in invalidates every outstanding operation on this view. */
+function signInStore(store: McpOAuthStateStore, signInId: string | undefined): McpOAuthStateStore {
+	const current = (state: McpOAuthState | undefined): McpOAuthState => {
+		if (!state || state.signInId !== signInId) throw new McpOAuthAuthorizationRequiredError();
+		return state;
+	};
+	return {
+		load: async () => current(await store.load()),
+		save: (state) => updateState(store, (value) => { current(value); return state; }),
+		update: (update) => updateState(store, (value) => update(current(value)) ?? { serverUrl: current(value).serverUrl, signInId }),
+	};
+}
+
+async function beginSignIn(store: McpOAuthStateStore, serverUrl: string): Promise<McpOAuthStateStore> {
+	const signInId = randomUUID();
+	await updateState(store, (previous) => {
+		const next: McpOAuthState = { ...previous, serverUrl: new URL(serverUrl).href, signInId };
+		delete next.oauthState;
+		delete next.codeVerifier;
+		delete next.authorizationContext;
+		return next;
+	});
+	return signInStore(store, signInId);
+}
+
 /** Per-server OAuth state (client registration, tokens, pending PKCE verifier) in `mcp-auth.json`. */
 export class McpOAuthCredentialStore {
 	private readonly backend: AuthStorageBackend;
@@ -185,6 +223,14 @@ export class McpOAuthCredentialStore {
 				this.write((states) => {
 					states[key] = state;
 				}),
+			update: (update) => this.backend.withLock((content) => {
+				const states = parseStates(content);
+				const state = update(states[key] ?? states[legacyKey]);
+				delete states[legacyKey];
+				if (state) states[key] = state;
+				else delete states[key];
+				return { result: undefined, next: serializeStates(states) };
+			}),
 			withRefreshLock: (fn) => this.withRefreshLock(key, fn),
 		};
 	}
@@ -248,32 +294,55 @@ function registeredRedirectUrls(client: OAuthClientInformationMixed | undefined)
 	return client && "redirect_uris" in client ? client.redirect_uris : [];
 }
 
-function callbackId(serverUrl: string): string {
-	const url = new URL(serverUrl);
-	url.hash = "";
-	return createHash("sha256").update(url.href).digest().subarray(0, 9).toString("base64url");
-}
-
-function clientMetadataDocument(
+async function clientMetadataDocument(
 	serverUrl: string,
 	redirectUrl: string,
 	metadata: AuthorizationServerMetadata | undefined,
-): OAuthClientMetadataDocument {
-	if (
-		!metadata?.client_id_metadata_document_supported ||
-		!metadata.token_endpoint_auth_methods_supported?.includes("none")
-	) {
-		throw new Error(
-			'The authorization server does not support Client ID Metadata Documents for public clients; remove oauth.clientRegistration "cimd"',
-		);
-	}
-	if (metadata.authorization_response_iss_parameter_supported) {
-		return { url: `${CLIENT_METADATA_BASE_URL}/client.json`, redirectUrl };
-	}
-	const id = callbackId(serverUrl);
+	settings: McpOAuthSettings,
+	signal?: AbortSignal,
+): Promise<OAuthClientMetadataDocument | undefined> {
+	if (settings.clientRegistration === "dcr") return undefined;
+	const base = settings.clientMetadataUrl ?? process.env.PIZZA_MCP_OAUTH_CLIENT_METADATA_URL ?? PIZZA_MCP_OAUTH_CLIENT_METADATA_URL;
+	// Never advertise another product's identity or an undeployed placeholder.
+	if (base) clientMetadataBaseUrl(base);
 	const redirect = new URL(redirectUrl);
-	redirect.pathname = `${CALLBACK_PATH}/${id}`;
-	return { url: `${CLIENT_METADATA_BASE_URL}/${id}/client.json`, redirectUrl: redirect.href };
+	const supported = base && metadata?.client_id_metadata_document_supported &&
+		metadata.token_endpoint_auth_methods_supported?.includes("none") && redirect.protocol === "http:" &&
+		["127.0.0.1", "localhost"].includes(redirect.hostname) && redirect.pathname === CALLBACK_PATH &&
+		!redirect.username && !redirect.password && !redirect.search && !redirect.hash;
+	if (!supported) {
+		if (settings.clientRegistration === "cimd") {
+			throw new Error(base
+				? "CIMD requires authorization-server support for public clients and a localhost or 127.0.0.1 /callback redirect; use auto or dcr instead"
+				: "CIMD requires Pizza's published metadata URL; set oauth.clientMetadataUrl or PIZZA_MCP_OAUTH_CLIENT_METADATA_URL");
+		}
+		return undefined;
+	}
+	const id = metadata.authorization_response_iss_parameter_supported ? undefined : oauthCallbackId(serverUrl);
+	if (id) redirect.pathname = `${CALLBACK_PATH}/${id}`;
+	const url = clientMetadataDocumentUrl(base!, id);
+	// Until the publisher deploys this document, auto can still use the provider's DCR.
+	let response: Response;
+	try {
+		response = await timedFetch()(url, { headers: { Accept: "application/json" }, redirect: "error", signal });
+	} catch (error) {
+		if (signal?.aborted) throw error;
+		if (settings.clientRegistration === "cimd") throw new Error(`Could not load Pizza's CIMD document at ${url}`, { cause: error });
+		return undefined;
+	}
+	if (!response.ok) {
+		void response.body?.cancel().catch(() => {});
+		if (settings.clientRegistration === "cimd") throw new Error(`Could not load Pizza's CIMD document at ${url}: HTTP ${response.status}`);
+		return undefined;
+	}
+	const document = await response.json() as Record<string, unknown>;
+	const registered = new URL(redirect);
+	registered.port = "";
+	if (document.client_id !== url || document.client_name !== "Pizza" || document.token_endpoint_auth_method !== "none" ||
+		!Array.isArray(document.redirect_uris) || !document.redirect_uris.includes(registered.href)) {
+		throw new Error(`Invalid Pizza CIMD document at ${url}: client identity or redirect URI does not match`);
+	}
+	return { url, redirectUrl: redirect.href };
 }
 
 function createProvider(
@@ -282,15 +351,19 @@ function createProvider(
 	settings: McpOAuthSettings,
 	redirectUrl: string,
 	onRedirect: (url: URL) => void,
+	signal?: AbortSignal,
 ): McpOAuthProvider {
 	return new McpOAuthProvider({
 		serverUrl,
 		redirectUrl,
 		clientMetadata: { client_name: settings.clientName ?? APP_NAME },
-		clientMetadataDocument:
-			settings.clientRegistration === "cimd"
-				? (metadata) => clientMetadataDocument(serverUrl, redirectUrl, metadata)
-				: undefined,
+		clientMetadataDocument: (metadata) => clientMetadataDocument(serverUrl, redirectUrl, metadata, settings, signal),
+		authorizationRedirectUrl: (metadata) => {
+			if (settings.clientId || metadata.authorization_response_iss_parameter_supported) return redirectUrl;
+			const url = new URL(redirectUrl);
+			url.pathname = `${url.pathname.replace(/\/$/, "")}/${oauthCallbackId(serverUrl)}`;
+			return url.href;
+		},
 		clientId: settings.clientId,
 		clientSecret: settings.clientSecret,
 		store,
@@ -322,14 +395,18 @@ export function createMcpAuthProvider(options: {
 					callbackSettings(settings).fixedRedirectUrl ??
 					registeredRedirectUrls(state.clientInformation)[0] ??
 					FALLBACK_REDIRECT_URL;
-				const provider = createProvider(serverUrl, store, settings, redirectUrl, () => {});
+				const provider = createProvider(serverUrl, signInStore(store, state.signInId), settings, redirectUrl, () => {});
 				const result = await authorizeMcp(provider, {
+					resourceIndicator: settings.resourceIndicator,
 					serverUrl,
-					resourceMetadataUrl: challenge?.resourceMetadataUrl,
+					// Providers such as Zoom publish PRM on a different host; keep the learned URL across restart.
+					// Fetch it afresh and let authorizeMcp validate the persisted issuer/resource binding.
+					resourceMetadataUrl: challenge?.resourceMetadataUrl ?? (state.discovery?.resourceMetadataUrl ? new URL(state.discovery.resourceMetadataUrl) : undefined),
 					authorizationServerMetadataUrl: settings.authServerMetadataUrl,
 					authorizationServerMetadata: settings.authorizationServerMetadata,
 					scope: challenge?.scope,
 					fetch: timedFetch(fetch),
+					allowInteraction: false,
 				});
 				if (result === "REDIRECT") throw new McpOAuthAuthorizationRequiredError();
 			})
@@ -343,11 +420,13 @@ export function createMcpAuthProvider(options: {
 		token: async () => {
 			await refreshing?.catch(() => undefined);
 			const state = await store.load();
-			const token = state?.tokens?.access_token;
+			const provider = createProvider(serverUrl, store, options.settings(), FALLBACK_REDIRECT_URL, () => {});
+			const token = (await provider.tokens())?.access_token;
+			if (!token) return undefined;
 			const expired = state?.tokensExpireAt !== undefined && state.tokensExpireAt - REFRESH_SKEW_MS <= Date.now();
 			if (!expired || !state?.tokens?.refresh_token) return token;
-			await refresh(token).catch(() => undefined);
-			return (await store.load())?.tokens?.access_token;
+			await refresh(token);
+			return (await provider.tokens())?.access_token;
 		},
 		onUnauthorized: async (context) => {
 			const challenge = parseWwwAuthenticate(context.response.headers.get("www-authenticate"));
@@ -376,7 +455,7 @@ export class McpSignInCancelledError extends Error {
 
 type AuthorizationResponse = Pick<OAuthCallback, "code" | "iss">;
 
-function responseFromRedirectUrl(input: string, state: string, redirectUrl: URL): AuthorizationResponse {
+function responseFromRedirectUrl(input: string, state: string, redirectUrl: URL, issuer: OAuthCallbackIssuer): AuthorizationResponse {
 	let url: URL;
 	try {
 		url = new URL(input.trim());
@@ -387,6 +466,7 @@ function responseFromRedirectUrl(input: string, state: string, redirectUrl: URL)
 		throw new Error("The redirect URL does not match this sign-in's redirect URI");
 	}
 	if (url.searchParams.get("state") !== state) throw new Error("The redirect URL belongs to a different sign-in");
+	validateOAuthResponseIssuer(issuer.expected, url.searchParams.get("iss") ?? undefined, issuer.required);
 	const error = url.searchParams.get("error");
 	if (error) throw new Error(url.searchParams.get("error_description") ?? error);
 	const code = url.searchParams.get("code");
@@ -398,15 +478,16 @@ async function waitForAuthorizationResponse(
 	callback: OAuthCallbackServer,
 	state: string,
 	redirectUrl: URL,
+	issuer: OAuthCallbackIssuer,
 	prompt: McpSignInPrompt,
 	signal: AbortSignal | undefined,
 ): Promise<AuthorizationResponse> {
 	const controller = new AbortController();
 	const promptSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
-	const fromBrowser = callback.waitForCallback(state, redirectUrl.pathname);
+	const fromBrowser = callback.waitForCallback(state, redirectUrl.pathname, issuer);
 	const fromUser = Promise.resolve().then(() => prompt.promptForRedirectUrl(promptSignal)).then((input) => {
 		if (!input?.trim()) throw new McpSignInCancelledError();
-		return responseFromRedirectUrl(input, state, redirectUrl);
+		return responseFromRedirectUrl(input, state, redirectUrl, issuer);
 	});
 	let onAbort: () => void = () => {};
 	const cancelled = new Promise<never>((_resolve, reject) => {
@@ -457,8 +538,12 @@ export async function signInMcpServer(options: {
 	prompt: McpSignInPrompt;
 	signal?: AbortSignal;
 }): Promise<void> {
-	const { serverUrl, store, settings, signal } = options;
+	const { serverUrl, settings, signal } = options;
 	if (signal?.aborted) throw new McpSignInCancelledError();
+	const registeredConnector = registeredOAuthConnector({ url: serverUrl });
+	if (registeredConnector && (!settings.clientId?.trim() || !settings.clientSecret?.trim() || !settings.callbackUrl?.trim())) {
+		throw new Error(`Set up ${registeredConnector.name} in Pizza with your own OAuth client ID, client secret, and registered callback URL before signing in. ${registeredConnector.docsUrl}`);
+	}
 	if (serverUrl === "https://gmail.googleapis.com/gmail/v1/users/me" && (!settings.clientId || !settings.clientSecret)) {
 		throw new Error("This Pizza build is missing its Google Desktop OAuth registration. The publisher must build with PIZZA_GOOGLE_DESKTOP_CLIENT_FILE pointing to the Desktop client JSON.");
 	}
@@ -468,6 +553,7 @@ export async function signInMcpServer(options: {
 	if (new URL(serverUrl).origin === "https://api.x.com" && !settings.clientId) {
 		throw new Error("Set up your X app's OAuth 2.0 Client ID in Pizza before signing in. A Native app uses PKCE without a client secret; Web and Automated apps also require their client secret.");
 	}
+	const store = await beginSignIn(options.store, serverUrl);
 	const stored = await store.load();
 	const stepUp = options.challenge?.error === "insufficient_scope";
 	if (settings.deviceAuthorizationUrl && !settings.clientSecret) {
@@ -488,7 +574,10 @@ export async function signInMcpServer(options: {
 				},
 			});
 			const provider = createProvider(serverUrl, store, settings, FALLBACK_REDIRECT_URL, () => {});
-			await provider.saveTokens(tokens);
+			await provider.saveTokens(tokens, { kind: "device", binding: {
+				issuer: settings.authorizationServerMetadata.issuer, clientId: settings.clientId,
+				resource: new URL(serverUrl).href, registrationMethod: "pre-registered",
+			} });
 			return;
 		} catch (error) {
 			if (signal?.aborted) throw new McpSignInCancelledError();
@@ -499,34 +588,39 @@ export async function signInMcpServer(options: {
 	const registered = registeredRedirectUrls(stored?.clientInformation)[0];
 	const preferredPort =
 		callbackOptions.port ?? (registered ? Number(new URL(registered).port) || undefined : undefined);
-	const cimd = settings.clientRegistration === "cimd";
 	const callback = await listenForCallback(
 		callbackOptions,
-		cimd ? [`${CALLBACK_PATH}/${callbackId(serverUrl)}`] : [],
+		settings.clientId ? [] : [`${callbackOptions.path.replace(/\/$/, "")}/${oauthCallbackId(serverUrl)}`],
 		preferredPort,
 		callbackOptions.port !== undefined,
 	);
 	const redirectUrl = callbackOptions.fixedRedirectUrl ?? callback.redirectUrl;
+	let provider: McpOAuthProvider | undefined;
 	try {
-		if (stored) {
-			const next: McpOAuthState = { ...stored };
+		await updateState(store, (current) => {
+			const next: McpOAuthState = { ...current! };
 			delete next.oauthState;
-			const keepClient =
-				settings.clientId ||
-				(cimd ? !stored.clientInformation : registeredRedirectUrls(stored.clientInformation).includes(redirectUrl));
+			const registeredUrls = registeredRedirectUrls(next.clientInformation);
+			const specificRedirect = new URL(redirectUrl);
+			specificRedirect.pathname = `${specificRedirect.pathname.replace(/\/$/, "")}/${oauthCallbackId(serverUrl)}`;
+			const switchToDcr = settings.clientRegistration === "dcr" && next.credentialBinding?.registrationMethod === "cimd";
+			const keepClient = settings.clientId || (!switchToDcr && settings.clientRegistration !== "cimd" &&
+				(registeredUrls.includes(redirectUrl) || registeredUrls.includes(specificRedirect.href)));
 			if (!keepClient) {
 				delete next.clientInformation;
 				delete next.tokens;
 				delete next.tokensExpireAt;
+				delete next.credentialBinding;
 			}
-			await store.save(next);
-		}
+			return next;
+		});
 
 		let authorizationUrl: URL | undefined;
-		const provider = createProvider(serverUrl, store, settings, redirectUrl, (url) => {
+		provider = createProvider(serverUrl, store, settings, redirectUrl, (url) => {
 			authorizationUrl = url;
-		});
+		}, signal);
 		const flow = {
+			resourceIndicator: settings.resourceIndicator,
 			authorizationResourceIndicator: settings.authorizationResourceIndicator,
 			authorizationParams: settings.authorizationParams,
 			serverUrl,
@@ -540,16 +634,20 @@ export async function signInMcpServer(options: {
 				stepUp ? stepUpScope(stored?.tokens?.scope, options.challenge?.scope) : options.challenge?.scope,
 			),
 		};
-		const skipRefresh = stepUp;
-		if ((await authorizeMcp(provider, { ...flow, skipRefresh })) === "AUTHORIZED") return;
+		// Explicit sign-in always opens a new authorization, including account changes.
+		if ((await authorizeMcp(provider, { ...flow, skipRefresh: true })) === "AUTHORIZED") return;
 		if (!authorizationUrl) throw new Error("OAuth flow did not produce an authorization URL");
 
-		const state = await provider.state();
+		const state = authorizationUrl.searchParams.get("state");
+		if (!state) throw new Error("OAuth authorization URL did not include state");
 		const authorizationRedirectUrl = new URL(authorizationUrl.searchParams.get("redirect_uri") ?? redirectUrl);
+		const context = await provider.authorizationContext();
+		if (!context) throw new Error("OAuth authorization context is missing");
 		const response = waitForAuthorizationResponse(
 			callback,
 			state,
 			authorizationRedirectUrl,
+			{ expected: context.binding.issuer, required: context.metadata.authorization_response_iss_parameter_supported === true },
 			options.prompt,
 			signal,
 		);
@@ -561,13 +659,14 @@ export async function signInMcpServer(options: {
 			throw error;
 		}
 		const { code, iss } = await response;
-		await authorizeMcp(provider, { ...flow, authorizationCode: code, iss });
+		await authorizeMcp(provider, { ...flow, authorizationCode: code, authorizationState: state, iss });
 		callback.complete({ ok: true });
 	} catch (error) {
 		callback.complete({ ok: false, message: "Sign-in failed. Return to Pizza to try again.", details: error instanceof Error ? error.message : String(error) });
 		if (signal?.aborted) throw new McpSignInCancelledError();
 		throw error;
 	} finally {
+		await provider?.invalidateCredentials("verifier").catch(() => {});
 		await callback.close();
 	}
 }

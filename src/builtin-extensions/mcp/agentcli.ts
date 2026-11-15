@@ -762,7 +762,9 @@ async function handleServerSubcommand(
 
 	const rest = tokens.slice(1);
 	if (sub === "catalog") {
-		return JSON.stringify({ ok: true, data: MCP_CONNECTOR_CATALOG.map(({ name, description }) => ({ name, description })) });
+		return JSON.stringify({ ok: true, data: MCP_CONNECTOR_CATALOG.map(({ name, description, docsUrl, oauthSetup, connectionNote }) => ({
+			name, description, docsUrl, ...(oauthSetup ? { oauthSetup } : {}), ...(connectionNote ? { connectionNote } : {}),
+		})) });
 	}
 	if (sub === "install") {
 		const entry = MCP_CONNECTOR_CATALOG.find(entry => entry.name === rest[0]);

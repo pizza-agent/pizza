@@ -78,7 +78,9 @@ describe("Gmail MCP authorization", () => {
 		try {
 			await expect(connection.getClient()).rejects.toThrow("requires sign-in");
 			expect(connection.state).toBe("needs-auth");
-			await credentials.forServer("gmail", url).save({ serverUrl: url, tokens: { access_token: currentToken, token_type: "bearer", refresh_token: "google-refresh-token" } });
+			await credentials.forServer("gmail", url).save({ serverUrl: url,
+				credentialBinding: { issuer: origin, clientId: "fixture-client", resource: url },
+				tokens: { access_token: currentToken, token_type: "bearer", refresh_token: "google-refresh-token" } });
 			await connection.reconnect();
 			expect(connection.state).toBe("connected");
 			currentToken = "token-two";

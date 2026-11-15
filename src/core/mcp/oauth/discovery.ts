@@ -1,6 +1,6 @@
 import type { McpFetch } from "../auth-provider.js";
 import { LATEST_PROTOCOL_VERSION } from "../protocol/types.js";
-import { OAuthIssuerMismatchError } from "./errors.js";
+import { OAuthInsecureEndpointError, OAuthIssuerMismatchError } from "./errors.js";
 import {
 	type AuthorizationServerMetadata,
 	type OAuthChallenge,
@@ -14,9 +14,20 @@ function discard(response: Response | undefined): void {
 	void response?.body?.cancel().catch(() => {});
 }
 
-/** 4xx and 502 mean "not here", so discovery tries the next candidate URL. */
+/** Only a missing document permits legacy discovery. Outages and invalid documents must fail closed. */
 function isDiscoveryMiss(status: number): boolean {
-	return (status >= 400 && status < 500) || status === 502;
+	return status === 404;
+}
+
+class MetadataNotFoundError extends Error {}
+
+export function secureOAuthEndpoint(value: string | URL): URL {
+	const url = new URL(value);
+	const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+	if ((url.protocol !== "https:" && !(url.protocol === "http:" && local)) || url.username || url.password || url.hash) {
+		throw new OAuthInsecureEndpointError(url.href);
+	}
+	return url;
 }
 
 /** Path suffix for `/.well-known/<kind><path>`; empty for the root path. */
@@ -24,27 +35,55 @@ function pathSuffix(pathname: string): string {
 	return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 }
 
-function field(header: string, name: string): string | undefined {
-	const match = header.match(new RegExp(String.raw`(?:^|[,\s])${name}=(?:"([^"]*)"|([^\s,]+))`, "i"));
-	return match?.[1] || match?.[2] || undefined;
+/** Commas separate challenges/parameters only outside quoted strings (RFC 9110). */
+function challengeParts(header: string): string[] {
+	const parts: string[] = [];
+	let start = 0, quoted = false, escaped = false;
+	for (let index = 0; index < header.length; index++) {
+		const character = header[index];
+		if (escaped) { escaped = false; continue; }
+		if (quoted && character === "\\") { escaped = true; continue; }
+		if (character === '"') quoted = !quoted;
+		if (!quoted && character === ",") { parts.push(header.slice(start, index).trim()); start = index + 1; }
+	}
+	if (quoted || escaped || /[\r\n\0]/.test(header)) throw new Error("Invalid WWW-Authenticate header");
+	parts.push(header.slice(start).trim());
+	return parts;
 }
 
 export function parseWwwAuthenticate(header: string | null): OAuthChallenge {
 	if (!header) return {};
-	const scheme = header.trimStart().split(/\s+/, 1)[0]?.toLowerCase();
-	if (scheme !== "bearer" && scheme !== "dpop") return {};
-	const resourceMetadata = field(header, "resource_metadata");
+	const fields = new Map<string, string>();
+	let bearer = false, found = false;
+	for (const part of challengeParts(header)) {
+		let parameter = part;
+		if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+\s*=/.test(part)) {
+			const challenge = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+)(?:\s+(.*))?$/.exec(part);
+			if (!challenge) continue;
+			if (found) break;
+			bearer = challenge[1].toLowerCase() === "bearer";
+			if (!bearer) continue;
+			found = true;
+			parameter = challenge[2] ?? "";
+		}
+		if (!bearer || !parameter) continue;
+		const match = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([!#$%&'*+.^_`|~0-9A-Za-z-]+))$/.exec(parameter);
+		if (!match) throw new Error("Invalid OAuth bearer challenge parameter");
+		const name = match[1].toLowerCase();
+		if (fields.has(name)) throw new Error(`Duplicate OAuth bearer challenge parameter: ${name}`);
+		fields.set(name, match[2] !== undefined ? match[2].replace(/\\(.)/g, "$1") : match[3]);
+	}
+	if (!found) return {};
+	const resourceMetadata = fields.get("resource_metadata");
 	let resourceMetadataUrl: URL | undefined;
-	if (resourceMetadata) {
-		try {
-			resourceMetadataUrl = new URL(resourceMetadata);
-		} catch {}
+	if (resourceMetadata !== undefined) {
+		resourceMetadataUrl = secureOAuthEndpoint(resourceMetadata);
 	}
 	return {
 		resourceMetadataUrl,
-		scope: field(header, "scope"),
-		error: field(header, "error"),
-		errorDescription: field(header, "error_description"),
+		scope: fields.get("scope"),
+		error: fields.get("error"),
+		errorDescription: fields.get("error_description"),
 	};
 }
 
@@ -54,8 +93,9 @@ async function fetchMetadata(
 	protocolVersion: string,
 	signal: AbortSignal | undefined,
 ): Promise<Response> {
-	return fetch(url, {
+	return fetch(secureOAuthEndpoint(url), {
 		headers: { Accept: "application/json", "MCP-Protocol-Version": protocolVersion },
+		redirect: "error",
 		signal,
 	});
 }
@@ -91,6 +131,7 @@ export async function discoverProtectedResourceMetadata(
 	}
 	if (!response.ok) {
 		discard(response);
+		if (response.status === 404 && !options.resourceMetadataUrl) throw new MetadataNotFoundError("OAuth protected resource metadata not found");
 		throw new Error(`HTTP ${response.status} loading OAuth protected resource metadata`);
 	}
 	return parseProtectedResourceMetadata(await response.json());
@@ -129,8 +170,7 @@ export async function discoverAuthorizationServerMetadata(
 		const metadata = parseAuthorizationServerMetadata(await response.json());
 		if (!options.skipIssuerValidation) {
 			const expected = String(authorizationServerUrl);
-			const trim = (value: string) => (value.endsWith("/") ? value.slice(0, -1) : value);
-			if (trim(metadata.issuer) !== trim(expected)) throw new OAuthIssuerMismatchError(expected, metadata.issuer);
+			if (metadata.issuer !== expected) throw new OAuthIssuerMismatchError(expected, metadata.issuer);
 		}
 		return metadata;
 	}
@@ -158,7 +198,7 @@ export async function discoverOAuthServerInfo(
 			signal: options.signal,
 		});
 	} catch (error) {
-		if (error instanceof TypeError) throw error;
+		if (!(error instanceof MetadataNotFoundError)) throw error;
 	}
 	if (options.authorizationServerMetadata) {
 		const metadata = options.authorizationServerMetadata;
@@ -179,7 +219,10 @@ export async function discoverOAuthServerInfo(
 		const metadata = parseAuthorizationServerMetadata(await response.json());
 		return { authorizationServerUrl: metadata.issuer, authorizationServerMetadata: metadata, resourceMetadata };
 	}
-	const authorizationServerUrl = resourceMetadata?.authorization_servers?.[0] ?? String(new URL("/", serverUrl));
+	if (resourceMetadata && !resourceMetadata.authorization_servers?.length) {
+		throw new Error("OAuth protected resource metadata does not name an authorization server");
+	}
+	const authorizationServerUrl = resourceMetadata?.authorization_servers?.[0] ?? new URL(serverUrl).origin;
 	return {
 		authorizationServerUrl,
 		authorizationServerMetadata: await discoverAuthorizationServerMetadata(authorizationServerUrl, {

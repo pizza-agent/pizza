@@ -25,6 +25,10 @@ export class OAuthIssuerMismatchError extends Error {
 	}
 }
 
+export function validateOAuthResponseIssuer(expected: string, received: string | undefined, required: boolean): void {
+	if ((required || received !== undefined) && received !== expected) throw new OAuthIssuerMismatchError(expected, received);
+}
+
 export class OAuthInsecureEndpointError extends Error {
 	readonly endpoint: string;
 

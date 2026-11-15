@@ -1,5 +1,5 @@
 /** Provider configuration UI descriptors; rendering does not branch on provider names. */
-import { MCP_CONNECTOR_CATALOG } from "@pizza/mcp-connector-catalog";
+import { MCP_CONNECTOR_CATALOG, registeredOAuthConnector } from "@pizza/mcp-connector-catalog";
 import { buildGoogleMcpConfig, googleMcpNeedsSetup, parseGoogleOAuthClient } from "./mcp-google-setup";
 import { buildXMcpConfig, xMcpNeedsSetup } from "./mcp-x-setup";
 interface ClientFields {
@@ -18,6 +18,31 @@ interface SetupDefinition {
 	secretLabel?: string;
 }
 const entries: Record<string, SetupDefinition> = {
+	registered: {
+		needsSetup: (config) => {
+			if (!registeredOAuthConnector(config)) return false;
+			if (record(config.headers) && Object.keys(config.headers).some((key) => key.toLowerCase() === "authorization")) return false;
+			const oauth = record(config.oauth) ? config.oauth : {};
+			return !nonempty(oauth.clientId) || !nonempty(oauth.clientSecret) || !nonempty(oauth.callbackUrl);
+		},
+		build: (config, client) => {
+			const entry = registeredOAuthConnector(config);
+			if (!entry) throw new Error("This server does not use registered OAuth setup.");
+			if (!client.clientId.trim() || !client.clientSecret.trim()) throw new Error("Enter the OAuth client ID and client secret from your service provider.");
+			const callback = new URL(client.callbackUrl.trim());
+			if (callback.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(callback.hostname) ||
+				!callback.port || callback.username || callback.password || callback.search || callback.hash) {
+				throw new Error("Register an HTTP loopback callback with an explicit port and no query or fragment.");
+			}
+			const oauth = { ...(entry.config.oauth as Record<string, unknown>), ...(record(config.oauth) ? config.oauth : {}),
+				clientId: client.clientId.trim(), clientSecret: client.clientSecret.trim(), callbackUrl: callback.href };
+			delete (oauth as Record<string, unknown>).callbackPort;
+			return { ...config, enabled: true, oauth };
+		},
+		defaults: { callbackUrl: "http://127.0.0.1:8767/callback" },
+		secretRequired: true,
+		text: (name) => `plugins.mcp.registered${name}`,
+	},
 	google: {
 		needsSetup: googleMcpNeedsSetup,
 		build: buildGoogleMcpConfig,
@@ -38,6 +63,8 @@ const entries: Record<string, SetupDefinition> = {
 		secretLabel: "plugins.mcp.xClientSecret",
 	},
 };
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+const nonempty = (value: unknown): boolean => typeof value === "string" && !!value.trim();
 export function oauthSetupDefinition(id: string): SetupDefinition {
 	const def = entries[id];
 	if (!def) throw Error(`Unknown OAuth setup provider: ${id}`);

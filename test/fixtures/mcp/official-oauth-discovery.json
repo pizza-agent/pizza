@@ -1,0 +1,821 @@
+{
+  "recordedAt": "2026-11-15T01:27:39.540Z",
+  "records": [
+    {
+      "name": "notion",
+      "url": "https://mcp.notion.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.notion.com/.well-known/oauth-protected-resource/mcp\", scope=\"default\"",
+      "resource": "https://mcp.notion.com/mcp",
+      "issuer": "https://mcp.notion.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.notion.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.notion.com/mcp\",\"authorization_servers\":[\"https://mcp.notion.com\"],\"scopes_supported\":[\"default\"],\"bearer_methods_supported\":[\"header\"],\"resource_name\":\"Notion MCP (Beta)\"}"
+        },
+        {
+          "url": "https://mcp.notion.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.notion.com\",\"authorization_endpoint\":\"https://mcp.notion.com/authorize\",\"token_endpoint\":\"https://mcp.notion.com/token\",\"registration_endpoint\":\"https://mcp.notion.com/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\",\"private_key_jwt\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true,\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "linear",
+      "url": "https://mcp.linear.app/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.linear.app/.well-known/oauth-protected-resource/mcp\", scope=\"read write\"",
+      "resource": "https://mcp.linear.app/mcp",
+      "issuer": "https://mcp.linear.app",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.linear.app/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.linear.app/mcp\",\"authorization_servers\":[\"https://mcp.linear.app\"],\"scopes_supported\":[\"read\",\"write\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.linear.app/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.linear.app\",\"authorization_endpoint\":\"https://mcp.linear.app/authorize\",\"token_endpoint\":\"https://mcp.linear.app/token\",\"registration_endpoint\":\"https://mcp.linear.app/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true,\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "atlassian",
+      "url": "https://mcp.atlassian.com/v2/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.atlassian.com/.well-known/oauth-protected-resource/v2/mcp\"",
+      "resource": "https://mcp.atlassian.com/v2/mcp",
+      "issuer": "https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.atlassian.com/.well-known/oauth-protected-resource/v2/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.atlassian.com/v2/mcp\",\"authorization_servers\":[\"https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"read:me\",\"read:account\",\"offline_access\",\"email\",\"read:jira:agent-interface\",\"write:jira:agent-interface\",\"search:jira:agent-interface\",\"delete:jira:agent-interface\",\"manage:jira:agent-interface\",\"read:confluence:agent-interface\",\"write:confluence:agent-interface\",\"search:confluence:agent-interface\",\"search:rovo:agent-interface\",\"search:code:agent-interface\",\"read:jsm:agent-interface\",\"write:jsm:agent-interface\",\"read:all:twg\",\"write:all:twg\",\"read:goals:agent-interface\",\"write:goals:agent-interface\",\"read:projects:agent-interface\",\"write:projects:agent-interface\",\"read:bitbucket:agent-interface\",\"write:bitbucket:agent-interface\",\"read:loom:agent-interface\",\"write:loom:agent-interface\",\"read:talent:agent-interface\",\"write:talent:agent-interface\",\"read:jira-align:agent-interface\",\"write:jira-align:agent-interface\",\"read:teams:agent-interface\",\"write:teams:agent-interface\",\"read:artifacts:agent-interface\",\"write:artifacts:agent-interface\",\"read:capacity-planning:agent-interface\",\"write:capacity-planning:agent-interface\",\"read:focus:agent-interface\",\"write:focus:agent-interface\",\"read:assets:agent-interface\",\"write:assets:agent-interface\"],\"resource_documentation\":\"https://www.atlassian.com/platform/remote-mcp-server\"}"
+        },
+        {
+          "url": "https://auth.atlassian.com/.well-known/oauth-authorization-server/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3",
+          "status": 200,
+          "body": "{\"authorization_endpoint\":\"https://auth.atlassian.com/authorize\",\"client_id_metadata_document_supported\":true,\"code_challenge_methods_supported\":[\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"client_credentials\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:token-revoke\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\",\"urn:ietf:params:oauth:grant-type:token-exchange\"],\"issuer\":\"https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3\",\"registration_endpoint\":\"https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3/dcr/register\",\"response_types_supported\":[\"code\",\"token\"],\"token_endpoint\":\"https://auth.atlassian.com/oauth/token\",\"token_endpoint_auth_methods_supported\":[\"none\",\"client_secret_post\",\"client_secret_basic\",\"private_key_jwt\"]}"
+        }
+      ]
+    },
+    {
+      "name": "gitlab",
+      "url": "https://gitlab.com/api/v4/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"GitLab\", scope=\"mcp\", resource_metadata=\"https://gitlab.com/.well-known/oauth-protected-resource/api/v4/mcp\"",
+      "resource": "https://gitlab.com/api/v4/mcp",
+      "issuer": "https://gitlab.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://gitlab.com/.well-known/oauth-protected-resource/api/v4/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://gitlab.com/api/v4/mcp\",\"authorization_servers\":[\"https://gitlab.com\"],\"scopes_supported\":[\"mcp\"]}"
+        },
+        {
+          "url": "https://gitlab.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://gitlab.com\",\"authorization_endpoint\":\"https://gitlab.com/oauth/authorize\",\"token_endpoint\":\"https://gitlab.com/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"client_credentials\",\"device_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"registration_endpoint\":\"https://gitlab.com/oauth/register\"}"
+        }
+      ]
+    },
+    {
+      "name": "sentry",
+      "url": "https://mcp.sentry.dev/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.sentry.dev/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.sentry.dev/mcp",
+      "issuer": "https://mcp.sentry.dev",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.sentry.dev/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.sentry.dev/mcp\",\"authorization_servers\":[\"https://mcp.sentry.dev\"],\"scopes_supported\":[\"org:read\",\"project:write\",\"team:write\",\"event:write\",\"alerts:write\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.sentry.dev/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.sentry.dev\",\"authorization_endpoint\":\"https://mcp.sentry.dev/oauth/authorize\",\"token_endpoint\":\"https://mcp.sentry.dev/oauth/token\",\"registration_endpoint\":\"https://mcp.sentry.dev/oauth/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true,\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "cloudflare",
+      "url": "https://mcp.cloudflare.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.cloudflare.com/.well-known/oauth-protected-resource/mcp\", scope=\"user:read account:read\"",
+      "resource": "https://mcp.cloudflare.com/mcp",
+      "issuer": "https://mcp.cloudflare.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.cloudflare.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.cloudflare.com/mcp\",\"authorization_servers\":[\"https://mcp.cloudflare.com\"],\"scopes_supported\":[\"user:read\",\"account:read\"],\"bearer_methods_supported\":[\"header\"],\"resource_name\":\"Cloudflare API MCP Server\"}"
+        },
+        {
+          "url": "https://mcp.cloudflare.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.cloudflare.com\",\"authorization_endpoint\":\"https://mcp.cloudflare.com/authorize\",\"token_endpoint\":\"https://mcp.cloudflare.com/token\",\"registration_endpoint\":\"https://mcp.cloudflare.com/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\",\"private_key_jwt\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true,\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "vercel",
+      "url": "https://mcp.vercel.com",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer error=\"invalid_token\", error_description=\"No authorization provided\", resource_metadata=\"https://mcp.vercel.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.vercel.com/",
+      "issuer": "https://vercel.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.vercel.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.vercel.com/\",\"authorization_servers\":[\"https://vercel.com\"],\"scopes_supported\":[\"openid\"],\"resource_name\":\"Vercel MCP\",\"resource_documentation\":\"https://vercel.com/docs/mcp/vercel-mcp\",\"organization_name\":\"Vercel\",\"organization_uri\":\"https://vercel.com\",\"description\":\"Vercel's official MCP server — Vercel platform tools, deployment management, and documentation for AI assistants.\",\"logo_uri\":\"https://mcp.vercel.com/icons/vercel-light.svg\"}"
+        },
+        {
+          "url": "https://vercel.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://vercel.com\",\"response_types_supported\":[\"code\"],\"authorization_endpoint\":\"https://vercel.com/oauth/authorize\",\"token_endpoint\":\"https://api.vercel.com/login/oauth/token\",\"code_challenge_methods_supported\":[\"S256\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"client_secret_jwt\",\"private_key_jwt\",\"urn:vercel:params:oauth:client-assertion-type:oidc-bearer\",\"none\"],\"grant_types_supported\":[\"authorization_code\",\"client_credentials\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"registration_endpoint\":\"https://api.vercel.com/login/oauth/register\",\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "netlify",
+      "url": "https://mcp.netlify.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"MCP Server\", resource_metadata=\"https://mcp.netlify.com/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.netlify.com/mcp",
+      "issuer": "https://mcp.netlify.com/",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.netlify.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.netlify.com/mcp\",\"authorization_servers\":[\"https://mcp.netlify.com/\"],\"scopes_supported\":[\"offline_access\",\"read\",\"write\",\"claudeai\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.netlify.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.netlify.com/\",\"authorization_endpoint\":\"https://mcp.netlify.com/oauth-server/auth\",\"token_endpoint\":\"https://mcp.netlify.com/oauth-server/token\",\"registration_endpoint\":\"https://mcp.netlify.com/oauth-server/reg\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"none\",\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "supabase",
+      "url": "https://mcp.supabase.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.supabase.com/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.supabase.com/mcp",
+      "issuer": "https://api.supabase.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.supabase.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.supabase.com/mcp\",\"bearer_methods_supported\":[\"header\"],\"authorization_servers\":[\"https://api.supabase.com\"],\"resource_documentation\":\"https://mcp.supabase.com/api/mcp\",\"resource_name\":\"Supabase MCP (Beta)\",\"scopes_supported\":[\"organizations:read\",\"projects:read\",\"projects:write\",\"database:write\",\"database:read\",\"analytics:read\",\"secrets:read\",\"edge_functions:read\",\"edge_functions:write\",\"environment:read\",\"environment:write\",\"storage:read\",\"storage:write\"]}"
+        },
+        {
+          "url": "https://api.supabase.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://api.supabase.com\",\"authorization_endpoint\":\"https://api.supabase.com/v1/oauth/authorize\",\"token_endpoint\":\"https://api.supabase.com/v1/oauth/token\",\"registration_endpoint\":\"https://api.supabase.com/platform/oauth/apps/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\",\"plain\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "neon",
+      "url": "https://mcp.neon.tech/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer error=\"invalid_token\", error_description=\"No authorization provided\", resource_metadata=\"https://mcp.neon.tech/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.neon.tech/mcp",
+      "issuer": "https://mcp.neon.tech",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.neon.tech/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.neon.tech/mcp\",\"authorization_servers\":[\"https://mcp.neon.tech\"],\"bearer_methods_supported\":[\"header\"],\"resource_documentation\":\"https://neon.com/docs/ai/neon-mcp-server\"}"
+        },
+        {
+          "url": "https://mcp.neon.tech/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.neon.tech\",\"authorization_endpoint\":\"https://mcp.neon.tech/api/authorize\",\"token_endpoint\":\"https://mcp.neon.tech/api/token\",\"registration_endpoint\":\"https://mcp.neon.tech/api/register\",\"client_id_metadata_document_supported\":true,\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\",\"none\",\"private_key_jwt\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "stripe",
+      "url": "https://mcp.stripe.com",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.stripe.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.stripe.com",
+      "issuer": "https://access.stripe.com/mcp",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.stripe.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.stripe.com\",\"scopes_supported\":[\"mcp\"],\"authorization_servers\":[\"https://access.stripe.com/mcp\"]}"
+        },
+        {
+          "url": "https://access.stripe.com/.well-known/oauth-authorization-server/mcp",
+          "status": 200,
+          "body": "{\"issuer\":\"https://access.stripe.com/mcp\",\"authorization_endpoint\":\"https://access.stripe.com/mcp/oauth2/authorize\",\"token_endpoint\":\"https://access.stripe.com/mcp/oauth2/token\",\"registration_endpoint\":\"https://access.stripe.com/mcp/oauth2/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"none\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "todoist",
+      "url": "https://ai.todoist.net/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://ai.todoist.net/.well-known/oauth-protected-resource/mcp\", scope=\"data:read_write\"",
+      "resource": "https://ai.todoist.net/mcp",
+      "issuer": "https://todoist.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://ai.todoist.net/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://ai.todoist.net/mcp\",\"authorization_servers\":[\"https://todoist.com\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"data:read_write\"]}"
+        },
+        {
+          "url": "https://todoist.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"authorization_endpoint\":\"https://todoist.com/oauth/authorize\",\"client_id_metadata_document_supported\":true,\"code_challenge_methods_supported\":[\"S256\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"issuer\":\"https://todoist.com\",\"registration_endpoint\":\"https://todoist.com/oauth/register\",\"response_types_supported\":[\"code\"],\"token_endpoint\":\"https://todoist.com/oauth/access_token\",\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"]}"
+        }
+      ]
+    },
+    {
+      "name": "airtable",
+      "url": "https://mcp.airtable.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer error=\"invalid_token\", error_description=\"Missing Authorization header\", resource_metadata=\"https://mcp.airtable.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.airtable.com",
+      "issuer": "https://airtable.com/oauth2/v1",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.airtable.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.airtable.com\",\"authorization_servers\":[\"https://airtable.com/oauth2/v1\"],\"scopes_supported\":[\"data.records:read\",\"data.records:write\",\"schema.bases:read\",\"schema.bases:write\",\"data.recordComments:read\",\"data.recordComments:write\",\"workspacesAndBases:read\"],\"bearer_methods_supported\":[\"header\"],\"resource_signing_alg_values_supported\":[\"RS256\",\"HS256\"]}"
+        },
+        {
+          "url": "https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1",
+          "status": 200,
+          "body": "{\"issuer\":\"https://airtable.com/oauth2/v1\",\"registration_endpoint\":\"https://airtable.com/oauth2/v1/register\",\"authorization_endpoint\":\"https://airtable.com/oauth2/v1/authorize\",\"token_endpoint\":\"https://airtable.com/oauth2/v1/token\",\"response_types_supported\":[\"code\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"none\"],\"code_challenge_methods_supported\":[\"S256\"],\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "monday",
+      "url": "https://mcp.monday.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.monday.com/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.monday.com/mcp",
+      "issuer": "https://auth.monday.com/mcp",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.monday.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\n  \"resource\": \"https://mcp.monday.com/mcp\",\n  \"authorization_servers\": [\"https://auth.monday.com/mcp\"],\n  \"bearer_methods_supported\": [\"header\"]\n}\n"
+        },
+        {
+          "url": "https://auth.monday.com/.well-known/oauth-authorization-server/mcp",
+          "status": 200,
+          "body": "{\"issuer\":\"https://auth.monday.com/mcp\",\"authorization_endpoint\":\"https://auth.monday.com/oauth2/authorize\",\"token_endpoint\":\"https://auth.monday.com/oauth_ms/oauth/token\",\"registration_endpoint\":\"https://auth.monday.com/oauth_ms/oauth/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"code_challenge_methods_supported\":[\"S256\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\",\"none\"],\"authorization_response_iss_parameter_supported\":true,\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "clickup",
+      "url": "https://mcp.clickup.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"MCP Server\", error=\"invalid_token\", error_description=\"Bearer token required\", resource_metadata=\"https://mcp.clickup.com/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.clickup.com/mcp",
+      "issuer": "https://mcp.clickup.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.clickup.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.clickup.com/mcp\",\"resource_name\":\"ClickUp MCP Server\",\"resource_description\":\"API for managing ClickUp tasks, documents, and chat via MCP.\",\"resource_type\":\"api\",\"resource_owner\":\"ClickUp\",\"resource_owner_url\":\"https://mcp.clickup.com\",\"resource_server_origin\":\"https://api.clickup.com\",\"authorization_servers\":[\"https://mcp.clickup.com\"],\"scopes_supported\":[\"read\",\"write\"],\"bearer_methods_supported\":[\"header\"],\"resource_indicators_supported\":true}"
+        },
+        {
+          "url": "https://mcp.clickup.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.clickup.com\",\"authorization_endpoint\":\"https://mcp.clickup.com/oauth/authorize\",\"token_endpoint\":\"https://mcp.clickup.com/oauth/token\",\"registration_endpoint\":\"https://mcp.clickup.com/oauth/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"none\",\"private_key_jwt\",\"client_secret_basic\",\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\"],\"authorization_response_iss_parameter_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "intercom",
+      "url": "https://mcp.intercom.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", error=\"invalid_token\", error_description=\"Missing or invalid access token\", resource_metadata=\"https://mcp.intercom.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp operator\"",
+      "resource": "https://mcp.intercom.com/mcp",
+      "issuer": "https://mcp.intercom.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.intercom.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.intercom.com/mcp\",\"authorization_servers\":[\"https://mcp.intercom.com\"],\"scopes_supported\":[\"mcp\",\"operator\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.intercom.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.intercom.com\",\"authorization_endpoint\":\"https://mcp.intercom.com/authorize\",\"token_endpoint\":\"https://mcp.intercom.com/token\",\"registration_endpoint\":\"https://mcp.intercom.com/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "intercom-eu",
+      "url": "https://mcp.eu.intercom.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", error=\"invalid_token\", error_description=\"Missing or invalid access token\", resource_metadata=\"https://mcp.eu.intercom.com/.well-known/oauth-protected-resource/mcp\", scope=\"mcp operator\"",
+      "resource": "https://mcp.eu.intercom.com/mcp",
+      "issuer": "https://mcp.eu.intercom.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.eu.intercom.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.eu.intercom.com/mcp\",\"authorization_servers\":[\"https://mcp.eu.intercom.com\"],\"scopes_supported\":[\"mcp\",\"operator\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.eu.intercom.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.eu.intercom.com\",\"authorization_endpoint\":\"https://mcp.eu.intercom.com/authorize\",\"token_endpoint\":\"https://mcp.eu.intercom.com/token\",\"registration_endpoint\":\"https://mcp.eu.intercom.com/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "amplitude",
+      "url": "https://mcp.amplitude.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.amplitude.com/.well-known/oauth-protected-resource/mcp\", error=\"invalid_request\", error_description=\"Missing authorization header\"",
+      "resource": "https://mcp.amplitude.com/mcp",
+      "issuer": "https://mcp.amplitude.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.amplitude.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.amplitude.com/mcp\",\"authorization_servers\":[\"https://mcp.amplitude.com\"],\"resource_documentation\":\"https://docs.amplitude.com/mcp\",\"scopes_supported\":[\"all:read\",\"all:write\"]}"
+        },
+        {
+          "url": "https://mcp.amplitude.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.amplitude.com\",\"authorization_endpoint\":\"https://mcp.amplitude.com/authorize\",\"response_types_supported\":[\"code\"],\"code_challenge_methods_supported\":[\"S256\"],\"token_endpoint\":\"https://mcp.amplitude.com/token\",\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"none\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\",\"urn:ietf:params:oauth:grant-type:token-exchange\"],\"registration_endpoint\":\"https://mcp.amplitude.com/register\",\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "amplitude-eu",
+      "url": "https://mcp.eu.amplitude.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.eu.amplitude.com/.well-known/oauth-protected-resource/mcp\", error=\"invalid_request\", error_description=\"Missing authorization header\"",
+      "resource": "https://mcp.eu.amplitude.com/mcp",
+      "issuer": "https://mcp.eu.amplitude.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.eu.amplitude.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.eu.amplitude.com/mcp\",\"authorization_servers\":[\"https://mcp.eu.amplitude.com\"],\"resource_documentation\":\"https://docs.amplitude.com/mcp\",\"scopes_supported\":[\"all:read\",\"all:write\"]}"
+        },
+        {
+          "url": "https://mcp.eu.amplitude.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.eu.amplitude.com\",\"authorization_endpoint\":\"https://mcp.eu.amplitude.com/authorize\",\"response_types_supported\":[\"code\"],\"code_challenge_methods_supported\":[\"S256\"],\"token_endpoint\":\"https://mcp.eu.amplitude.com/token\",\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"none\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\",\"urn:ietf:params:oauth:grant-type:token-exchange\"],\"registration_endpoint\":\"https://mcp.eu.amplitude.com/register\",\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "posthog",
+      "url": "https://mcp.posthog.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.posthog.com/.well-known/oauth-protected-resource/mcp\"",
+      "resource": "https://mcp.posthog.com/mcp",
+      "issuer": "https://oauth.posthog.com",
+      "cimd": true,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.posthog.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.posthog.com/mcp\",\"authorization_servers\":[\"https://oauth.posthog.com\"],\"scopes_supported\":[\"openid\",\"profile\",\"email\",\"introspection\",\"action:read\",\"action:write\",\"access_control:read\",\"access_control:write\",\"account:read\",\"account:write\",\"account_note:read\",\"account_note:write\",\"activity_log:read\",\"alert:read\",\"alert:write\",\"annotation:read\",\"annotation:write\",\"approvals:read\",\"approvals:write\",\"autoresearch:read\",\"autoresearch:write\",\"batch_export:read\",\"batch_export:write\",\"billing:read\",\"business_knowledge:read\",\"business_knowledge:write\",\"canvas:read\",\"canvas:write\",\"cohort:read\",\"cohort:write\",\"comment:read\",\"comment:write\",\"conversation:read\",\"cross_project_dashboard:read\",\"customer_analytics:read\",\"customer_analytics:write\",\"customer_task:read\",\"customer_task:write\",\"data_catalog:read\",\"data_catalog:write\",\"data_catalog_approval:write\",\"dashboard:read\",\"dashboard:write\",\"dashboard_template:read\",\"dataset:read\",\"dataset:write\",\"early_access_feature:read\",\"early_access_feature:write\",\"endpoint:read\",\"endpoint:write\",\"engineering_analytics:read\",\"error_tracking:read\",\"error_tracking:write\",\"evaluation:read\",\"evaluation:write\",\"element:read\",\"event_definition:read\",\"event_definition:write\",\"experiment:read\",\"experiment:write\",\"experiment_holdout:read\",\"experiment_holdout:write\",\"experiment_saved_metric:read\",\"experiment_saved_metric:write\",\"external_data_source:read\",\"external_data_source:write\",\"feature_flag:read\",\"feature_flag:write\",\"file_system:read\",\"file_system:write\",\"group:read\",\"health_issue:read\",\"heatmap:read\",\"heatmap:write\",\"hog_flow:read\",\"hog_flow:write\",\"hog_function:read\",\"hog_function:write\",\"inbox:read\",\"inbox:write\",\"insight:read\",\"insight:write\",\"insight_variable:write\",\"integration:read\",\"integration:write\",\"llm_analytics:read\",\"llm_analytics:write\",\"ai_observability_clusters:read\",\"ai_observability_clusters:write\",\"llm_prompt:read\",\"llm_prompt:write\",\"llm_provider_key:read\",\"llm_skill:read\",\"llm_skill:write\",\"logs:read\",\"logs:write\",\"marketing_analytics:read\",\"marketing_analytics:write\",\"mcp_analytics:read\",\"mcp_analytics:write\",\"metrics:read\",\"notebook:read\",\"notebook:write\",\"offline_evaluation_ingestion:write\",\"organization:read\",\"organization:write\",\"organization_member:read\",\"person:read\",\"person:write\",\"product_enablement:write\",\"project:read\",\"project:write\",\"property_definition:read\",\"property_definition:write\",\"query:read\",\"replay_scanner:read\",\"replay_scanner:write\",\"review_hog:read\",\"review_hog:write\",\"session_recording:read\",\"session_recording:write\",\"session_recording_playlist:read\",\"session_recording_playlist:write\",\"signal_scout:read\",\"signal_scout:write\",\"signal_usage:read\",\"stamphog:read\",\"stamphog:write\",\"streamlit_app:read\",\"streamlit_app:write\",\"subscription:read\",\"subscription:write\",\"survey:read\",\"survey:write\",\"tagger:read\",\"ticket:read\",\"ticket:write\",\"task:read\",\"task:write\",\"tracing:read\",\"transactional_email:write\",\"field_note:read\",\"field_note:write\",\"uploaded_media:read\",\"uploaded_media:write\",\"usage_metric:read\",\"usage_metric:write\",\"user:read\",\"user:write\",\"vision_alert:read\",\"vision_alert:write\",\"visual_review:read\",\"visual_review:write\",\"warehouse_objects:write\",\"warehouse_table:read\",\"warehouse_table:write\",\"warehouse_view:read\",\"warehouse_view:write\",\"web_analytics:read\",\"web_analytics:write\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://oauth.posthog.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://oauth.posthog.com\",\"authorization_endpoint\":\"https://oauth.posthog.com/oauth/authorize/\",\"token_endpoint\":\"https://oauth.posthog.com/oauth/token/\",\"registration_endpoint\":\"https://oauth.posthog.com/oauth/register/\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\",\"urn:ietf:params:oauth:grant-type:token-exchange\",\"urn:ietf:params:oauth:grant-type:device_code\"],\"token_endpoint_auth_methods_supported\":[\"none\",\"client_secret_post\",\"private_key_jwt\"],\"code_challenge_methods_supported\":[\"S256\"],\"client_id_metadata_document_supported\":true}"
+        }
+      ]
+    },
+    {
+      "name": "webflow",
+      "url": "https://mcp.webflow.com/mcp",
+      "setup": "automatic",
+      "status": 401,
+      "challenge": "Bearer realm=\"OAuth\", resource_metadata=\"https://mcp.webflow.com/.well-known/oauth-protected-resource/mcp\", error=\"invalid_token\", error_description=\"Missing or invalid access token\"",
+      "resource": "https://mcp.webflow.com/mcp",
+      "issuer": "https://mcp.webflow.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.webflow.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.webflow.com/mcp\",\"authorization_servers\":[\"https://mcp.webflow.com\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://mcp.webflow.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.webflow.com\",\"authorization_endpoint\":\"https://mcp.webflow.com/oauth/authorize\",\"token_endpoint\":\"https://mcp.webflow.com/oauth/token\",\"registration_endpoint\":\"https://mcp.webflow.com/oauth/register\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\",\"none\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"client_id_metadata_document_supported\":false}"
+        }
+      ]
+    },
+    {
+      "name": "asana",
+      "url": "https://mcp.asana.com/v2/mcp",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer realm=\"Asana MCP\", resource_metadata=\"https://mcp.asana.com/.well-known/oauth-protected-resource/v2\", error=\"invalid_request\", error_description=\"Authorization header is required for MCP V2 access\"",
+      "resource": "https://mcp.asana.com/v2/mcp",
+      "issuer": "https://app.asana.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.asana.com/.well-known/oauth-protected-resource/v2",
+          "status": 200,
+          "body": "{\n  \"resource\": \"https://mcp.asana.com/v2/mcp\",\n  \"authorization_servers\": [\n    \"https://app.asana.com\"\n  ],\n  \"scopes_supported\": [\n    \"default\"\n  ],\n  \"bearer_methods_supported\": [\n    \"header\"\n  ],\n  \"resource_documentation\": \"https://developers.asana.com/docs/using-asanas-mcp-server\",\n  \"resource_name\": \"Asana MCP\"\n}"
+        },
+        {
+          "url": "https://app.asana.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://app.asana.com\",\"authorization_endpoint\":\"https://app.asana.com/-/oauth_authorize\",\"token_endpoint\":\"https://app.asana.com/-/oauth_token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "hubspot",
+      "url": "https://mcp.hubspot.com",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.hubspot.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.hubspot.com",
+      "issuer": "https://mcp.hubspot.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.hubspot.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.hubspot.com\",\"authorization_servers\":[\"https://mcp.hubspot.com\"],\"scopes_supported\":[],\"resource_documentation\":\"https://developers.hubspot.com/mcp\"}"
+        },
+        {
+          "url": "https://mcp.hubspot.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.hubspot.com\",\"authorization_endpoint\":\"https://mcp.hubspot.com/oauth/authorize/user\",\"token_endpoint\":\"https://mcp.hubspot.com/oauth/v3/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "slack",
+      "url": "https://mcp.slack.com/mcp",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.slack.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.slack.com",
+      "issuer": "https://mcp.slack.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.slack.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\"resource\":\"https:\\/\\/mcp.slack.com\",\"authorization_servers\":[\"https:\\/\\/mcp.slack.com\"],\"bearer_methods_supported\":[\"header\",\"form\"],\"scopes_supported\":[\"canvases:read\",\"canvases:write\",\"channels:history\",\"channels:read\",\"channels:write\",\"chat:write\",\"emoji:read\",\"files:read\",\"files:write\",\"groups:history\",\"groups:read\",\"groups:write\",\"im:history\",\"im:read\",\"im:write\",\"lists:read\",\"lists:write\",\"mpim:history\",\"mpim:read\",\"mpim:write\",\"reactions:read\",\"reactions:write\",\"search:read.files\",\"search:read.im\",\"search:read.mpim\",\"search:read.private\",\"search:read.public\",\"search:read.users\",\"users:read\",\"users:read.email\"],\"resource_name\":\"Slack API\",\"resource_documentation\":\"https:\\/\\/api.slack.com\",\"tls_client_certificate_bound_access_tokens\":false}"
+        },
+        {
+          "url": "https://mcp.slack.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://mcp.slack.com\",\"authorization_endpoint\":\"https://slack.com/oauth/v2_user/authorize\",\"token_endpoint\":\"https://slack.com/api/oauth.v2.user.access\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "box",
+      "url": "https://mcp.box.com",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer realm=\"Service\", error=\"invalid_request\", error_description=\"The access token was not found.\", resource_metadata=\"https://mcp.box.com/.well-known/oauth-protected-resource\"",
+      "resource": "https://mcp.box.com/",
+      "issuer": "https://api.box.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.box.com/.well-known/oauth-protected-resource",
+          "status": 200,
+          "body": "{\n  \"resource\": \"https://mcp.box.com/\",\n  \"resource_name\": \"Box Model Context Protocol Server\",\n  \"authorization_servers\": [\"https://api.box.com/\"],\n  \"bearer_methods_supported\": [\"header\"],\n  \"resource_documentation\": \"https://developer.box.com/guides/box-mcp/remote/\",\n  \"resource_policy_uri\": \"https://www.box.com/legal/termsofservice\",\n  \"resource_tos_uri\": \"https://www.box.com/legal/termsofservice\"\n}"
+        },
+        {
+          "url": "https://api.box.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://api.box.com\",\"authorization_endpoint\":\"https://account.box.com/api/oauth2/authorize\",\"token_endpoint\":\"https://api.box.com/oauth2/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\",\"client_secret_post\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "dropbox",
+      "url": "https://mcp.dropbox.com/mcp",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://mcp.dropbox.com/.well-known/oauth-protected-resource/mcp\", error=\"invalid_token\", error_description=\"missing bearer token\"",
+      "resource": "https://mcp.dropbox.com/mcp",
+      "issuer": "https://www.dropbox.com",
+      "cimd": false,
+      "dcr": true,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://mcp.dropbox.com/.well-known/oauth-protected-resource/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://mcp.dropbox.com/mcp\",\"authorization_servers\":[\"https://www.dropbox.com\"],\"scopes_supported\":[\"account_info.read\",\"file_requests.read\",\"file_requests.write\",\"files.content.read\",\"files.content.write\",\"files.metadata.read\",\"files.metadata.write\",\"sharing.read\",\"sharing.write\"]}\n"
+        },
+        {
+          "url": "https://www.dropbox.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://www.dropbox.com\",\"authorization_endpoint\":\"https://www.dropbox.com/oauth2/authorize\",\"token_endpoint\":\"https://api.dropboxapi.com/oauth2/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"client_credentials\",\"refresh_token\",\"device_code\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"code_challenge_methods_supported\":[\"plain\",\"S256\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_post\",\"client_secret_basic\",\"none\",\"private_key_jwt\"],\"registration_endpoint\":\"https://www.dropbox.com/oauth2/register\"}"
+        }
+      ]
+    },
+    {
+      "name": "canva",
+      "url": "https://api.canva.com/connect/v1/mcp",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://api.canva.com/.well-known/oauth-protected-resource/connect/v1/mcp\", scope=\"profile:read design:meta:read design:content:write design:content:read folder:read folder:write brandtemplate:content:read brandtemplate:meta:read brandtemplate:content:write comment:write comment:read asset:read asset:write brandkit:read help:answers:read help:answers:write\"",
+      "resource": "https://api.canva.com/connect/v1/mcp",
+      "issuer": "https://www.canva.com",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://api.canva.com/.well-known/oauth-protected-resource/connect/v1/mcp",
+          "status": 200,
+          "body": "{\"resource\":\"https://api.canva.com/connect/v1/mcp\",\"authorization_servers\":[\"https://www.canva.com\"],\"scopes_supported\":[\"profile:read\",\"design:meta:read\",\"design:content:write\",\"design:content:read\",\"folder:read\",\"folder:write\",\"brandtemplate:content:read\",\"brandtemplate:meta:read\",\"brandtemplate:content:write\",\"comment:write\",\"comment:read\",\"asset:read\",\"asset:write\",\"brandkit:read\",\"help:answers:read\",\"help:answers:write\"],\"bearer_methods_supported\":[\"header\"]}"
+        },
+        {
+          "url": "https://www.canva.com/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://www.canva.com\",\"authorization_endpoint\":\"https://www.canva.com/api/oauth/authorize\",\"token_endpoint\":\"https://api.canva.com/auth/v1/oauth/token\",\"response_types_supported\":[\"code\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom",
+      "url": "https://mcp.zoom.us/mcp/zoom/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/zoom/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/zoom/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/zoom/streamable",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/zoom\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"docs:write:collaborator\",\"my_notes:read:content\",\"agentic_search:read:search\",\"docs:update:collaborator\",\"meeting:read:assets\",\"docs:read:list_file_collaborators\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"docs:delete:collaborator\",\"docs:read:export\",\"docs:write:import\",\"meeting:write:meeting\",\"hub:write:content\",\"hub:read:content\",\"meeting:delete:meeting\",\"agentic_search:read:ask\",\"meeting:read:search\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\",\"workflow:read:definition\",\"workflow:write:definition\",\"workflow:read:list_definitions\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-meetings",
+      "url": "https://mcp.zoom.us/mcp/meeting/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/meeting/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/meeting/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/meeting/streamable",
+          "status": 200,
+          "body": "{\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"meeting:write:meeting\",\"meeting:read:search\",\"meeting:delete:meeting\",\"meeting:update:in_meeting_controls\",\"meeting:update:meeting\",\"meeting:read:assets\",\"cloud_recording:read:list_user_recordings\",\"cloud_recording:read:content\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/meeting\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-docs",
+      "url": "https://mcp.zoom.us/mcp/canvas/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/canvas/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/canvas/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/canvas/streamable",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/canvas\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"docs:delete:content\",\"canvas:read:data_table\",\"docs:delete:collaborator\",\"docs:read:list_children\",\"docs:read:list_file_collaborators\",\"docs:read:export\",\"docs:read:file\",\"canvas:delete:data_table\",\"canvas:write:file_search\",\"docs:write:file\",\"docs:update:content\",\"docs:delete:file\",\"canvas:update:data_table\",\"docs:write:content\",\"canvas:write:data_table\",\"docs:write:import\",\"docs:write:collaborator\",\"docs:update:file\",\"canvas:read:comment\",\"hub:write:move\",\"docs:update:file_owner\",\"docs:update:collaborator\",\"canvas:write:comment\",\"docs:read:general_access\",\"docs:update:general_access\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-chat",
+      "url": "https://mcp.zoom.us/mcp/chat/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/chat/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/chat/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/chat/streamable",
+          "status": 200,
+          "body": "{\"scopes_supported\":[\"team_chat:read:list_contacts\",\"team_chat:write:members\",\"team_chat:update:user_message\",\"chat_channel:read\",\"chat_channel:write\",\"team_chat:read:channel\",\"team_chat:write:user_channel\",\"team_chat:read:list_user_sessions\",\"team_chat:read:list_user_channels\",\"team_chat:write:user_message\",\"team_chat:read:list_members\",\"team_chat:read:list_user_messages\",\"team_chat:update:channel_member_role\",\"team_chat:read:list_user_files\",\"team_chat:update:user_channel\",\"team_chat:write:contact_information\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/chat\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-tasks",
+      "url": "https://mcp.zoom.us/mcp/tasks/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/tasks/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/tasks/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/tasks/streamable",
+          "status": 200,
+          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/tasks\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"tasks:read:list_tasks\",\"tasks:update:task\",\"tasks:delete:comment\",\"tasks:write:task\",\"tasks:write:assignees\",\"tasks:write:collaborators\",\"tasks:write:comment\",\"tasks:read:comments\",\"tasks:read:task\",\"tasks:delete:assignees\",\"tasks:delete:trash_task\",\"tasks:delete:collaborator\",\"tasks:read:list_collaborators\",\"tasks:read:assignees\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-whiteboard",
+      "url": "https://mcp.zoom.us/mcp/whiteboard/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/whiteboard/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/whiteboard/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/whiteboard/streamable",
+          "status": 200,
+          "body": "{\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/whiteboard\\/streamable\",\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"whiteboard:update:whiteboard\",\"whiteboard:read:content\",\"whiteboard:write:content\",\"whiteboard:write:whiteboard\",\"whiteboard:read:list_whiteboards\",\"whiteboard:delete:collaborator\",\"whiteboard:delete:content\",\"whiteboard:delete:whiteboard\",\"whiteboard:write:collaborator\",\"whiteboard:read:list_collaborators\",\"whiteboard:update:collaborator\",\"whiteboard:read:whiteboard\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    },
+    {
+      "name": "zoom-revenue",
+      "url": "https://mcp.zoom.us/mcp/revenue_accelerator/streamable",
+      "setup": "registered",
+      "status": 401,
+      "challenge": "Bearer resource_metadata=\"https://zoom.us/.well-known/oauth-protected-resource/mcp/revenue_accelerator/streamable\"",
+      "resource": "https://mcp.zoom.us/mcp/revenue_accelerator/streamable",
+      "issuer": "https://zoom.us",
+      "cimd": false,
+      "dcr": false,
+      "ok": true,
+      "responses": [
+        {
+          "url": "https://zoom.us/.well-known/oauth-protected-resource/mcp/revenue_accelerator/streamable",
+          "status": 200,
+          "body": "{\"authorization_servers\":[\"https:\\/\\/zoom.us\"],\"resource\":\"https:\\/\\/mcp.zoom.us\\/mcp\\/revenue_accelerator\\/streamable\",\"bearer_methods_supported\":[\"header\"],\"scopes_supported\":[\"zra:read:conversation_analysis\",\"zra:read:list_conversations\",\"zra:read:list_deal_activities\",\"zra:read:deal\",\"zra:read:list_conversation_comments\",\"zra:read:crm_customer_contact\",\"zra:read:indicator\",\"zra:read:conversations\",\"zra:read:team\",\"zra:read:conversation_scorecards\",\"zra:read:user\",\"zra:read:list_deals\"]}\n"
+        },
+        {
+          "url": "https://zoom.us/.well-known/oauth-authorization-server",
+          "status": 200,
+          "body": "{\"issuer\":\"https://zoom.us\",\"authorization_endpoint\":\"https://zoom.us/oauth/authorize\",\"token_endpoint\":\"https://zoom.us/oauth/token\",\"response_types_supported\":[\"code\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"],\"token_endpoint_auth_methods_supported\":[\"client_secret_basic\"],\"code_challenge_methods_supported\":[\"S256\"]}"
+        }
+      ]
+    }
+  ]
+}

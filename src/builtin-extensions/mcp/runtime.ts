@@ -208,6 +208,7 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 		const oauth = resolveConnectorOAuth(this.entry);
 		if (!oauth) return {};
 		return {
+			resourceIndicator: oauth.resourceIndicator,
 			authorizationResourceIndicator: oauth.authorizationResourceIndicator,
 			authorizationParams: oauth.authorizationParams,
 			clientId: oauth.clientId,
@@ -221,6 +222,7 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 			scope: oauth.scope,
 			clientName: oauth.clientName,
 			clientRegistration: oauth.clientRegistration,
+			clientMetadataUrl: oauth.clientMetadataUrl,
 			authServerMetadataUrl: oauth.authServerMetadataUrl ? new URL(oauth.authServerMetadataUrl) : undefined,
 			authorizationServerMetadata: oauth.authorizationServerMetadata,
 		};

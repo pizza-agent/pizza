@@ -1,4 +1,5 @@
 import { validateAuthorizationParams } from "./oauth/authorization-params.js";
+import { clientMetadataBaseUrl } from "./oauth/client-metadata.js";
 
 /**
  * MCP server configuration and the servers extensions register with `pizza.registerMcpServer()`.
@@ -89,6 +90,8 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
 
 /** OAuth client settings for servers that do not support dynamic client registration. */
 export interface McpOAuthConfig {
+	/** RFC 8707 resource in authorization and token requests. Default true; false is for direct business API adapters only. */
+	resourceIndicator?: boolean;
 	/** Include RFC 8707 resource in browser authorization requests. Default true; X requires false. Token requests still bind the resource. */
 	authorizationResourceIndicator?: boolean;
 	/** Additional provider options, for example Google's access_type=offline. */
@@ -120,10 +123,12 @@ export interface McpOAuthConfig {
 	 */
 	clientName?: string;
 	/**
-	 * How Pizza identifies itself without `clientId`. `dcr` (default): dynamic client registration. `cimd`:
-	 * Client ID Metadata Document, for authorization servers that allow by that URL.
+	 * How Pizza identifies itself without `clientId`. `auto` (default) prefers a configured Pizza CIMD
+	 * when supported, otherwise DCR. `cimd` or `dcr` requires the selected method.
 	 */
-	clientRegistration?: "dcr" | "cimd";
+	clientRegistration?: "auto" | "dcr" | "cimd";
+	/** Public Pizza CIMD document family, e.g. https://your-domain.example/oauth/client.json. */
+	clientMetadataUrl?: string;
 	/**
 	 * Authorization server metadata document (RFC 8414 or OpenID Connect discovery) to use instead of
 	 * discovery through the server, for servers that advertise a wrong authorization server or none.
@@ -187,6 +192,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 function validateOAuth(value: unknown): string | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)) return "oauth must be an object";
+	if (value.resourceIndicator !== undefined && typeof value.resourceIndicator !== "boolean") return "oauth.resourceIndicator must be a boolean";
 	if (value.authorizationResourceIndicator !== undefined && typeof value.authorizationResourceIndicator !== "boolean") return "oauth.authorizationResourceIndicator must be a boolean";
 	const paramsError = validateAuthorizationParams(value.authorizationParams);
 	if (paramsError) return paramsError;
@@ -221,11 +227,18 @@ function validateOAuth(value: unknown): string | undefined {
 	if (value.clientName !== undefined && (typeof value.clientName !== "string" || !value.clientName.trim())) {
 		return "oauth.clientName must be a non-empty string";
 	}
-	if (value.clientRegistration !== undefined && value.clientRegistration !== "dcr") {
-		if (value.clientRegistration !== "cimd") return 'oauth.clientRegistration must be "dcr" or "cimd"';
-		if (value.clientId !== undefined || value.clientName !== undefined) {
-			return 'oauth.clientRegistration "cimd" cannot be combined with oauth.clientId or oauth.clientName';
+	if (value.clientRegistration !== undefined && !["auto", "dcr", "cimd"].includes(String(value.clientRegistration))) {
+		return 'oauth.clientRegistration must be "auto", "dcr" or "cimd"';
+	}
+	if (value.clientMetadataUrl !== undefined) {
+		try {
+			if (typeof value.clientMetadataUrl !== "string") throw new Error();
+			clientMetadataBaseUrl(value.clientMetadataUrl);
+		} catch {
+			return "oauth.clientMetadataUrl must be an HTTPS URL ending in /client.json without credentials, query or fragment";
 		}
+	}
+	if (value.clientRegistration === "cimd" && !value.clientId) {
 		const callback = typeof value.callbackUrl === "string" ? new URL(value.callbackUrl) : undefined;
 		if (callback && (callback.hostname === "[::1]" || callback.pathname !== "/callback")) {
 			return 'oauth.clientRegistration "cimd" requires oauth.callbackUrl on localhost or 127.0.0.1 with path /callback';

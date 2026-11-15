@@ -1,0 +1,12 @@
+{
+  "client_id": "https://pizza.hertzbeat.com/oauth/client.json",
+  "client_name": "Pizza",
+  "application_type": "native",
+  "redirect_uris": [
+    "http://127.0.0.1/callback",
+    "http://localhost/callback"
+  ],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

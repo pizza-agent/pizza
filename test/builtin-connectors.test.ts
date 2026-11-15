@@ -31,19 +31,18 @@ describe("MCP connector catalog (marketplace-only)", () => {
 		expect(registered).toEqual([]);
 	});
 
-	it("ships the official marketplace connector names", () => {
-		expect(MCP_CONNECTOR_CATALOG.map((entry) => entry.name).sort()).toEqual([
-			"github",
-			"gmail",
-			"notion",
-			"x",
-		]);
-		expect(BUILTIN_MCP_CONNECTORS.map((entry) => entry.name).sort()).toEqual([
-			"github",
-			"gmail",
-			"notion",
-			"x",
-		]);
+	it("offers official OAuth services across development, work, analytics and payments", () => {
+		const names = MCP_CONNECTOR_CATALOG.map((entry) => entry.name);
+		expect(new Set(names).size).toBe(names.length);
+		expect(names).toEqual(expect.arrayContaining([
+			"notion", "github", "gmail", "x", "linear", "atlassian", "cloudflare", "supabase", "stripe", "todoist", "posthog", "slack",
+		]));
+		expect(BUILTIN_MCP_CONNECTORS.map((entry) => entry.name)).toEqual(names);
+		for (const entry of MCP_CONNECTOR_CATALOG) {
+			expect(new URL(String(entry.config.url)).protocol).toBe("https:");
+			expect(new URL(entry.docsUrl!).protocol).toBe("https:");
+			expect((entry.config.oauth as Record<string, unknown>).clientSecret).toBeUndefined();
+		}
 	});
 
 	it("ships valid MCP server configs for marketplace install", () => {

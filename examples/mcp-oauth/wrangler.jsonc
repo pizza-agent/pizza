@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pizza-mcp-oauth-metadata",
+  "account_id": "5e1b7a36607665efbb52a4078e3d5fa5",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "pizza.hertzbeat.com", "custom_domain": true }
+  ]
+}

@@ -37,6 +37,10 @@ function catalogDescription(entry: McpCatalogEntry): string {
 	return i18n.t(`plugins.mcp.catalogDescriptions.${entry.name}`, { defaultValue: entry.description });
 }
 
+function catalogNote(entry: McpCatalogEntry): string | undefined {
+	return entry.connectionNote ? i18n.t(`plugins.mcp.catalogNotes.${entry.name}`, { defaultValue: entry.connectionNote }) : undefined;
+}
+
 function serverDescription(server: McpServer): string | undefined {
 	const entry = MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === server.name);
 	return entry && server.description === entry.config.description ? catalogDescription(entry) : server.description;
@@ -262,6 +266,7 @@ function DirectoryMcpCard({
 						<span className="truncate text-sm font-medium text-fg">{entry.name}</span>
 					</div>
 					<p className="mt-2 line-clamp-2 text-xs text-muted">{catalogDescription(entry)}</p>
+					{entry.connectionNote && <p className="mt-2 text-xs text-muted">{catalogNote(entry)}</p>}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
 						{installed ? (
 							<>
@@ -324,6 +329,7 @@ export function McpTab() {
 	const [oauthSetup, setOAuthSetup] = useState<{
 		provider: string;
 		name: string; config: Record<string, unknown>; scope: string;
+		docsUrl?: string; note?: string;
 		clientId: string; clientSecret: string; callbackUrl: string; busy: boolean; error: string;
 	} | null>(null);
 	const attachRoot = useCallback((node: HTMLDivElement | null) => {
@@ -435,8 +441,10 @@ export function McpTab() {
 	function openOAuthSetup(serverName: string, config: Record<string, unknown>, scope: string, provider: string) {
 		const oauth = config.oauth as Record<string, unknown> | undefined;
 		const defaults = oauthSetupDefinition(provider).defaults;
+		const catalog = MCP_MARKETPLACE_CATALOG.find((entry) => entry.config.url === config.url && entry.config.adapter === config.adapter);
 		const hasCustomSecret = typeof oauth?.clientSecret === "string" && !!oauth.clientSecret.trim();
 		setOAuthSetup({ name: serverName, config, scope, provider,
+			docsUrl: catalog?.docsUrl, note: catalog && catalogNote(catalog),
 			clientId: typeof oauth?.clientId === "string" ? oauth.clientId : !hasCustomSecret && typeof defaults.clientId === "string" ? defaults.clientId : "",
 			clientSecret: typeof oauth?.clientSecret === "string" ? oauth.clientSecret : "",
 			callbackUrl: typeof oauth?.callbackUrl === "string" ? oauth.callbackUrl : String(defaults.callbackUrl), busy: false, error: "" });
@@ -782,12 +790,13 @@ export function McpTab() {
 					footer={<><Button tone="neutral" variant="ghost" disabled={oauthSetup.busy} onClick={() => setOAuthSetup(null)}>{t("plugins.mcp.cancel")}</Button><Button loading={oauthSetup.busy} disabled={!oauthSetup.clientId.trim() || (oauthSetupDefinition(oauthSetup.provider).secretRequired && !oauthSetup.clientSecret.trim())} onClick={() => void saveOAuthSetup()}>{t("plugins.mcp.googleSetupConnect")}</Button></>}>
 					<div className="space-y-4">
 						<p className="text-sm text-muted">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupIntro"))}</p>
+						{oauthSetup.note && <p className="text-sm text-muted">{oauthSetup.note}</p>}
 						<ol className="list-decimal space-y-2 pl-5 text-sm text-muted">
 							<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupApp"))}</li>
 								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupClient"))}</li>
 								<li>{t(oauthSetupDefinition(oauthSetup.provider).text("SetupAccess"))}</li>
 							</ol>
-						<a className="text-sm text-link underline" href={oauthSetupDefinition(oauthSetup.provider).docsUrl} target="_blank" rel="noreferrer">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupDocs"))}</a>
+						<a className="text-sm text-link underline" href={oauthSetup.docsUrl ?? oauthSetupDefinition(oauthSetup.provider).docsUrl} target="_blank" rel="noreferrer">{t(oauthSetupDefinition(oauthSetup.provider).text("SetupDocs"))}</a>
 						{oauthSetupDefinition(oauthSetup.provider).importClient && <Field label={t("plugins.mcp.googleClientImport")}>
 							<input type="file" accept=".json,application/json" disabled={oauthSetup.busy} className="w-full text-xs" onChange={async (event) => {
 								const file = event.target.files?.[0]; if (!file) return;

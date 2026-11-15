@@ -1,4 +1,5 @@
 import type { AuthProvider, McpFetch } from "../auth-provider.js";
+import { parseWwwAuthenticate } from "../oauth/discovery.js";
 import {
 	isJsonRpcRequest,
 	isJsonRpcResponse,
@@ -166,7 +167,7 @@ function contentType(response: Response): string | undefined {
 function needsAuthorization(response: Response): boolean {
 	if (response.status === 401) return true;
 	if (response.status !== 403) return false;
-	return /(?:^|[\s,])error="?insufficient_scope"?/i.test(response.headers.get("www-authenticate") ?? "");
+	return parseWwwAuthenticate(response.headers.get("www-authenticate")).error === "insufficient_scope";
 }
 
 /** Statuses worth retrying when a stream fails to (re)open. */
