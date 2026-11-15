@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 import { createMcpAuthProvider, signInMcpServer } from "../src/builtin-extensions/mcp/oauth.js";
 import { authorizeMcp, McpOAuthProvider, MemoryOAuthStateStore } from "../src/core/mcp/oauth/index.js";
-import { MCP_CONNECTOR_CATALOG, PIZZA_X_MCP_OAUTH_CLIENT_ID } from "../src/builtin-extensions/connectors/catalog.js";
+import { MCP_CONNECTOR_CATALOG } from "../src/builtin-extensions/connectors/catalog.js";
 import { validateMcpServerConfig } from "../src/core/mcp/servers.js";
 
 // Callback fixtures must stay local even when another suite configures a system proxy.
@@ -74,7 +74,7 @@ describe("Notion and X OAuth interoperability", () => {
 
 	it.each([undefined, "fixture-secret"])("exchanges and rotates X tokens with the appropriate client authentication (secret=%s)", async (clientSecret) => {
 		const realFetch = globalThis.fetch;
-		const clientId = clientSecret ? "x-client" : PIZZA_X_MCP_OAUTH_CLIENT_ID;
+		const clientId = clientSecret ? "x-confidential-client" : "x-native-client";
 		const store = new MemoryOAuthStateStore();
 		let auth!: URL; let show!: () => void;
 		const shown = new Promise<void>((resolve) => { show = resolve; });

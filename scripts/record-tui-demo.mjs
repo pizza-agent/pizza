@@ -10,7 +10,8 @@
  *   node scripts/record-tui-demo.mjs [output.cast]
  *
  * Convert the result to a GIF with agg (https://github.com/asciinema/agg):
- *   agg --idle-time-limit 2 output/demo-tui.cast resources/demo-tui.gif
+ *   agg --idle-time-limit 2 output/demo-tui.cast /tmp/pizza-demo-tui.gif
+ * Publish media to Cloudflare R2; do not add recordings to the repository.
  */
 
 import { createRequire } from "node:module";

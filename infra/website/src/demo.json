@@ -1,0 +1,68 @@
+{
+  "video": "https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.mp4",
+  "poster": "https://pizza.hertzbeat.com/media/demos/pizza-assistant-workspaces-35s-2026-11-15-0d7d4ab.webp",
+  "recording": "Native Pizza assistant delegates real tasks to two workspaces and receives their actual results; 4x segments are labeled",
+  "version": "0.5.5 (development)",
+  "sourceCommit": "0d7d4ab35236b7b1662edf538f242323f4ac25ef",
+  "recordedAt": "2026-11-15",
+  "width": 1440,
+  "height": 960,
+  "durationSeconds": 35,
+  "bytes": 875949,
+  "sha256": "eb9bdaa16b8a80fcb884e2032375b28f730744ba020abf2150baebc8ae99a4d3",
+  "posterSha256": "b473cc96eaaa41279b0f018c2ca262ec13267185fcd4fd571f19ebc6abfdd40a",
+  "chapters": [
+    {
+      "start": 0,
+      "title": "Personal assistant: give a goal"
+    },
+    {
+      "start": 7,
+      "title": "Delegate and execute (4x)"
+    },
+    {
+      "start": 13,
+      "title": "Website workspace: inspect the real file"
+    },
+    {
+      "start": 21,
+      "title": "Documentation workspace: see the second result"
+    },
+    {
+      "start": 25,
+      "title": "Personal assistant: review both deliveries"
+    }
+  ],
+  "edits": [
+    {
+      "sourceStart": 4,
+      "sourceEnd": 11,
+      "speed": 1
+    },
+    {
+      "sourceStart": 11,
+      "sourceEnd": 23,
+      "speed": 4
+    },
+    {
+      "sourceStart": 23,
+      "sourceEnd": 35,
+      "speed": 4
+    },
+    {
+      "sourceStart": 41,
+      "sourceEnd": 49,
+      "speed": 1
+    },
+    {
+      "sourceStart": 53,
+      "sourceEnd": 57,
+      "speed": 1
+    },
+    {
+      "sourceStart": 146,
+      "sourceEnd": 156,
+      "speed": 1
+    }
+  ]
+}

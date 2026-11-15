@@ -73,6 +73,31 @@ export interface OAuthDiscoveryState {
 	resourceMetadataUrl?: string;
 }
 
+/** The identity that issued a client registration and its tokens. */
+export interface OAuthCredentialBinding {
+	issuer: string;
+	clientId: string;
+	resource: string;
+	registrationMethod?: "cimd" | "dcr" | "pre-registered";
+}
+
+/** Frozen before opening the browser; never rediscover a token endpoint when redeeming its code. */
+export interface OAuthAuthorizationContext {
+	binding: OAuthCredentialBinding;
+	metadata: AuthorizationServerMetadata;
+	state?: string;
+	codeVerifier: string;
+	redirectUrl: string;
+	resource?: string;
+	scope?: string;
+}
+
+/** Conditions that must still hold when an asynchronous token request completes. */
+export type OAuthTokenSaveContext =
+	| { kind: "authorization_code"; authorization: OAuthAuthorizationContext }
+	| { kind: "refresh_token"; binding: OAuthCredentialBinding; refreshToken: string }
+	| { kind: "device"; binding: OAuthCredentialBinding };
+
 export interface OAuthServerInfo {
 	authorizationServerUrl: string;
 	authorizationServerMetadata?: AuthorizationServerMetadata;
@@ -176,10 +201,12 @@ export function parseAuthorizationServerMetadata(value: unknown): AuthorizationS
 export function parseOAuthTokens(value: unknown): OAuthTokens {
 	const input = object(value, "OAuth token response");
 	const expires = absent(input.expires_in) ? undefined : Number(input.expires_in);
-	if (expires !== undefined && !Number.isFinite(expires)) throw new Error("Invalid expires_in");
+	if (expires !== undefined && (!Number.isFinite(expires) || expires < 0)) throw new Error("Invalid expires_in");
+	const tokenType = requiredString(input.token_type, "token_type");
+	if (tokenType.toLowerCase() !== "bearer") throw new Error(`Unsupported OAuth token type: ${tokenType}`);
 	return compact({
 		access_token: requiredString(input.access_token, "access_token"),
-		token_type: requiredString(input.token_type, "token_type"),
+		token_type: tokenType,
 		expires_in: expires,
 		scope: optionalString(input.scope, "scope"),
 		refresh_token: optionalString(input.refresh_token, "refresh_token"),

@@ -179,6 +179,34 @@ describe("SchedulerEngine CRUD", () => {
 		engine2.dispose();
 	});
 
+	it("does not resurrect a task deleted while its run is in flight", async () => {
+		const engine = new SchedulerEngine({
+			scope: "main",
+			dispatcher: { dispatch: async () => { await gate; return { eventId: "e1" }; } },
+		});
+		engine.load();
+		const created = engine.create({
+			name: "Resurrect me",
+			prompt: "x",
+			schedule: { mode: "every_n_minutes", everyN: { n: 5, unit: "minute" } },
+			sessionTarget: { kind: "pinned", sessionId: "sess_test" },
+		});
+		expect(created.ok).toBe(true);
+		if (!created.ok) return;
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const fired = await engine.runNow(created.task.id);
+		expect(fired.ok).toBe(true);
+		// Wait for dispatch to be in flight, then delete mid-run.
+		await new Promise((res) => setTimeout(res, 30));
+		expect(engine.delete(created.task.id).ok).toBe(true);
+		release();
+		await new Promise((res) => setTimeout(res, 30));
+		expect(engine.list()).toHaveLength(0);
+		expect(readTasks("main", undefined)).toHaveLength(0);
+		engine.dispose();
+	});
+
 	it("rejects invalid schedules", () => {
 		const engine = new SchedulerEngine({
 			scope: "main",

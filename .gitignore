@@ -59,3 +59,9 @@ docs/
 /AGENTS.md
 /CLAUDE.md
 .pizza/
+
+# Product recordings are published to Cloudflare R2, never committed.
+*.mp4
+*.mov
+*.webm
+/resources/demo-*.gif

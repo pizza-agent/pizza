@@ -84,7 +84,7 @@ export function Badge({
 
 export function Button({
 	children,
-	tone = "accent",
+	tone = "neutral",
 	variant,
 	size = "md",
 	iconLeft,
@@ -864,7 +864,7 @@ export function ConfirmHost() {
 						</Button>
 					)}
 					<Button
-						tone={req.danger ? "danger" : "accent"}
+						tone={req.danger ? "danger" : "neutral"}
 						size="sm"
 						onClick={() => settle(true)}
 					>

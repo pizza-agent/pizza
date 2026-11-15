@@ -55,6 +55,29 @@ jobs:
       - name: Build
         run: npm run build
 
+  website:
+    name: Website + Cloudflare OAuth runtime
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            infra/website/package-lock.json
+            infra/mcp-oauth/package-lock.json
+      - name: Install website dependencies
+        run: npm ci --prefix infra/website
+      - name: Install Cloudflare dependencies
+        run: npm ci --prefix infra/mcp-oauth
+      - name: Build website and verify Worker runtime
+        # The runtime suite bundles the configured Worker, including its website build,
+        # then exercises real workerd/SQLite with fixture Google responses. No login needed.
+        run: npm run test:runtime --prefix infra/mcp-oauth
+
   desktop:
     name: Desktop (fmt + check)
     runs-on: ubuntu-22.04

@@ -299,4 +299,22 @@ describe("eventToMessage — AGENT_MESSAGE_END malformed content defense", () =>
 		expect(msg).not.toBeNull();
 		expect(msg).toMatchObject({ role: "assistant", content: [] });
 	});
+
+	it("strips tool_call blocks from aborted assistant messages (orphan tool-result poison)", () => {
+		const msg = eventToMessage(
+			mkEvent("AGENT_MESSAGE_END", {
+				content: [
+					{ type: "text", text: "Now the renderer." },
+					{ type: "tool_call", id: "call_interrupted", name: "cli", arguments: { command: "cat > f.py" } },
+				],
+				model: { provider: "deepseek", model_id: "deepseek-v4-flash" },
+				usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 },
+				stop_reason: "aborted",
+				error_message: "Request was aborted",
+			}),
+		);
+		expect(msg).not.toBeNull();
+		const types = (msg as any).content.map((b: any) => b.type);
+		expect(types).toEqual(["text"]);
+	});
 });

@@ -536,7 +536,7 @@ function AccountLoginDialog({
 									className="flex-1 rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-xs text-fg placeholder:text-muted focus:border-accent focus:outline-none"
 									onKeyDown={(e) => e.key === "Enter" && void submitAnswer()}
 								/>
-								<Button size="sm" tone="accent" onClick={() => void submitAnswer()} disabled={busy}>
+								<Button size="sm" onClick={() => void submitAnswer()} disabled={busy}>
 									{t("common.continue")}
 								</Button>
 							</div>
@@ -839,7 +839,7 @@ function ProviderRow({
 					</div>
 					{error && <p className="text-xs text-danger">{error}</p>}
 					<div className="flex items-center gap-2">
-						<Button size="sm" tone="accent" onClick={handleSave} disabled={saving}>
+						<Button size="sm" onClick={handleSave} disabled={saving}>
 							{saving ? t("settings.provider.saving") : t("settings.provider.save")}
 						</Button>
 						<Button size="sm" tone="neutral" onClick={() => { setEditing(false); setKeyValue(""); setShowKey(false); setError(""); }}>
@@ -1025,7 +1025,7 @@ function AddProviderInline({
 							</div>
 							{error && <p className="text-xs text-danger">{error}</p>}
 							<div className="flex items-center gap-2">
-								<Button size="sm" tone="accent" onClick={handleSave} disabled={saving}>
+								<Button size="sm" onClick={handleSave} disabled={saving}>
 									{saving ? t("settings.provider.saving") : t("settings.provider.save")}
 								</Button>
 								<Button size="sm" tone="neutral" onClick={onCancel}>{t("settings.provider.cancel")}</Button>
@@ -1125,7 +1125,7 @@ function AddProviderInline({
 						<Button size="sm" tone="neutral" onClick={handleTest} disabled={testState.status === "running" || saving}>
 							{testState.status === "running" ? t("settings.provider.testing") : t("settings.provider.testConnection")}
 						</Button>
-						<Button size="sm" tone="accent" onClick={handleSave} disabled={saving}>
+						<Button size="sm" onClick={handleSave} disabled={saving}>
 							{saving ? t("settings.provider.saving") : t("settings.provider.save")}
 						</Button>
 						<Button size="sm" tone="neutral" onClick={onCancel}>{t("settings.provider.cancel")}</Button>
@@ -1303,7 +1303,7 @@ function ProviderTab({
 										{t("settings.provider.signOut")}
 									</Button>
 								) : (
-									<Button size="sm" tone="accent" onClick={() => setLoginProvider({ id: o.id, name: o.name })}>
+									<Button size="sm" onClick={() => setLoginProvider({ id: o.id, name: o.name })}>
 										{t("settings.provider.signIn")}
 									</Button>
 								)}
@@ -1317,7 +1317,7 @@ function ProviderTab({
 					<div className="text-sm font-medium text-fg">{t("settings.provider.apiKeySection")}</div>
 					<div className="flex items-center gap-2">
 						{!isSetupMode && (
-							<Button size="sm" tone="accent" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddInline(true)}>
+							<Button size="sm" iconLeft={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowAddInline(true)}>
 								{t("settings.provider.addProvider")}
 							</Button>
 						)}

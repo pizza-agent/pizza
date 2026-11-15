@@ -591,7 +591,7 @@ export function ScheduleForm(props: ScheduleFormProps) {
 					<Button tone="neutral" variant="ghost" size={compact ? "sm" : "md"} onClick={onCancel} disabled={saving}>
 						{t("schedule.cancel")}
 					</Button>
-					<Button tone="accent" size={compact ? "sm" : "md"} onClick={handleSave} disabled={!canSave || saving}>
+					<Button size={compact ? "sm" : "md"} onClick={handleSave} disabled={!canSave || saving}>
 						{saving ? <Spinner /> : null}
 						{t("schedule.save")}
 					</Button>

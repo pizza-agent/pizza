@@ -28,4 +28,13 @@ describe("DefaultRetryPolicy.isRetryable", () => {
 		expect(p.isRetryable({ message: "invalid api key" })).toBe(false);
 		expect(p.isRetryable({ message: "model not found" })).toBe(false);
 	});
+
+	it("does not retry 4xx protocol failures even when a UUID contains 5xx digits", () => {
+		const p = new DefaultRetryPolicy();
+		const message =
+			`400: {"message":"Messages with role 'tool' must be a response to a preceding message with 'tool_calls' (request_id: d764c6f8-34b1-4ecb-8016-3189540ce453)","type":"invalid_request_error"}`;
+		expect(p.isRetryable({ message })).toBe(false);
+		expect(p.isRetryable({ message: "bad request" })).toBe(false);
+		expect(p.isRetryable({ message: "whatever", statusCode: 404 })).toBe(false);
+	});
 });

@@ -190,8 +190,29 @@ describe("external edits win before fire", () => {
 		expect(engine.list()).toHaveLength(0);
 		engine.dispose();
 	});
+	it("does not resurrect a task deleted while its run is in flight", async () => {
+		const task = baseTask();
+		writeTasks("main", undefined, [task]);
+		let release!: () => void;
+		const gate = new Promise<void>((res) => (release = res));
+		const engine = new SchedulerEngine({
+			scope: "main",
+			dispatcher: { dispatch: async () => { await gate; return { sessionId: "sess_x" }; } },
+		});
+		engine.load();
+		const r = await engine.runNow(task.id);
+		expect(r.ok).toBe(true);
+		await new Promise((res) => setTimeout(res, 20)); // let the dispatch start
+		// Deleting mid-run must stick: the run-completion write must not put it back.
+		engine.delete(task.id);
+		expect(engine.list()).toHaveLength(0);
+		release();
+		await new Promise((res) => setTimeout(res, 30));
+		expect(engine.list()).toHaveLength(0);
+		expect(readTasks("main", undefined)).toHaveLength(0);
+		engine.dispose();
+	});
 });
-
 describe("maxRuns cap", () => {
 	it("auto-disables the task once runCount reaches maxRuns", async () => {
 		const task = baseTask({ maxRuns: 2, runCount: 2 });
