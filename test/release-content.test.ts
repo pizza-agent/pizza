@@ -7,8 +7,8 @@ import { copyReleaseContent } from "../scripts/copy-release-content.mjs";
 it("ships the OAuth service sources without deployment dependencies, local state or credentials", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pizza-release-content-"));
 	const source = join(dir, "source"), target = join(dir, "dist");
-	const publicFiles = ["CHANGELOG.md", "docs/guide.md", "examples/mcp-oauth/worker.mjs", "examples/mcp-oauth/client.json", "examples/mcp-oauth/package-lock.json"];
-	const privateFiles = ["examples/mcp-oauth/node_modules/wrangler/index.js", "examples/mcp-oauth/.wrangler/state/session.json", "examples/mcp-oauth/.dev.vars", "examples/mcp-oauth/.dev.vars.production", "examples/mcp-oauth/.env", "examples/mcp-oauth/.env.local"];
+	const publicFiles = ["CHANGELOG.md", "docs/guide.md", "infra/mcp-oauth/worker.mjs", "infra/mcp-oauth/client.json", "infra/mcp-oauth/package-lock.json"];
+	const privateFiles = ["infra/mcp-oauth/node_modules/wrangler/index.js", "infra/mcp-oauth/.wrangler/state/session.json", "infra/mcp-oauth/.dev.vars", "infra/mcp-oauth/.dev.vars.production", "infra/mcp-oauth/.env", "infra/mcp-oauth/.env.local"];
 	try {
 		for (const file of [...publicFiles, ...privateFiles]) {
 			const path = join(source, file); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, file);

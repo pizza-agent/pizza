@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCP_CONNECTOR_CATALOG } from "../src/builtin-extensions/connectors/catalog.js";
 import { createMcpAuthProvider, signInMcpServer, type McpOAuthSettings } from "../src/builtin-extensions/mcp/oauth.js";
 import { discoverOAuthServerInfo, MemoryOAuthStateStore, parseWwwAuthenticate, refreshAuthorization, type AuthorizationServerMetadata } from "../src/core/mcp/oauth/index.js";
-import { metadataResponse } from "../examples/mcp-oauth/metadata.mjs";
+import { metadataResponse } from "../infra/mcp-oauth/metadata.mjs";
 
 // Anonymous public discovery responses, recorded by scripts/check-mcp-oauth-catalog.mjs.
 // Account login and token responses below are simulated; no live credentials or network are used.

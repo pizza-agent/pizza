@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /** Examples can contain separately installed deployment tools and local credentials. */
 export function copyReleaseContent(source, target) {
 	const excluded = (part) => ["node_modules", ".wrangler", ".git", ".env"].includes(part) || part.startsWith(".env.") || part.startsWith(".dev.vars");
-	for (const entry of ["CHANGELOG.md", "docs", "examples"]) {
+	for (const entry of ["CHANGELOG.md", "docs", "examples", "infra"]) {
 		const path = resolve(source, entry);
 		if (!existsSync(path)) continue;
 		cpSync(path, resolve(target, entry), {

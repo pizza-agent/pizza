@@ -11,23 +11,23 @@ The Worker is named `pizza-mcp-oauth-metadata`. Its Wrangler configuration binds
 Use Node.js 22.12 or later (for example, `nvm use 22.21.1`). From the repository root:
 
 ```sh
-npm ci --prefix examples/mcp-oauth
-npm exec --prefix examples/mcp-oauth -- wrangler login --device
-npm run check --prefix examples/mcp-oauth
-npm run deploy --prefix examples/mcp-oauth
+npm ci --prefix infra/mcp-oauth
+npm exec --prefix infra/mcp-oauth -- wrangler login --device
+npm run check --prefix infra/mcp-oauth
+npm run deploy --prefix infra/mcp-oauth
 ```
 
 Wrangler is pinned in this service's own package and lock file. No database, secrets or other Cloudflare products are required. The `workers.dev` hostname and preview URLs are disabled; OAuth client IDs use the canonical custom domain.
 
-Device login opens Cloudflare in your default browser and prints a short confirmation code. Complete the login and approve Wrangler while the terminal is waiting. This flow does not use a localhost callback. Check the result with `npm exec --prefix examples/mcp-oauth -- wrangler whoami`.
+Device login opens Cloudflare in your default browser and prints a short confirmation code. Complete the login and approve Wrangler while the terminal is waiting. This flow does not use a localhost callback. Check the result with `npm exec --prefix infra/mcp-oauth -- wrangler whoami`.
 
-For local development, run `npm run dev --prefix examples/mcp-oauth`. Both the Worker and the optional Node server below use the same request handler.
+For local development, run `npm run dev --prefix infra/mcp-oauth`. Both the Worker and the optional Node server below use the same request handler.
 
 To update a deployment, rerun the check and deploy commands. To inspect or roll back deployments:
 
 ```sh
-npm exec --prefix examples/mcp-oauth -- wrangler deployments list
-npm exec --prefix examples/mcp-oauth -- wrangler rollback
+npm exec --prefix infra/mcp-oauth -- wrangler deployments list
+npm exec --prefix infra/mcp-oauth -- wrangler rollback
 ```
 
 ## Optional Node deployment
@@ -35,7 +35,7 @@ npm exec --prefix examples/mcp-oauth -- wrangler rollback
 Run the dependency-free metadata service with Node.js 22 or later:
 
 ```sh
-node examples/mcp-oauth/server.mjs
+node infra/mcp-oauth/server.mjs
 ```
 
 It listens on `127.0.0.1:8788`. Point `pizza.hertzbeat.com` at your host, configure HTTPS, and proxy `/oauth/` to this service. For example, in an existing Nginx HTTPS virtual host:

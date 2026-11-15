@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import worker from "../examples/mcp-oauth/worker.mjs";
+import worker from "../infra/mcp-oauth/worker.mjs";
 import { createNativeClientMetadata, oauthCallbackId } from "../src/core/mcp/oauth/client-metadata.js";
 
 const base = "https://pizza.hertzbeat.com/oauth/client.json";

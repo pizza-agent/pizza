@@ -15,7 +15,7 @@ import {
 } from "../src/builtin-extensions/mcp/oauth.js";
 import { FileAuthStorageBackend } from "../src/core/auth/auth-storage.js";
 import { validateMcpServerConfig } from "../src/core/mcp/servers.js";
-import { createMetadataServer } from "../examples/mcp-oauth/server.mjs";
+import { createMetadataServer } from "../infra/mcp-oauth/server.mjs";
 import { parseOAuthTokens } from "../src/core/mcp/oauth/types.js";
 
 const serverUrl = "https://tools.example/mcp";
@@ -348,7 +348,7 @@ describe("deployable public metadata service", () => {
 			}
 			expect((await request("/oauth/invalid/client.json")).status).toBe(404);
 			expect((await request("/oauth/client.json?secret=anything")).status).toBe(404);
-			expect(JSON.parse(readFileSync(new URL("../examples/mcp-oauth/client.json", import.meta.url), "utf8")))
+			expect(JSON.parse(readFileSync(new URL("../infra/mcp-oauth/client.json", import.meta.url), "utf8")))
 				.toEqual(createNativeClientMetadata(metadataUrl));
 		} finally {
 			server.closeAllConnections();

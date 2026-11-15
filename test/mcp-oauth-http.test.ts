@@ -6,7 +6,7 @@ import { Agent, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from
 import { FileAuthStorageBackend } from "../src/core/auth/auth-storage.js";
 import { McpOAuthCredentialStore, McpServerConnection, createDefaultTransport } from "../src/builtin-extensions/mcp/runtime.js";
 import { PIZZA_MCP_OAUTH_CLIENT_METADATA_URL, signInMcpServer } from "../src/builtin-extensions/mcp/oauth.js";
-import { metadataResponse } from "../examples/mcp-oauth/metadata.mjs";
+import { metadataResponse } from "../infra/mcp-oauth/metadata.mjs";
 import { startOAuthMcpServer } from "./fixtures/mcp/oauth-server.js";
 
 let previousDispatcher: Dispatcher;
