@@ -134,7 +134,7 @@ export function splitShellWordsWithMeta(input: string): { words: string[]; meta:
  * classification-bypass risk (e.g. treating \' inside single quotes as an
  * escape made a real trailing operator look quoted).
  */
-function computeUnquotedCodeMask(input: string): Uint8Array {
+export function computeUnquotedCodeMask(input: string): Uint8Array {
 	const mask = new Uint8Array(input.length);
 	const doubleEscapable = new Set(["$", "`", '"', "\\", String.fromCharCode(10)]);
 	let quote: "'" | '"' | undefined;
@@ -221,4 +221,53 @@ export function firstPureCommandSegment(command: string): string {
 		}
 	}
 	return command.trim();
+}
+
+/**
+ * True when `input` contains `char` as LIVE SHELL CODE (outside quotes and
+ * not escaped), per the same mask used by every other shell-syntax check.
+ */
+export function hasUnquotedShellChar(input: string, char: string): boolean {
+	const mask = computeUnquotedCodeMask(input);
+	for (let i = 0; i < input.length; i++) {
+		if (mask[i] && input[i] === char) return true;
+	}
+	return false;
+}
+
+/**
+ * Split a command into top-level command pieces on unquoted separators —
+ * &&, ||, ;, |, & (background) and newlines — KEEPING the separator text attached to the
+ * piece it terminates so pieces can be re-joined losslessly:
+ *
+ *   splitShellCommands("a && b | c").join("") === "a && b | c"
+ *
+ * Unlike splitShellSegments (used for first-word classification), the
+ * separator stays attached to the piece it ends and `&`/newlines also split.
+ * Separators inside $() or `` substitutions still split (the mask marks
+ * substitution bodies as code), so a piece may end inside an unclosed
+ * substitution — callers that rewrite pieces must skip those (see
+ * hasUnclosedParen in git-attribution.ts).
+ */
+export function splitShellCommands(command: string): string[] {
+	const mask = computeUnquotedCodeMask(command);
+	const pieces: string[] = [];
+	let start = 0;
+	for (let i = 0; i < command.length; i++) {
+		if (!mask[i]) continue;
+		const c = command[i];
+		const two = (c === "&" || c === "|") && command[i + 1] === c && mask[i + 1] === 1;
+		// A bare & backgrounds the command — but NOT inside fd redirections:
+		// >& / <& (dup) and &> / &>> (bash redirect stdout+stderr).
+		const bareAmp =
+			c === "&" && command[i - 1] !== ">" && command[i - 1] !== "<" && command[i + 1] !== ">";
+		if (two || c === ";" || c === "|" || bareAmp || c === "\n") {
+			const end = two ? i + 2 : i + 1;
+			pieces.push(command.slice(start, end));
+			start = end;
+			if (two) i++;
+		}
+	}
+	pieces.push(command.slice(start));
+	return pieces;
 }
