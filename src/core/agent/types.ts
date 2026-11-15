@@ -183,9 +183,9 @@ export interface AgentState {
 // Helpers
 // ============================================================================
 
-/** Type guard: is this a pi-ai LLM message (user / assistant / toolResult)? */
+/** Type guard: is this a pi-ai LLM message (system / user / assistant / toolResult)? */
 export function isLlmMessage(msg: AgentMessage): msg is Message {
-	return msg.role === "user" || msg.role === "assistant" || msg.role === "toolResult";
+	return msg.role === "system" || msg.role === "user" || msg.role === "assistant" || msg.role === "toolResult";
 }
 
 /** Filter pizza-specific messages, keep only those the LLM can consume. */

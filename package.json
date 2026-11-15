@@ -1,6 +1,6 @@
 {
 	"name": "@tomsun28/pizza",
-	"version": "0.5.5",
+	"version": "0.5.6",
 	"description": "Pizza - Pizza is an event-driven agent, without while true. Every conversation, tool call, and file edit is an event in an immutable log. Your UI, the LLM context, and the session tree are all projections of that log.",
 	"type": "module",
 	"pizzaConfig": {
@@ -64,8 +64,8 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run vendor-tools"
 	},
 	"dependencies": {
-		"@earendil-works/pi-ai": "0.85.0",
-		"@earendil-works/pi-tui": "0.85.0",
+		"@earendil-works/pi-ai": "1.5.2",
+		"@earendil-works/pi-tui": "1.5.2",
 		"@larksuiteoapi/node-sdk": "^1.74.0",
 		"@mariozechner/jiti": "^2.6.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
@@ -143,6 +143,6 @@
 		"url": "https://github.com/pizza-agent/pizza.git"
 	},
 	"engines": {
-		"node": ">=22.13.0"
+		"node": ">=22.19.0"
 	}
 }

@@ -20,6 +20,7 @@ import {
 	type ThinkingLevelMap,
 } from "@earendil-works/pi-ai/compat";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { getCurrentSystemPrompt, getCurrentTools, normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync, statSync } from "fs";
@@ -1127,11 +1128,22 @@ export class ModelRegistry {
 
 		if (config.streamSimple) {
 			const streamSimple = config.streamSimple;
+			// pi-ai now passes prompt/tool declarations as transcript system messages.
+			// Keep Pizza's extension Context contract (including Devin) unchanged.
+			const streamWithContext = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
+				const transcript = normalizeContext(context);
+				return streamSimple(model, {
+					...context,
+					systemPrompt: getCurrentSystemPrompt(transcript.messages),
+					tools: getCurrentTools(transcript.messages),
+					messages: transcript.messages.filter(message => message.role !== "system"),
+				}, options);
+			};
 			registerApiProvider(
 				{
 					api: config.api!,
-					stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
-					streamSimple,
+					stream: (model, context, options) => streamWithContext(model, context, options as SimpleStreamOptions),
+					streamSimple: streamWithContext,
 				},
 				`provider:${providerName}`,
 			);
