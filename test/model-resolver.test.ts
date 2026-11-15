@@ -1,4 +1,5 @@
 import type { Model } from "@earendil-works/pi-ai";
+import { getModels, type BuiltinProvider } from "@earendil-works/pi-ai/compat";
 import { describe, expect, test } from "vitest";
 import {
 	defaultModelPerProvider,
@@ -373,9 +374,23 @@ describe("resolveCliModel", () => {
 });
 
 describe("default model selection", () => {
-	test("openai defaults are gpt-5.4", () => {
+	test("openai defaults retain API GPT-5.4 and use a supported Codex model", () => {
 		expect(defaultModelPerProvider.openai).toBe("gpt-5.4");
-		expect(defaultModelPerProvider["openai-codex"]).toBe("gpt-5.4");
+		expect(defaultModelPerProvider["openai-codex"]).toBe("gpt-6.1-sol");
+	});
+
+	test.each([
+		"azure", "fireworks", "openai-codex", "xiaomi", "xiaomi-token-plan-ams",
+		"xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zai-coding-cn",
+	])("selects a supported default from the upgraded %s catalog", async provider => {
+		const models = getModels(provider as BuiltinProvider);
+		const registry = {
+			getAvailable: async () => models,
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+		const result = await findInitialModel({ scopedModels: [], isContinuing: false, modelRegistry: registry });
+		expect(models.some(model => model.id === defaultModelPerProvider[provider])).toBe(true);
+		expect(result.model?.provider).toBe(provider);
+		expect(result.model?.id).toBe(defaultModelPerProvider[provider]);
 	});
 
 	test("zai, minimax, and cerebras defaults track current models", () => {

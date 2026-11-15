@@ -81,7 +81,7 @@ export function buildLlmClientFromStreamFn(
 					systemPrompt: systemPrompt ?? "",
 					messages: messages.filter(
 						(message) =>
-							message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+							message.role === "system" || message.role === "user" || message.role === "assistant" || message.role === "toolResult",
 					).map((message) => {
 						if (message.role !== "toolResult") {
 							return message;

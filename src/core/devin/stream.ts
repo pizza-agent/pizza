@@ -158,7 +158,7 @@ function buildChatMessagePrompts(messages: Context["messages"], cascadeId: strin
 				toolCalls,
 				...(thinkingRedacted ? { thinkingRedacted: true } : {}),
 			});
-		} else {
+		} else if (message.role === "toolResult") {
 			prompts.push({
 				messageId: deterministicUuid(`${cascadeId}${index}tool${message.toolCallId}`),
 				source: CHAT_SOURCE_TOOL,

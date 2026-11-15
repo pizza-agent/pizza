@@ -3713,6 +3713,10 @@ export class InteractiveMode {
         this.chatContainer.addChild(assistantComponent);
         break;
       }
+      case "system": {
+        // System instructions have no chat component.
+        break;
+      }
       case "toolResult": {
         // Tool results are rendered inline with tool calls, handled separately
         break;
