@@ -420,6 +420,7 @@ export function osProcessStartedAt(pid: number): number | undefined {
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
 			timeout: 2000,
+			windowsHide: true,
 		}).trim();
 		// [[dd-]hh:]mm:ss
 		const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(out);

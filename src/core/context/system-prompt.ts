@@ -42,7 +42,7 @@ function formatSkillsHint(skills: Skill[]): string {
  */
 function detectNodeVersion(): string {
 	try {
-		const out = execSync("node --version", { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+		const out = execSync("node --version", { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim();
 		return out || process.version;
 	} catch {
 		return `${process.version} (pizza runtime; no node on PATH)`;
@@ -55,7 +55,7 @@ function detectNodeVersion(): string {
 function isGitRepository(cwd: string): boolean {
 	try {
 		const gitDir = existsSync(cwd) ? cwd : process.cwd();
-		execSync("git rev-parse --is-inside-work-tree", { cwd: gitDir, stdio: "ignore" });
+		execSync("git rev-parse --is-inside-work-tree", { cwd: gitDir, stdio: "ignore", windowsHide: true });
 		return true;
 	} catch {
 		return false;

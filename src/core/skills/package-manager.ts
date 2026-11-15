@@ -2279,6 +2279,7 @@ export class DefaultPackageManager implements PackageManager {
 			cwd: options?.cwd,
 			stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
 			shell: process.platform === "win32",
+			windowsHide: true,
 		});
 	}
 
@@ -2291,6 +2292,7 @@ export class DefaultPackageManager implements PackageManager {
 			cwd: options?.cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 			shell: process.platform === "win32",
+			windowsHide: true,
 			env: options?.env ? { ...process.env, ...options.env } : process.env,
 		});
 	}
@@ -2358,6 +2360,7 @@ export class DefaultPackageManager implements PackageManager {
 			stdio: ["ignore", "pipe", "pipe"],
 			encoding: "utf-8",
 			shell: process.platform === "win32",
+			windowsHide: true,
 		});
 		if (result.status !== 0) {
 			throw new Error(`Failed to run ${command} ${args.join(" ")}: ${result.stderr || result.stdout}`);

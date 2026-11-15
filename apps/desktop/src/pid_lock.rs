@@ -9,6 +9,7 @@ use std::process::Command;
 #[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::hidden_process;
 use serde_json::Value;
 
 pub struct LockInfo {
@@ -83,9 +84,10 @@ pub fn is_process_alive(pid: u32) -> bool {
 pub fn is_process_alive(pid: u32) -> bool {
 	// `tasklist /FI "PID eq <pid>" /FO CSV /NH` prints one CSV line per
 	// matching process, or "INFO: No tasks..." when the pid is dead.
-	Command::new("tasklist")
-		.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-		.output()
+	let mut cmd = Command::new("tasklist");
+	cmd.args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
+	hidden_process::hide_console(&mut cmd);
+	cmd.output()
 		.map(|out| {
 			String::from_utf8_lossy(&out.stdout).lines().any(|line| {
 				line.split(',')
@@ -122,17 +124,17 @@ pub fn process_command(pid: u32) -> Option<String> {
 
 #[cfg(windows)]
 pub fn process_command(pid: u32) -> Option<String> {
-	let output = Command::new("powershell")
-		.args([
-			"-NoProfile",
-			"-Command",
-			&format!(
-				"(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
-				pid
-			),
-		])
-		.output()
-		.ok()?;
+	let mut cmd = Command::new("powershell");
+	cmd.args([
+		"-NoProfile",
+		"-Command",
+		&format!(
+			"(Get-CimInstance Win32_Process -Filter 'ProcessId={}').CommandLine",
+			pid
+		),
+	]);
+	hidden_process::hide_console(&mut cmd);
+	let output = cmd.output().ok()?;
 	if !output.status.success() {
 		return None;
 	}

@@ -38,7 +38,7 @@ function commandExists(cmd: string): boolean {
 	if (cachedResult !== undefined) return cachedResult;
 	let exists = false;
 	try {
-		const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+		const result = spawnSync(cmd, ["--version"], { stdio: "pipe", windowsHide: true });
 		// Check for ENOENT error (command not found)
 		exists = result.error === undefined || result.error === null;
 	} catch {
