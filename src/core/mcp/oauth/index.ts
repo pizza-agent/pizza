@@ -13,6 +13,7 @@ export {
 	discoverOAuthServerInfo,
 	discoverProtectedResourceMetadata,
 	parseWwwAuthenticate,
+	canonicalOAuthResource,
 	resourceUrlFromServerUrl,
 	selectResource,
 } from "./discovery.js";
