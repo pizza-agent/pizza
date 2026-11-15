@@ -49,6 +49,7 @@ export async function execCommand(
 			cwd,
 			shell: false,
 			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
 			// Inherit the login-shell PATH so user-installed tools (homebrew, nvm,
 			// cargo, etc.) are found even when the agent was launched from a GUI
 			// context with a minimal PATH (e.g. macOS launchd/Tauri). Without this,

@@ -27,7 +27,7 @@ async function isExecutable(filePath: string): Promise<boolean> {
 async function runProcess(command: string, args: string[], timeoutMs: number, signal?: AbortSignal, env?: NodeJS.ProcessEnv): Promise<void> {
 	if (signal?.aborted) throw new Error("Operation aborted.");
 	await new Promise<void>((resolve, reject) => {
-		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env });
+		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env, windowsHide: true });
 		let stdout = "";
 		let stderr = "";
 		const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); };
@@ -82,7 +82,7 @@ export class WindowsHelperClient {
 	private async process(signal?: AbortSignal): Promise<ChildProcessWithoutNullStreams> {
 		await this.ensureInstalled(signal);
 		if (this.child && this.child.exitCode === null && !this.child.killed) return this.child;
-		const child = spawn(WINDOWS_HELPER_PATH, [], { stdio: ["pipe", "pipe", "pipe"] });
+		const child = spawn(WINDOWS_HELPER_PATH, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdin.setDefaultEncoding("utf8");

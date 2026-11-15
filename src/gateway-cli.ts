@@ -196,6 +196,7 @@ async function cmdStart(socketPath: string): Promise<void> {
 	const child = spawn(process.execPath, [cliPath, "--mode", "gateway"], {
 		detached: true,
 		stdio: "ignore",
+		windowsHide: true,
 		env: {
 			...process.env,
 			// The gateway daemon is spawned from launchd's minimal PATH (GUI/IDE

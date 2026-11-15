@@ -69,6 +69,7 @@ function runShellCapturePath(shell: string): string | undefined {
 		timeout: CAPTURE_TIMEOUT_MS,
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
+		windowsHide: true,
 	});
 	// Timed out / killed / non-zero exit -> no usable PATH.
 	if (result.signal || result.status !== 0) return undefined;
@@ -78,7 +79,7 @@ function runShellCapturePath(shell: string): string | undefined {
 function runShellCapturePathAsync(shell: string): Promise<string | undefined> {
 	return new Promise((resolve) => {
 		let stdout = "";
-		const child = spawn(shell, captureArgs, { stdio: ["ignore", "pipe", "ignore"] });
+		const child = spawn(shell, captureArgs, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
 		const timer = setTimeout(() => child.kill("SIGKILL"), CAPTURE_TIMEOUT_MS);
 		child.stdout.setEncoding("utf-8").on("data", (chunk: string) => (stdout += chunk));
 		child.on("error", () => {

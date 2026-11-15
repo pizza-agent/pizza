@@ -6,6 +6,7 @@
  * the user's normal SSH setup. The remote Pizza process owns the workspace;
  * the desktop only transports RPC and short-lived read-only filesystem calls.
  */
+use crate::hidden_process;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::hash_map::DefaultHasher;
@@ -204,6 +205,7 @@ fn ssh_command(config: &RemoteWorkspaceConfig) -> Result<Command, String> {
 				);
 		}
 	}
+	hidden_process::hide_console(&mut command);
 	Ok(command)
 }
 

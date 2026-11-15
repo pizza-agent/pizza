@@ -1201,6 +1201,7 @@ export class InteractiveMode {
       return new Promise((resolve) => {
         const proc = spawn("tmux", ["show", "-gv", option], {
           stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
         });
         let stdout = "";
         const timer = setTimeout(() => {
@@ -5426,6 +5427,7 @@ export class InteractiveMode {
     try {
       const authResult = spawnSync("gh", ["auth", "status"], {
         encoding: "utf-8",
+        windowsHide: true,
       });
       if (authResult.status !== 0) {
         this.showError(
@@ -5485,7 +5487,7 @@ export class InteractiveMode {
         stderr: string;
         code: number | null;
       }>((resolve) => {
-        proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
+        proc = spawn("gh", ["gist", "create", "--public=false", tmpFile], { windowsHide: true });
         let stdout = "";
         let stderr = "";
         proc.stdout?.on("data", (data) => {
