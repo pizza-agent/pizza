@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, ExternalLink, Loader2, LogIn, LogOut, Pencil, Plus, Power, RotateCw, Search, AppWindow, Trash2, Wrench } from "lucide-react";
+import { Check, LogIn, LogOut, Pencil, Plug, Plus, RotateCw, Search, AppWindow, Trash2, Wrench } from "lucide-react";
 import { Badge, Button, Card, ErrorBanner, Field, Modal, MoreMenu, Select } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { sendCommandAwait, openExternal } from "@/lib/transport";
+import { sendCommandAwait } from "@/lib/transport";
 import { confirmDialog } from "@/lib/confirm";
 import i18n from "@/i18n";
 import { McpToolParameters } from "@/components/McpToolParameters";
+import { AppIcon } from "@/components/AppIcon";
 import { MCP_MARKETPLACE_CATALOG, type McpCatalogEntry } from "@/lib/mcp-catalog";
 import { oauthSetupDefinition, requiredOAuthSetup } from "@/lib/mcp-oauth-setup";
 import { useMcpAuthSession } from "@/lib/use-mcp-auth-session";
@@ -79,6 +80,14 @@ function canSignOut(server: McpServer): boolean {
 	return Boolean(server.oauth) && server.enabled && server.state === "connected";
 }
 
+/** Brand icon key for an installed app: match the catalog by name or URL, else generic. */
+function serverIconName(server: McpServer): string {
+	const entry =
+		MCP_MARKETPLACE_CATALOG.find((entry) => entry.name === server.name) ??
+		(server.url ? MCP_MARKETPLACE_CATALOG.find((entry) => entry.config.url === server.url) : undefined);
+	return entry?.name ?? server.name;
+}
+
 function InstalledMcpCard({
 	server,
 	busy,
@@ -87,7 +96,7 @@ function InstalledMcpCard({
 	onSignOut,
 	onViewTools,
 	onEdit,
-	onToggleEnabled,
+	onConnect,
 	onRemove,
 }: {
 	server: McpServer;
@@ -97,7 +106,7 @@ function InstalledMcpCard({
 	onSignOut: (server: McpServer) => void;
 	onViewTools: (name: string) => void;
 	onEdit: (server: McpServer) => void;
-	onToggleEnabled: (server: McpServer) => void;
+	onConnect: (server: McpServer) => void;
 	onRemove: (server: McpServer) => void;
 }) {
 	const { t } = useTranslation();
@@ -110,7 +119,7 @@ function InstalledMcpCard({
 			server.state !== "connected" &&
 			server.state !== "disabled");
 	const menuItems = [
-		...(showSignIn
+		...(showSignIn && !needsSignIn(server)
 			? [
 					{
 						icon: LogIn,
@@ -130,12 +139,6 @@ function InstalledMcpCard({
 					},
 				]
 			: []),
-		{
-			icon: Power,
-			label: server.enabled ? t("plugins.mcp.disable") : t("plugins.mcp.enable"),
-			disabled: busy,
-			onClick: () => onToggleEnabled(server),
-		},
 		{
 			icon: Wrench,
 			label: t("plugins.mcp.tools"),
@@ -165,8 +168,8 @@ function InstalledMcpCard({
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
 				<div className={cn("min-w-0 flex-1 transition-opacity", !server.enabled && "opacity-60")}>
-					<div className="flex items-center gap-2">
-						<AppWindow className={cn("h-4 w-4 shrink-0", server.enabled ? "text-accent" : "text-muted")} />
+					<div className="flex items-center gap-2.5">
+						<AppIcon name={serverIconName(server)} />
 						<span className="truncate text-sm font-medium text-fg">{server.name}</span>
 					</div>
 					{(serverDescription(server) || server.url) && (
@@ -175,11 +178,6 @@ function InstalledMcpCard({
 						</p>
 					)}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
-						{server.enabled ? (
-							<Badge tone="success">{t("plugins.mcp.enabled")}</Badge>
-						) : (
-							<Badge tone="neutral">{t("plugins.mcp.disabled")}</Badge>
-						)}
 						<Badge
 							tone={
 								server.state === "connected"
@@ -205,17 +203,28 @@ function InstalledMcpCard({
 					)}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
-					{needsSignIn(server) && (
+					{!server.enabled ? (
 						<Button
 							size="sm"
-							tone="accent"
+							disabled={busy}
+							iconLeft={<Plug className="h-3.5 w-3.5" />}
+							onClick={() => onConnect(server)}
+						>
+							{t("plugins.mcp.install")}
+						</Button>
+					) : needsSignIn(server) ? (
+						<Button
+							size="sm"
 							disabled={busy || loginActive}
+							iconLeft={<LogIn className="h-3.5 w-3.5" />}
 							onClick={() => onSignIn(server.name)}
 						>
 							{t("plugins.mcp.signIn")}
 						</Button>
+					) : null}
+					{menuItems.length > 0 && (
+						<MoreMenu disabled={busy} title={t("plugins.mcp.actions")} items={menuItems} />
 					)}
-					<MoreMenu disabled={busy} title={t("plugins.mcp.actions")} items={menuItems} />
 				</div>
 			</div>
 		</Card>
@@ -227,61 +236,30 @@ function DirectoryMcpCard({
 	installed,
 	enabled,
 	installing,
+	busy,
 	onInstall,
+	onEnable,
 }: {
 	entry: McpCatalogEntry;
 	installed: boolean;
 	enabled?: boolean;
 	installing: boolean;
+	busy: boolean;
 	onInstall: () => void;
+	onEnable: () => void;
 }) {
 	const { t } = useTranslation();
-	const items = [
-		...(entry.docsUrl
-			? [
-					{
-						icon: ExternalLink,
-						label: t("plugins.mcp.view"),
-						onClick: () => openExternal(entry.docsUrl!),
-					},
-				]
-			: []),
-		...(installed
-			? []
-			: [
-					{
-						icon: installing ? Loader2 : Download,
-						label: installing ? t("plugins.mcp.installing") : t("plugins.mcp.install"),
-						onClick: onInstall,
-						disabled: installing,
-					},
-				]),
-	];
 	return (
 		<Card className="@container transition-colors hover:border-accent/40">
 			<div className="flex flex-col gap-3 @sm:flex-row @sm:items-start @sm:justify-between">
 				<div className={cn("min-w-0 flex-1 transition-opacity", installed && enabled === false && "opacity-60")}>
-					<div className="flex items-center gap-2">
-						<AppWindow className="h-4 w-4 shrink-0 text-accent" />
+					<div className="flex items-center gap-2.5">
+						<AppIcon name={entry.name} />
 						<span className="truncate text-sm font-medium text-fg">{entry.name}</span>
 					</div>
 					<p className="mt-2 line-clamp-2 text-xs text-muted">{catalogDescription(entry)}</p>
 					{entry.connectionNote && <p className="mt-2 text-xs text-muted">{catalogNote(entry)}</p>}
 					<div className="mt-3 flex flex-wrap items-center gap-2">
-						{installed ? (
-							<>
-								<Badge tone="success">{t("plugins.mcp.installed")}</Badge>
-								{enabled === false ? (
-									<Badge tone="neutral">{t("plugins.mcp.disabled")}</Badge>
-								) : (
-									<Badge tone="success">{t("plugins.mcp.enabled")}</Badge>
-								)}
-							</>
-						) : installing ? (
-							<Badge tone="accent">{t("plugins.mcp.installing")}</Badge>
-						) : (
-							<Badge tone="accent">{t("plugins.mcp.catalogType")}</Badge>
-						)}
 						{entry.builtin && (
 							<Badge tone="neutral">{t("plugins.mcp.builtin")}</Badge>
 						)}
@@ -289,11 +267,24 @@ function DirectoryMcpCard({
 						{entry.oauthSetup && <Badge tone="neutral">{t(oauthSetupDefinition(entry.oauthSetup).text("SetupRequired"))}</Badge>}
 					</div>
 				</div>
-				{items.length > 0 && (
-					<div className="flex shrink-0 items-center gap-2">
-						<MoreMenu title={t("plugins.mcp.actions")} items={items} />
-					</div>
-				)}
+				<div className="flex shrink-0 items-center gap-2">
+					{installed ? (
+						enabled === false ? (
+							<Button size="sm" disabled={busy} iconLeft={<Plug className="h-3.5 w-3.5" />} onClick={onEnable}>
+								{t("plugins.mcp.install")}
+							</Button>
+						) : (
+							<span className="flex items-center gap-1 text-xs text-success">
+								<Check className="h-3.5 w-3.5" />
+								{t("plugins.mcp.installed")}
+							</span>
+						)
+					) : (
+						<Button size="sm" loading={installing} disabled={installing} iconLeft={installing ? undefined : <Plug className="h-3.5 w-3.5" />} onClick={onInstall}>
+							{installing ? t("plugins.mcp.installing") : t("plugins.mcp.install")}
+						</Button>
+					)}
+				</div>
 			</div>
 		</Card>
 	);
@@ -555,7 +546,6 @@ export function McpTab() {
 				</Button>
 				<Button
 					size="sm"
-					tone="accent"
 					disabled={busy}
 					onClick={() => edit()}
 					iconLeft={<Plus className="h-3.5 w-3.5" />}
@@ -581,7 +571,7 @@ export function McpTab() {
 					anchor={dialogAnchor}
 					footer={<div className="flex w-full items-center justify-between gap-2">
 						<Button type="button" tone="neutral" variant="ghost" size="sm" disabled={saving} onClick={() => setEditing(false)}>{t("plugins.mcp.cancel")}</Button>
-						<Button type="button" size="sm" loading={saving} onClick={() => formRef.current?.requestSubmit()} tone="accent" disabled={saving}>
+						<Button type="button" size="sm" loading={saving} onClick={() => formRef.current?.requestSubmit()} disabled={saving}>
 							{t(saving ? "plugins.mcp.saving" : "plugins.mcp.save")}
 						</Button>
 					</div>}
@@ -725,13 +715,9 @@ export function McpTab() {
 											}
 											onViewTools={(name) => void viewTools(name)}
 											onEdit={edit}
-											onToggleEnabled={(s) =>
+											onConnect={(s) =>
 												void act(async () => {
-													await command([
-														"server",
-														s.enabled ? "disable" : "enable",
-														s.name,
-													]);
+													await command(["server", "enable", s.name]);
 												})
 											}
 											onRemove={(s) =>
@@ -781,7 +767,13 @@ export function McpTab() {
 									installed={installedNames.has(entry.name)}
 									enabled={installedByName.get(entry.name)?.enabled}
 									installing={installingName === entry.name}
+									busy={busy}
 									onInstall={() => void installCatalogEntry(entry)}
+									onEnable={() =>
+										void act(async () => {
+											await command(["server", "enable", entry.name]);
+										})
+									}
 								/>
 							))}
 						</div>
@@ -881,7 +873,6 @@ export function McpTab() {
 								/>
 								<Button
 									size="sm"
-									tone="accent"
 									disabled={!loginAnswer.trim() || loginSubmitting}
 									loading={loginSubmitting}
 									onClick={() => void submitLoginAnswer()}

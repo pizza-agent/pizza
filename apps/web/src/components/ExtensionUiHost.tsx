@@ -336,7 +336,6 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 										Cancel
 									</Button>
 									<Button
-										tone="accent"
 										size="sm"
 										onClick={() => {
 											respond(String(dialog.id), { confirmed: true });
@@ -349,7 +348,6 @@ export function ExtensionUiHost({ workspace }: { workspace: string }) {
 							)}
 							{(dialogKind === "input" || dialogKind === "editor") && (
 								<Button
-									tone="accent"
 									size="sm"
 									onClick={() => {
 										respond(String(dialog.id), { value: textValue });

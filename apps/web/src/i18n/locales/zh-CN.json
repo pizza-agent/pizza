@@ -117,7 +117,7 @@
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前",
     "plugins": "能力与集成",
-    "pluginsSubtitle": "技能 · 应用 · 扩展 · 渠道"
+    "pluginsSubtitle": "应用 · 技能 · 扩展 · 渠道"
   },
   "remoteWorkspace": {
     "title": "连接远程服务器",
@@ -790,8 +790,6 @@
       "signInPastePlaceholder": "http://127.0.0.1/.../callback?code=...",
       "signInContinue": "继续",
       "signInCancelled": "已取消登录。",
-      "enable": "启用",
-      "disable": "停用",
       "remove": "移除应用",
       "removeConfirm": "移除“{{name}}”的应用连接？",
       "close": "关闭",
@@ -814,7 +812,7 @@
       "loadingTools": "正在加载应用功能…",
       "retry": "重试",
       "searchTools": "搜索功能…",
-      "noTools": "此应用暂无可用功能，请先启用并完成连接。",
+      "noTools": "此应用暂无可用功能，请先完成连接。",
       "noMatchingTools": "没有匹配的功能。",
       "duplicateName": "此名称的连接已存在，请从“我的应用”中编辑。",
       "httpShort": "在线应用",
@@ -834,15 +832,10 @@
       "installed": "已添加",
       "installError": "添加应用失败：{{error}}",
       "emptyDirectory": "没有匹配的应用。",
-      "catalogType": "应用",
       "builtin": "官方",
-      "view": "查看文档",
       "actions": "应用操作",
       "signOut": "退出应用登录",
-      "enabled": "已启用",
-      "disabled": "已停用",
       "disableSessionHint": "此应用由扩展提供，仅在当前会话中停用，不会移除连接。",
-      "localAdapter": "内置应用连接",
       "catalogNotes": {
         "gmail": "通过 Pizza 登录 Google，无需填写应用密钥。可读取邮件和准备草稿。",
         "atlassian": "组织管理员可能需要允许此连接。",

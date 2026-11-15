@@ -116,7 +116,7 @@
     "timeHoursAgo": "{{count}}h ago",
     "timeDaysAgo": "{{count}}d ago",
     "plugins": "Capabilities & integrations",
-    "pluginsSubtitle": "Skills · Apps · Extensions · Channels"
+    "pluginsSubtitle": "Apps · Skills · Extensions · Channels"
   },
   "remoteWorkspace": {
     "title": "Connect remote server",
@@ -790,8 +790,6 @@
       "signInPastePlaceholder": "http://127.0.0.1/.../callback?code=...",
       "signInContinue": "Continue",
       "signInCancelled": "Sign-in cancelled.",
-      "enable": "Enable",
-      "disable": "Disable",
       "remove": "Remove app",
       "removeConfirm": "Remove the connection to “{{name}}”?",
       "close": "Close",
@@ -814,7 +812,7 @@
       "loadingTools": "Loading app capabilities…",
       "retry": "Try again",
       "searchTools": "Search capabilities…",
-      "noTools": "This app has no available capabilities. Enable it and complete the connection first.",
+      "noTools": "This app has no available capabilities. Connect it first.",
       "noMatchingTools": "No capabilities match your search.",
       "duplicateName": "A connection with this name already exists. Edit it from My apps.",
       "httpShort": "Online app",
@@ -834,15 +832,10 @@
       "installed": "Added",
       "installError": "Failed to add app: {{error}}",
       "emptyDirectory": "No apps match your search.",
-      "catalogType": "App",
       "builtin": "Official",
-      "view": "View docs",
       "actions": "App actions",
       "signOut": "Sign out of app",
-      "enabled": "Enabled",
-      "disabled": "Disabled",
       "disableSessionHint": "This app is provided by an extension. Disabling it only affects this session and keeps the connection configured.",
-      "localAdapter": "Built-in app connection",
       "catalogNotes": {
         "gmail": "Sign in with Google through Pizza without app credentials. Read mail and prepare drafts.",
         "atlassian": "Your Atlassian administrator may need to allow this connection.",

@@ -320,7 +320,7 @@ function ApprovalSection({
 					>
 						{t("approval.reject")}
 					</Button>
-					<Button size="sm" tone="accent" variant="solid" onClick={() => onResolve(true)}>
+					<Button size="sm" variant="solid" onClick={() => onResolve(true)}>
 						{t("approval.approve")}
 					</Button>
 				</div>
