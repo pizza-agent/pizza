@@ -9,11 +9,12 @@
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/oauth", "/oauth/*"]
+    "run_worker_first": ["/oauth", "/oauth/*", "/media/demos", "/media/demos/*"]
   },
   "compatibility_date": "2026-11-14",
   "workers_dev": false,
   "preview_urls": false,
+  "r2_buckets": [{ "binding": "PUBLIC_MEDIA", "bucket_name": "pizza-public-media" }],
   "durable_objects": {
     "bindings": [{ "name": "GOOGLE_SESSIONS", "class_name": "GoogleOAuthSession" }]
   },

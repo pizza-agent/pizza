@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUpRight, Check, Copy, GithubLogo, Moon, Sun, Play, X, L
 import { siNotion, siGithub, siGmail, siGoogledrive, siSlack, siLinear, siTelegram, siDiscord } from 'simple-icons';
 import { copy } from './content';
 import release from './release.json';
+import demo from './demo.json';
 const REPO = 'https://github.com/pizza-agent/pizza';
 const appLogos = [siNotion, siGithub, siGmail, siGoogledrive, siSlack, siLinear, siTelegram, siDiscord];
 const iconProps = { size: 20, weight: 'regular', 'aria-hidden': true };
@@ -63,7 +64,7 @@ export default function App({ lang = 'en' }) {
    </section>
    <section id="meet" className="product-section shell section-space">
     <div className="section-heading reveal"><h2>{c.productTitle}</h2><p>{c.productBody}</p></div>
-    <figure className="product-figure reveal"><button className="demo-preview" onClick={openDemo} aria-label={c.play}><img src="/media/pizza-desktop.webp" width="1180" height="732" alt={c.demo} loading="lazy" /><span className="play-control"><Play size={24} weight="fill" aria-hidden="true" /></span></button><figcaption>{c.demoCaption}</figcaption></figure>
+    <figure className="product-figure reveal"><button className="demo-preview" onClick={openDemo} aria-label={c.play}><img src={demo.poster} width="1180" height="732" alt={c.demo} loading="lazy" /><span className="play-control"><Play size={24} weight="fill" aria-hidden="true" /></span></button><figcaption>{c.demoCaption}</figcaption></figure>
     <div className="feature-notes">{c.features.map(([title, body],i) => {const Icon = [ChatCircle,GitBranch,SlidersHorizontal][i];return <article className={`feature-note feature-note-${i} reveal`} key={title}><Icon size={27} weight="regular" aria-hidden="true" /><h3>{title}</h3><p>{body}</p></article>;})}</div>
    </section>
    <section id="apps" className="apps-section section-space">
@@ -75,6 +76,6 @@ export default function App({ lang = 'en' }) {
    <section id="download" className="download-section shell section-space"><div className="download-heading reveal"><img src="/media/pizza-icon.webp" width="64" height="64" alt="" loading="lazy" /><h2>{c.downloadTitle}</h2><p>{c.downloadBody}</p></div><div className="download-options reveal">{[['macOS','macos',AppleLogo],['Windows','windows',WindowsLogo],['Linux','linux',LinuxLogo]].map(([name,key,Icon],i) => <a className="platform-download" key={key} href={release[key]}><Icon size={28} weight="fill" aria-hidden="true" /><span><strong>{name}</strong><small>{c.platforms[i]}</small></span><ArrowDown {...iconProps} /></a>)}</div><a className="release-link" href="https://github.com/pizza-agent/pizza/releases/latest">{c.release}<ArrowUpRight size={15} aria-hidden="true" /></a><div className="cli-install"><span>{c.cli}</span><div className="command-line"><code>npm install -g @tomsun28/pizza</code><button className="icon-button" onClick={copyCommand} aria-label={copied ? c.copied : c.copy}>{copied ? <Check {...iconProps} /> : <Copy {...iconProps} />}</button></div><span className="copy-status" role="status">{copied ? c.copied : copyError ? c.copyError : ''}</span></div></section>
   </main>
   <footer className="site-footer shell"><div><a className="footer-brand" href={lang === 'zh' ? '/zh/' : '/'}>pizza</a><p>{c.footer}</p></div><div className="footer-right"><nav aria-label={lang === 'zh' ? '更多信息' : 'More information'}>{c.links.map((text,i) => <a key={text} href={[REPO,`${REPO}/issues`,`${REPO}/blob/main/LICENSE`][i]}>{text}</a>)}</nav><p>{c.footerNote}</p></div></footer>
-  <dialog className="demo-dialog" ref={dialog} aria-label={c.demo} onCancel={event => { event.preventDefault(); closeDemo(); }} onClick={e => { if(e.target === dialog.current) closeDemo(); }}><button className="dialog-close icon-button" onClick={closeDemo} aria-label={c.close}><X size={24} aria-hidden="true" /></button><video controls playsInline preload="none" poster="/media/pizza-desktop.webp"><source src="/media/pizza-desktop.mp4" type="video/mp4" /></video></dialog>
+  <dialog className="demo-dialog" ref={dialog} aria-label={c.demo} onCancel={event => { event.preventDefault(); closeDemo(); }} onClick={e => { if(e.target === dialog.current) closeDemo(); }}><button className="dialog-close icon-button" onClick={closeDemo} aria-label={c.close}><X size={24} aria-hidden="true" /></button><video controls playsInline preload="none" poster={demo.poster}><source src={demo.video} type="video/mp4" /></video></dialog>
  </>;
 }

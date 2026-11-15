@@ -10,6 +10,8 @@ Pizza is an event-driven agent, without `while true`. Every conversation, tool c
 
 [English](./README.md) · [简体中文](./README.zh-CN.md)
 
+[Website](https://pizza.hertzbeat.com/) · [Desktop demo](https://pizza.hertzbeat.com/media/demos/pizza-desktop-legacy-2026-11-15.mp4) · [Terminal demo](https://pizza.hertzbeat.com/media/demos/pizza-terminal-legacy-2026-11-15.gif)
+
 ## About It
 
 ### Under the hood

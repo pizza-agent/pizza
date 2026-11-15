@@ -22,6 +22,7 @@ try {
 	let upstream = 0, google;
 	runtime = new Miniflare(convertV4MiniflareOptions({ modules: true, script: await readFile(join(temp, "cloudflare.js"), "utf8"), compatibilityDate: "2026-11-14",
 		durableObjects: { GOOGLE_SESSIONS: { className: "GoogleOAuthSession", useSQLite: true } },
+		r2Buckets: ["PUBLIC_MEDIA"],
 		ratelimits: { GOOGLE_RATE_LIMITER: { namespace_id: "497012345", simple: { limit: 60, period: 60 } } },
 		bindings: { GOOGLE_CLIENT_ID: "runtime-fixture.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "runtime-fixture-secret", GOOGLE_TOKEN_KEY: "ab".repeat(32) },
 		outboundService: async request => {
@@ -38,6 +39,41 @@ try {
 			return Response.json({ access_token: `runtime-access-${upstream}`, refresh_token: "runtime-private-refresh", token_type: "Bearer", expires_in: 3600, scope });
 		},
 	}));
+	// Real R2 bindings exercise video playback and seeking, independently of website builds.
+	const media = await runtime.getR2Bucket("PUBLIC_MEDIA");
+	await media.put("demos/runtime-video.mp4", "0123456789");
+	const mediaUrl = "https://pizza.hertzbeat.com/media/demos/runtime-video.mp4";
+	const full = await runtime.dispatchFetch(mediaUrl);
+	assert.equal(full.status, 200);
+	assert.equal(full.headers.get("content-type"), "video/mp4");
+	assert.equal(full.headers.get("content-length"), "10");
+	assert.equal(await full.text(), "0123456789");
+	const etag = full.headers.get("etag");
+	for (const [range, status, body, contentRange] of [
+		["bytes=2-5", 206, "2345", "bytes 2-5/10"],
+		["bytes=7-", 206, "789", "bytes 7-9/10"],
+		["bytes=-3", 206, "789", "bytes 7-9/10"],
+		["bytes=0-99", 206, "0123456789", "bytes 0-9/10"],
+		["bytes=10-", 416, "", "bytes */10"],
+		["bytes=-0", 416, "", "bytes */10"],
+		["bytes=5-2", 416, "", "bytes */10"],
+		["bytes=0-1,5-6", 200, "0123456789", null],
+	]) {
+		const response = await runtime.dispatchFetch(mediaUrl, { headers: { Range: range } });
+		assert.equal(response.status, status, range);
+		assert.equal(response.headers.get("content-range"), contentRange, range);
+		assert.equal(await response.text(), body, range);
+	}
+	const head = await runtime.dispatchFetch(mediaUrl, { method: "HEAD", headers: { Range: "bytes=2-5" } });
+	assert.equal(head.status, 200);
+	assert.equal(head.headers.get("content-length"), "10");
+	assert.equal(await head.text(), "");
+	assert.equal((await runtime.dispatchFetch(mediaUrl, { headers: { "If-None-Match": etag } })).status, 304);
+	assert.equal((await runtime.dispatchFetch(mediaUrl, { headers: { "If-Range": '"old"', Range: "bytes=2-5" } })).status, 200);
+	assert.equal((await runtime.dispatchFetch(mediaUrl, { method: "PUT", body: "no uploads" })).status, 405);
+	assert.equal((await runtime.dispatchFetch("https://pizza.hertzbeat.com/media/demos/missing.mp4")).status, 404);
+	assert.equal((await runtime.dispatchFetch("https://pizza.hertzbeat.com/media/demos/private.json")).status, 404);
+	console.log("Cloudflare R2 media passed: playback, HEAD, byte/suffix seeking, unsatisfiable ranges, conditional requests and read-only routing.");
 	const fetch = (path, init = {}) => runtime.dispatchFetch(new URL(path, `${issuer}/`).href, { redirect: "manual", ...init });
 	assert.equal((await fetch("health")).status, 200);
 	assert.equal((await (await fetch("resources/drive")).json()).resource, resource);
