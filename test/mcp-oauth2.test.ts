@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	authorizeMcp, createNativeClientMetadata, discoverAuthorizationServerMetadata, discoverOAuthServerInfo,
+	authorizeMcp, canonicalOAuthResource, createNativeClientMetadata, discoverAuthorizationServerMetadata, discoverOAuthServerInfo,
 	McpOAuthProvider, MemoryOAuthStateStore, OAuthCallbackServer, oauthCallbackId,
 	parseWwwAuthenticate,
 	type AuthorizationServerMetadata,
@@ -311,6 +311,18 @@ describe("OAuth discovery and capability validation", () => {
 	it.each(["https://auth.example/", "https://auth.example"])("tolerates a trailing slash in metadata issuer comparison: %s", async (issuer) => {
 		const api = fixture(); api.metadata.issuer = issuer;
 		await expect(discoverAuthorizationServerMetadata("https://auth.example")).resolves.toMatchObject({ issuer });
+	});
+
+	it("canonicalizes resource identity for trailing slashes and URL href rules", () => {
+		const catalogUrl = "https://api.githubcopilot.com/mcp/";
+		const prmResource = "https://api.githubcopilot.com/mcp";
+		expect(canonicalOAuthResource(catalogUrl)).toBe(prmResource);
+		expect(canonicalOAuthResource(prmResource)).toBe(prmResource);
+		expect(canonicalOAuthResource(catalogUrl)).toBe(canonicalOAuthResource(prmResource));
+		expect(canonicalOAuthResource("HTTPS://API.GitHubCopilot.com:443/mcp/#section")).toBe(prmResource);
+		expect(canonicalOAuthResource("https://mcp.stripe.com")).toBe("https://mcp.stripe.com/");
+		expect(canonicalOAuthResource("https://mcp.stripe.com/")).toBe("https://mcp.stripe.com/");
+		expect(canonicalOAuthResource("https://mcp.vercel.com/")).toBe("https://mcp.vercel.com/");
 	});
 
 	it.each([undefined, ["plain"]])("rejects unverified S256 support: %s", async (methods) => {

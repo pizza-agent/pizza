@@ -17,6 +17,7 @@ import {
 	type OAuthCallbackPage,
 	type OAuthCallbackIssuer,
 	OAuthCallbackServer,
+	canonicalOAuthResource,
 	clientMetadataBaseUrl,
 	clientMetadataDocumentUrl,
 	oauthCallbackId,
@@ -586,7 +587,7 @@ export async function signInMcpServer(options: {
 			const provider = createProvider(serverUrl, store, settings, FALLBACK_REDIRECT_URL, () => {});
 			await provider.saveTokens(tokens, { kind: "device", binding: {
 				issuer: settings.authorizationServerMetadata.issuer, clientId: settings.clientId,
-				resource: new URL(serverUrl).href, registrationMethod: "pre-registered",
+				resource: canonicalOAuthResource(serverUrl), registrationMethod: "pre-registered",
 			} });
 			return;
 		} catch (error) {

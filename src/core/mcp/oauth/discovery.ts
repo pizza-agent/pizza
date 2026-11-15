@@ -242,6 +242,19 @@ export function resourceUrlFromServerUrl(value: string | URL): URL {
 	return url;
 }
 
+/** Identity of an OAuth resource binding.
+ *  `URL.href` applies host-case, default-port, and hash rules. A trailing slash
+ *  on a non-root path is not significant, so a catalog URL of `.../mcp/` matches
+ *  protected-resource metadata of `.../mcp`. Root resources stay `URL.href`
+ *  (`https://example.com` and `https://example.com/` are the same).
+ *  Token requests still send the advertised resource string; this is only the binding key.
+ */
+export function canonicalOAuthResource(value: string | URL): string {
+	const url = resourceUrlFromServerUrl(value);
+	if (url.pathname.length > 1 && url.pathname.endsWith("/")) url.pathname = url.pathname.replace(/\/+$/, "");
+	return url.href;
+}
+
 export function selectResource(serverUrl: string | URL, metadata?: OAuthProtectedResourceMetadata): string | undefined {
 	if (!metadata) return undefined;
 	const requested = resourceUrlFromServerUrl(serverUrl);

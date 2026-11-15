@@ -2,6 +2,7 @@ import type { AuthProvider, McpFetch, UnauthorizedContext } from "../auth-provid
 import { validateAuthorizationParams } from "./authorization-params.js";
 import { isObject } from "../protocol/jsonrpc.js";
 import {
+	canonicalOAuthResource,
 	discoverOAuthServerInfo,
 	parseWwwAuthenticate,
 	resourceUrlFromServerUrl,
@@ -314,7 +315,8 @@ export function stepUpScope(granted: string | undefined, challenged: string | un
 }
 
 function sameBinding(left: OAuthCredentialBinding | undefined, right: OAuthCredentialBinding): boolean {
-	return left?.issuer === right.issuer && left.clientId === right.clientId && left.resource === right.resource;
+	return left?.issuer === right.issuer && left.clientId === right.clientId
+		&& canonicalOAuthResource(left.resource) === canonicalOAuthResource(right.resource);
 }
 
 async function requestTokens(provider: OAuthClientProvider, context: OAuthTokenSaveContext, request: () => Promise<OAuthTokens>): Promise<OAuthTokens> {
@@ -360,8 +362,12 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 	});
 	const metadata = discovered.authorizationServerMetadata;
 	if (!metadata) throw new Error("OAuth authorization server metadata not found; configure oauth.authServerMetadataUrl or oauth.authorizationServerMetadata");
-	const bindingResource = selectResource(options.serverUrl, discovered.resourceMetadata) ?? resourceUrlFromServerUrl(options.serverUrl).href;
-	const resource = options.resourceIndicator === false ? undefined : bindingResource;
+	// Compare and store one canonical resource. A device login used to persist the
+	// catalog URL (`.../mcp/`) while refresh reads PRM (`.../mcp`) and rejected the
+	// binding before refreshing. The token request still sends the advertised string.
+	const advertisedResource = selectResource(options.serverUrl, discovered.resourceMetadata) ?? resourceUrlFromServerUrl(options.serverUrl).href;
+	const bindingResource = canonicalOAuthResource(advertisedResource);
+	const resource = options.resourceIndicator === false ? undefined : advertisedResource;
 	const scope = options.scope || discovered.resourceMetadata?.scopes_supported?.join(" ") || provider.clientMetadata.scope;
 	let client = await provider.clientInformation();
 	const previous = await provider.credentialBinding();
