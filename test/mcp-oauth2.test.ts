@@ -308,9 +308,9 @@ describe("OAuth discovery and capability validation", () => {
 		expect(fetch).toHaveBeenCalledTimes(1);
 	});
 
-	it("compares metadata issuers exactly, including trailing slashes", async () => {
-		const api = fixture(); api.metadata.issuer += "/";
-		await expect(discoverAuthorizationServerMetadata("https://auth.example")).rejects.toThrow("issuer mismatch");
+	it.each(["https://auth.example/", "https://auth.example"])("tolerates a trailing slash in metadata issuer comparison: %s", async (issuer) => {
+		const api = fixture(); api.metadata.issuer = issuer;
+		await expect(discoverAuthorizationServerMetadata("https://auth.example")).resolves.toMatchObject({ issuer });
 	});
 
 	it.each([undefined, ["plain"]])("rejects unverified S256 support: %s", async (methods) => {

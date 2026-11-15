@@ -14,6 +14,17 @@ export interface GoogleApiService {
 	note?: string;
 }
 const scope = (...names: string[]) => names.map(name => `https://www.googleapis.com/auth/${name}`);
+/** Official Workspace MCP preview resource → allowed scopes, for saved-config compatibility (broker allowlist and legacy catalog entries). */
+export const LEGACY_GOOGLE_WORKSPACE_RESOURCES = {
+	"https://gmailmcp.googleapis.com/mcp/v1": scope("gmail.readonly", "gmail.compose"),
+	"https://drivemcp.googleapis.com/mcp/v1": scope("drive.readonly", "drive.file"),
+	"https://docsmcp.googleapis.com/mcp/v1": scope("drive.readonly", "drive.file", "documents.readonly", "documents"),
+	"https://sheetsmcp.googleapis.com/mcp/v1": scope("drive.readonly", "drive.file", "spreadsheets.readonly", "spreadsheets"),
+	"https://slidesmcp.googleapis.com/mcp/v1": scope("drive.readonly", "drive.file", "presentations.readonly", "presentations"),
+	"https://calendarmcp.googleapis.com/mcp/v1": scope("calendar.calendarlist.readonly", "calendar.events.freebusy", "calendar.events.readonly"),
+	"https://chatmcp.googleapis.com/mcp/v1": scope("chat.spaces.readonly", "chat.memberships.readonly", "chat.messages.readonly", "chat.messages.create", "chat.users.readstate", "chat.users.spacesettings"),
+	"https://people.googleapis.com/mcp/v1": scope("directory.readonly", "userinfo.profile", "contacts.readonly"),
+} as const;
 export const GOOGLE_API_SERVICES: readonly GoogleApiService[] = [
 	{ product: "gmail", name: "gmail", adapter: "gmail", resource: "https://gmail.googleapis.com/gmail/v1/users/me",
 		description: "Search emails, read conversations, and prepare drafts and replies.", docsUrl: "https://developers.google.com/workspace/gmail/api/guides",

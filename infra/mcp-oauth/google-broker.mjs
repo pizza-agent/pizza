@@ -1,5 +1,4 @@
-import { LEGACY_GOOGLE_WORKSPACE_CONNECTORS } from "../../src/builtin-extensions/connectors/catalog.ts";
-import { GOOGLE_API_SERVICES, PIZZA_GOOGLE_BROKER_CLIENT_ID, PIZZA_GOOGLE_BROKER_ISSUER } from "../../src/builtin-extensions/connectors/google-services.ts";
+import { GOOGLE_API_SERVICES, LEGACY_GOOGLE_WORKSPACE_RESOURCES, PIZZA_GOOGLE_BROKER_CLIENT_ID, PIZZA_GOOGLE_BROKER_ISSUER } from "../../src/builtin-extensions/connectors/google-services.ts";
 
 const ISSUER = PIZZA_GOOGLE_BROKER_ISSUER;
 const CALLBACK = `${ISSUER}/callback`;
@@ -11,7 +10,7 @@ const GRANT_IDLE = 180 * 24 * 60 * 60_000;
 const encoder = new TextEncoder();
 const resources = new Map([
 	...GOOGLE_API_SERVICES.map(service => [service.resource, service.scopes]),
-	...LEGACY_GOOGLE_WORKSPACE_CONNECTORS.map(entry => [String(entry.config.url), String(entry.config.oauth.scope).split(/\s+/)]),
+	...Object.entries(LEGACY_GOOGLE_WORKSPACE_RESOURCES),
 ]);
 const headers = { "Cache-Control": "no-store", Pragma: "no-cache", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'" };
 const json = (value, status = 200, extra = {}) => Response.json(value, { status, headers: { ...headers, ...extra } });

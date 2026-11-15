@@ -170,13 +170,15 @@ export async function discoverAuthorizationServerMetadata(
 		const metadata = parseAuthorizationServerMetadata(await response.json());
 		if (!options.skipIssuerValidation) {
 			const expected = String(authorizationServerUrl);
-			if (metadata.issuer !== expected) throw new OAuthIssuerMismatchError(expected, metadata.issuer);
+			// Tolerate a trailing slash: several real issuers advertise one. The
+			// RFC 9207 authorization-response iss check stays exact elsewhere.
+			const trim = (value: string) => (value.endsWith("/") ? value.slice(0, -1) : value);
+			if (trim(metadata.issuer) !== trim(expected)) throw new OAuthIssuerMismatchError(expected, metadata.issuer);
 		}
 		return metadata;
 	}
 	return undefined;
 }
-
 export async function discoverOAuthServerInfo(
 	serverUrl: string | URL,
 	options: {
