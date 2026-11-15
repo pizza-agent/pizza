@@ -30,6 +30,12 @@ export {
 
 export { ensureGateway, resolveGatewaySocket } from "./gateway-lifecycle.js";
 export { readGatewayOwner, type GatewayLockInfo } from "./gateway-lock.js";
+export {
+	GatewayWatchdog,
+	type GatewayWatchdogOptions,
+	type WatchdogAlert,
+	type WatchdogAlertKind,
+} from "./watchdog.js";
 
 export {
 	type GatewayRequest,

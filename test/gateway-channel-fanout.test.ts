@@ -136,6 +136,49 @@ describe("gateway channel fan-out", () => {
 		expect(eventsB.some((e) => (e as { id?: string }).id === "r1")).toBe(false);
 	});
 
+	it("broadcasts watchdog alerts to attached channels", async () => {
+		const tmp = mkdtempSync(join(tmpdir(), "pizza-gw-watchdog-fanout-"));
+		dirs.push(tmp);
+		const socketPath = uniqueSocketPath();
+		const createAgent = (cwd: string): FakeAgent => {
+			let fake = fakes.get(cwd);
+			if (!fake) {
+				fake = new FakeAgent();
+				fakes.set(cwd, fake);
+			}
+			return fake;
+		};
+
+		const server = createGatewayServer({
+			socketPath,
+			agentDir: tmp,
+			agentIdleTimeout: 0,
+			watchdog: { tickMs: 20, streamIdleMs: 20 },
+			createAgent: createAgent as (cwd: string) => AgentConnection,
+		});
+		servers.push(server);
+		await server.start();
+
+		const workspace = join(tmp, "watchdog");
+		const client = new GatewayTransport({ socketPath });
+		transports.push(client);
+		await client.connect();
+		const events: Record<string, unknown>[] = [];
+		client.onEvent((event) => events.push(event));
+		await client.attach(workspace);
+
+		const fake = fakes.get(workspace);
+		expect(fake).toBeDefined();
+		fake!.emit({ type: "USER_MESSAGE", payload: { content: "hello" } });
+		fake!.emit({ type: "AGENT_TURN_START", payload: { message_count: 1 } });
+		fake!.emit({ type: "AGENT_MESSAGE_START", payload: { model: { provider: "test", model_id: "test" } } });
+		await new Promise((resolve) => setTimeout(resolve, 150));
+
+		const alert = events.find((event) => event.type === "WATCHDOG_ALERT");
+		expect(alert).toBeDefined();
+		expect(alert?.payload).toMatchObject({ kind: "stream_idle", workspace });
+	});
+
 	it("detach stops event delivery to that channel but not others", async () => {
 		const tmp = mkdtempSync(join(tmpdir(), "pizza-gw-fanout-"));
 		dirs.push(tmp);

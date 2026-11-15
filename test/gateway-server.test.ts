@@ -274,6 +274,99 @@ describe("gateway server", () => {
 		}
 	});
 
+	it("emits a watchdog alert from the forwarded agent event stream", async () => {
+		const socketPath = uniqueSocketPath();
+		sockets.push(socketPath);
+		const projectDir = mkdtempSync(join(tmpdir(), "pizza-gw-watchdog-"));
+		sockets.push(projectDir);
+
+		const listeners: Array<(event: unknown) => void> = [];
+		const fakeAgent: AgentConnection = {
+			async start() {},
+			async stop() {},
+			onEvent(listener) {
+				listeners.push(listener);
+				return () => {};
+			},
+			onExit: () => () => {},
+			async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+				return { id: (command as { id: string }).id, type: "response", command: (command as { type: string }).type, success: true } as unknown as RpcResponse;
+			},
+			async prompt() {},
+			async followUp() {},
+			async waitForIdle() {},
+			async getLastAssistantText() {
+				return "ok";
+			},
+		};
+
+		const alerts: Array<{ kind?: string; workspace?: string }> = [];
+		server = createGatewayServer({
+			socketPath,
+			agentDir: "/tmp/nonexistent-agent",
+			agentIdleTimeout: 0,
+			agentHealthCheckInterval: 0,
+			schedulerGuardInterval: 0,
+			watchdog: { tickMs: 20, streamIdleMs: 20, repeatedToolCalls: 2 },
+			createAgent: () => fakeAgent,
+		});
+		server.on("watchdog", (alert) => alerts.push(alert));
+		await server.start();
+
+		const response = JSON.parse(
+			await sendAndWait(socketPath, {
+				type: "tell",
+				id: "watchdog-tell",
+				to: projectDir,
+				message: "hello",
+				timeoutMs: 1000,
+			}),
+		);
+		expect(response.type).toBe("tell_result");
+		expect(listeners.length).toBeGreaterThan(0);
+
+		for (const listener of listeners) {
+			listener({ type: "USER_MESSAGE", payload: { content: "hello" } });
+			listener({ type: "AGENT_TURN_START", payload: { message_count: 1 } });
+			listener({
+				type: "AGENT_MESSAGE_START",
+				payload: { model: { provider: "test", model_id: "test" } },
+			});
+		}
+		await new Promise((resolve) => setTimeout(resolve, 120));
+
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]).toMatchObject({ kind: "stream_idle", workspace: projectDir });
+
+		// The same tool call across two LLM/tool rounds must still count within
+		// one user task. A per-turn reset would miss this sequence.
+		for (const listener of listeners) {
+			listener({ type: "AGENT_TURN_END", payload: { tool_calls_count: 0 } });
+			for (let i = 0; i < 2; i++) {
+				listener({ type: "AGENT_TURN_START", payload: { message_count: i + 2 } });
+				listener({
+					type: "TOOL_EXECUTION_START",
+					payload: { tool_call_id: `repeat_${i}`, tool_name: "read", arguments: { path: "a.ts" } },
+				});
+				listener({
+					type: "TOOL_EXECUTION_END",
+					payload: {
+						tool_call_id: `repeat_${i}`,
+						tool_name: "read",
+						result: [{ type: "text", text: "ok" }],
+						is_error: false,
+						duration_ms: 1,
+					},
+				});
+				listener({ type: "AGENT_TURN_END", payload: { tool_calls_count: 1 } });
+			}
+			listener({ type: "AGENT_TURN_COMPLETED", payload: { reason: "stop" } });
+		}
+
+		expect(alerts).toHaveLength(2);
+		expect(alerts[1]).toMatchObject({ kind: "repeated_tool_call", workspace: projectDir });
+	});
+
 	it("normalizes destination paths so path variants share ONE pool entry", async () => {
 		// /a/b, /a/b/ and /a/../a/b must resolve to the same agent — divergent
 		// pool keys would spawn a second agent for the same workspace and lose
