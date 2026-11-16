@@ -430,6 +430,19 @@
     "goodResponse": "回答不错",
     "badResponse": "回答不佳",
     "attachment": "附件",
+    "fileChanges": {
+      "title_one": "{{count}} 个文件变更",
+      "title_other": "{{count}} 个文件变更",
+      "create": "新增",
+      "modify": "修改",
+      "delete": "删除",
+      "expand": "查看 diff",
+      "collapse": "收起 diff",
+      "openInEditor": "在编辑器中打开",
+      "noDiff": "没有可用的 diff",
+      "openUnavailable": "无法打开该文件（已删除或位于远程工作区）",
+      "openFailed": "无法打开文件：{{error}}"
+    },
     "agentMessage": {
       "title": "跨工作区消息",
       "autoRelay": "自动回传",

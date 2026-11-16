@@ -13,7 +13,9 @@ import { Markdown } from "./Markdown";
 import { ConversationNav } from "./ConversationNav";
 import { Button, Badge } from "@/components/ui";
 import { FileAttachmentIcon } from "@/components/FileAttachmentIcon";
+import { FileChangeCard } from "@/components/FileChangeCard";
 import { formatFileSize } from "@/lib/file-format";
+import type { FileChange } from "@/lib/file-changes";
 import {
 	Terminal,
 	ChevronRight,
@@ -69,6 +71,8 @@ export interface TimelineItem {
 	toolDurationMs?: number;
 	/** Parsed cross-workspace agent message (rendered as a dedicated card). */
 	agentMessage?: AgentMessageInfo;
+	/** File mutations produced by this tool call, rendered as an inline change card. */
+	fileChanges?: FileChange[];
 }
 
 /** True if two Unix ms timestamps fall on the same calendar day (local time). */
@@ -392,6 +396,7 @@ const ToolCard = memo(function ToolCard({
 	onResolveApproval,
 	highlight,
 	highlightActive,
+	workspace,
 	/** True when the previous timeline row is also a tool card — tighten
 	 * the gap so a run of calls reads as one group. */
 	compact,
@@ -400,6 +405,7 @@ const ToolCard = memo(function ToolCard({
 	onResolveApproval?: (intentEventId: string, toolCallId: string, approved: boolean) => void;
 	highlight?: string;
 	highlightActive?: boolean;
+	workspace?: string | null;
 	compact?: boolean;
 }) {
 	const { t } = useTranslation();
@@ -601,6 +607,11 @@ const ToolCard = memo(function ToolCard({
 						{running && !item.toolResult && (
 							<span className="text-xs text-muted">{t("conversation.running")}</span>
 						)}
+					</div>
+				)}
+				{item.fileChanges && item.fileChanges.length > 0 && (
+					<div className="px-3.5 pb-3">
+						<FileChangeCard changes={item.fileChanges} workspace={workspace} />
 					</div>
 				)}
 			</div>
@@ -942,6 +953,7 @@ export function Conversation({
 	onResolveApproval,
 	searchQuery,
 	activeMatchId,
+	workspace,
 }: {
 	items: TimelineItem[];
 	interactions?: InteractionRecord[];
@@ -953,6 +965,8 @@ export function Conversation({
 	searchQuery?: string;
 	/** Item id of the currently-focused search match, for highlight + scroll. */
 	activeMatchId?: string | null;
+	/** Active workspace, used by file-change cards for "Open in editor". */
+	workspace?: string | null;
 }) {
 	const { t } = useTranslation();
 	// When a search is active we must render every item (otherwise matches in
@@ -1197,7 +1211,7 @@ export function Conversation({
 						const interaction = interactions.find(record => record.toolCallId === item.id);
 						content = interaction && onInteractionResponse
 							? <InteractionCard record={interaction} onRespond={onInteractionResponse} />
-							: <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} />;
+							: <ToolCard item={item} compact={visibleItems[i - 1]?.role === "tool"} onResolveApproval={onResolveApproval} highlight={searchQuery} highlightActive={isActive} workspace={workspace} />;
 					} else if (!item.streaming && !item.text && !item.thinking && !(item.images && item.images.length > 0)) {
 						// Skip empty assistant bubbles (turns that produced only tool calls).
 						return null;

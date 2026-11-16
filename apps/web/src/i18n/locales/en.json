@@ -429,6 +429,19 @@
     "goodResponse": "Good response",
     "badResponse": "Bad response",
     "attachment": "attachment",
+    "fileChanges": {
+      "title_one": "{{count}} file changed",
+      "title_other": "{{count}} files changed",
+      "create": "Added",
+      "modify": "Modified",
+      "delete": "Deleted",
+      "expand": "Show diff",
+      "collapse": "Hide diff",
+      "openInEditor": "Open in editor",
+      "noDiff": "No diff available",
+      "openUnavailable": "Cannot open this file (deleted or remote workspace)",
+      "openFailed": "Could not open file: {{error}}"
+    },
     "agentMessage": {
       "title": "Workspace message",
       "autoRelay": "Auto-relay",

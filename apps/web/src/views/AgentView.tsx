@@ -3,7 +3,14 @@ import { isMainGreetingText } from "@/lib/interaction-presentation";
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { sendCommandAwait, sendCommandRaw, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
+import { getEvents, sendCommandAwait, sendCommandRaw, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
+import {
+	fileChangeFromMutationEvent,
+	fileChangesForThread,
+	fileChangesFromToolEnd,
+	mergeFileChanges,
+	type FileChange,
+} from "@/lib/file-changes";
 import type { RpcSessionState, TypedEvent } from "@/lib/types";
 import type { MainGreetResult } from "@tomsun28/pizza-protocol";
 import { Conversation, type TimelineItem } from "@/components/Conversation";
@@ -50,6 +57,7 @@ const CHAT_RENDER_EVENT_TYPES = new Set<string>([
 	"TOOL_EXECUTION_START",
 	"TOOL_EXECUTION_UPDATE",
 	"TOOL_EXECUTION_END",
+	"FILE_MUTATION_APPLIED",
 	"SESSION_BOUNDARY_INFERRED",
 	"SCHEDULED_TASK_FIRED",
 	"COMPACTION_START",
@@ -289,6 +297,93 @@ function buildTimelineFromMessages(
 }
 
 /**
+ * Attach file mutations to their tool cards. `FILE_MUTATION_APPLIED` and
+ * `TOOL_EXECUTION_END.file_mutations` can both describe the same edit, so the
+ * merge is deduped by tool call + path + diff.
+ */
+function attachFileChanges(items: TimelineItem[], changes: FileChange[]): TimelineItem[] {
+	if (changes.length === 0) return items;
+	const byToolCall = new Map<string, FileChange[]>();
+	const withoutToolCall: FileChange[] = [];
+	for (const change of changes) {
+		if (change.toolCallId) {
+			const group = byToolCall.get(change.toolCallId) ?? [];
+			group.push(change);
+			byToolCall.set(change.toolCallId, group);
+		} else {
+			withoutToolCall.push(change);
+		}
+	}
+
+	let next = items;
+	for (const [toolCallId, group] of byToolCall) {
+		const index = next.findIndex((item) => item.id === toolCallId && item.role === "tool");
+		if (index >= 0) {
+			const current = next[index];
+			next = next.map((item, i) =>
+				i === index
+					? { ...current, fileChanges: mergeFileChanges(current.fileChanges, group) }
+					: item,
+			);
+		} else {
+			next = [
+				...next,
+				{
+					id: toolCallId,
+					role: "tool",
+					title: group[0]?.toolName ?? "file change",
+					text: "",
+					status: "DONE",
+					streaming: false,
+					toolName: group[0]?.toolName,
+					fileChanges: group,
+				},
+			];
+		}
+	}
+
+	if (withoutToolCall.length > 0) {
+		const existing = next.find((item) => item.id === "__file_changes");
+		if (existing) {
+			next = next.map((item) =>
+				item.id === "__file_changes"
+					? { ...item, fileChanges: mergeFileChanges(item.fileChanges, withoutToolCall) }
+					: item,
+			);
+		} else {
+			next = [
+				...next,
+				{
+					id: "__file_changes",
+					role: "tool",
+					title: "file change",
+					text: "",
+					status: "DONE",
+					streaming: false,
+					fileChanges: withoutToolCall,
+				},
+			];
+		}
+	}
+	return next;
+}
+
+/**
+ * Best-effort historical mutations for the current session, filtered to the
+ * active thread. Session event ranges can overlap with another thread's
+ * HEAD, so payload-only attachment would leak other conversations' paths.
+ */
+async function loadHistoricalFileChanges(threadId: string | undefined): Promise<FileChange[]> {
+	if (!threadId) return [];
+	try {
+		const events = await getEvents({ eventTypes: ["FILE_MUTATION_APPLIED"], limit: 1000, sessionScoped: true });
+		return fileChangesForThread(events, threadId);
+	} catch {
+		return [];
+	}
+}
+
+/**
  * Does a timeline item contain the (case-insensitive) search query in any of
  * its textual fields? Used to build the match list for the chat search bar.
  */
@@ -300,6 +395,7 @@ function itemMatchesQuery(item: TimelineItem, query: string): boolean {
 		item.toolName,
 		item.toolArgs,
 		item.toolResult,
+		...(item.fileChanges?.map((change) => change.path) ?? []),
 	].some((f) => textMatches(f, query));
 }
 
@@ -438,6 +534,9 @@ export default function AgentView({
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
+				const historicalChanges = await loadHistoricalFileChanges(stateRef.current?.threadId);
+				if (!isCurrent()) return;
+				if (historicalChanges.length > 0) history = attachFileChanges(history, historicalChanges);
 				// Mid-turn reload (session jump/fork/scheduled completion):
 				// persisted history has no trace of an in-flight message, so
 				// append a streaming placeholder when the agent is still
@@ -509,6 +608,9 @@ export default function AgentView({
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
+				const historicalChanges = await loadHistoricalFileChanges(stateRef.current?.threadId);
+				if (cancelled || generation !== historyGenerationRef.current) return;
+				if (historicalChanges.length > 0) history = attachFileChanges(history, historicalChanges);
 				// The agent may be mid-turn while we load history (first visit
 				// to a running workspace, or webview reload). Persisted history
 				// has no trace of the in-flight message — append a streaming
@@ -982,6 +1084,7 @@ export default function AgentView({
 				const resultImages = result ? result.flatMap((r) => (r.type === "image" ? messageImages({ content: [r] }) : [])) : [];
 				const isError = payload.is_error === true;
 				const durationMs = typeof payload.duration_ms === "number" ? payload.duration_ms : undefined;
+				const fileChanges = fileChangesFromToolEnd(payload);
 				updateItems((prev) =>
 					prev.map((it) =>
 						it.id === toolCallId && it.role === "tool"
@@ -992,11 +1095,19 @@ export default function AgentView({
 									streaming: false,
 									toolResult: resultText || it.toolResult,
 									...(resultImages.length > 0 ? { toolImages: resultImages } : {}),
+									...(fileChanges.length > 0
+										? { fileChanges: mergeFileChanges(it.fileChanges, fileChanges) }
+										: {}),
 									isError,
 								}
 							: it,
 					),
 				);
+				break;
+			}
+			case "FILE_MUTATION_APPLIED": {
+				const change = fileChangeFromMutationEvent(event.payload);
+				if (change) updateItems((prev) => attachFileChanges(prev, [change]));
 				break;
 			}
 			case "COMPACTION_START": {
@@ -1530,6 +1641,7 @@ export default function AgentView({
 					onResolveApproval={handleResolveApproval}
 					searchQuery={activeQuery}
 					activeMatchId={activeMatchId}
+					workspace={workspace}
 				/>
 				)}
 			</div>

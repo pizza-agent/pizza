@@ -45,8 +45,20 @@ function createMockToolRegistry(): ToolRegistry {
 			content: [{ type: "text", text: `Edited ${args.path}` }],
 			is_error: false,
 			file_mutations: [{ path: args.path as string, operation: "modify" }],
+			// Mirrors the real cli `_edit` result: the diff lives in the
+			// command's own details rather than in file_mutations.
+			details: {
+				command: {
+					source: "builtin",
+					name: "_edit",
+					args: { path: args.path },
+					details: { diff: "@@ -1 +1 @@\n-old\n+new", firstChangedLine: 1 },
+				},
+			},
 		}),
-		getMetadata: () => ({ name: "edit", category: "file_write" as const, defaultRisk: "moderate" as const }),
+		// Keep this mock safe so the integration test exercises the mutation
+		// event path without a UI approval round-trip.
+		getMetadata: () => ({ name: "edit", category: "file_read" as const, defaultRisk: "safe" as const }),
 	});
 
 	return {
@@ -213,7 +225,7 @@ describe("Headless Integration", () => {
 	describe("Reactor End-to-End", () => {
 		it("processes user message through full reactor cycle", async () => {
 			const toolRegistry = createMockToolRegistry();
-			const classifier = new IntentClassifier();
+			const classifier = new IntentClassifier({ require_approval_unknown: false });
 			const runtimeAdapter = createMockRuntimeAdapter(toolRegistry);
 
 			// Mock LLM that returns a tool call on first call, then stops
@@ -225,7 +237,7 @@ describe("Headless Integration", () => {
 						return {
 							content: [
 								{ type: "text" as const, text: "Let me read the file" },
-								{ type: "tool_call" as const, id: "tc_1", name: "read", arguments: { path: "src/main.ts" } },
+								{ type: "tool_call" as const, id: "tc_1", name: "edit", arguments: { path: "src/main.ts" } },
 							],
 							stopReason: "tool_use" as const,
 							provider: "test",
@@ -282,6 +294,16 @@ describe("Headless Integration", () => {
 
 			// Verify event flow happened
 			const types = collected.map((e) => e.type);
+			const mutations = store.query({ types: ["FILE_MUTATION_APPLIED"] });
+			expect(mutations).toHaveLength(1);
+			expect(mutations[0].payload).toMatchObject({
+				path: "src/main.ts",
+				operation: "modify",
+				diff: "@@ -1 +1 @@\n-old\n+new",
+			});
+			const toolEnd = store.query({ types: ["TOOL_EXECUTION_END"] })[0];
+			expect((toolEnd.payload as { file_mutations?: Array<{ diff?: string }> }).file_mutations?.[0]?.diff)
+				.toBe("@@ -1 +1 @@\n-old\n+new");
 			expect(types).toContain("USER_MESSAGE");
 			expect(types).toContain("LLM_CALL_REQUESTED");
 			expect(types).toContain("AGENT_MESSAGE_END");
