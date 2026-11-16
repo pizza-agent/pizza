@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { getEvents, sendCommandAwait, sendCommandRaw, subscribeEvents, subscribeSidecarExit } from "@/lib/transport";
 import {
 	fileChangeFromMutationEvent,
+	fileChangesForThread,
 	fileChangesFromToolEnd,
 	mergeFileChanges,
 	type FileChange,
@@ -367,13 +368,16 @@ function attachFileChanges(items: TimelineItem[], changes: FileChange[]): Timeli
 	return next;
 }
 
-/** Best-effort historical mutations for the current session. */
-async function loadHistoricalFileChanges(): Promise<FileChange[]> {
+/**
+ * Best-effort historical mutations for the current session, filtered to the
+ * active thread. Session event ranges can overlap with another thread's
+ * HEAD, so payload-only attachment would leak other conversations' paths.
+ */
+async function loadHistoricalFileChanges(threadId: string | undefined): Promise<FileChange[]> {
+	if (!threadId) return [];
 	try {
 		const events = await getEvents({ eventTypes: ["FILE_MUTATION_APPLIED"], limit: 1000, sessionScoped: true });
-		return events
-			.map((event) => fileChangeFromMutationEvent(event.payload))
-			.filter((change): change is FileChange => change !== null);
+		return fileChangesForThread(events, threadId);
 	} catch {
 		return [];
 	}
@@ -530,7 +534,7 @@ export default function AgentView({
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
-				const historicalChanges = await loadHistoricalFileChanges();
+				const historicalChanges = await loadHistoricalFileChanges(stateRef.current?.threadId);
 				if (!isCurrent()) return;
 				if (historicalChanges.length > 0) history = attachFileChanges(history, historicalChanges);
 				// Mid-turn reload (session jump/fork/scheduled completion):
@@ -604,7 +608,7 @@ export default function AgentView({
 				const data = (r as unknown as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
 				const messages = (data?.messages as Array<Record<string, unknown>> | undefined) ?? [];
 				let history = buildTimelineFromMessages(messages, tRef.current);
-				const historicalChanges = await loadHistoricalFileChanges();
+				const historicalChanges = await loadHistoricalFileChanges(stateRef.current?.threadId);
 				if (cancelled || generation !== historyGenerationRef.current) return;
 				if (historicalChanges.length > 0) history = attachFileChanges(history, historicalChanges);
 				// The agent may be mid-turn while we load history (first visit

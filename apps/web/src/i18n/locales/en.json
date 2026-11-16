@@ -438,7 +438,9 @@
       "expand": "Show diff",
       "collapse": "Hide diff",
       "openInEditor": "Open in editor",
-      "noDiff": "No diff available"
+      "noDiff": "No diff available",
+      "openUnavailable": "Cannot open this file (deleted or remote workspace)",
+      "openFailed": "Could not open file: {{error}}"
     },
     "agentMessage": {
       "title": "Workspace message",

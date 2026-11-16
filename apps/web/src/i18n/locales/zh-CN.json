@@ -439,7 +439,9 @@
       "expand": "查看 diff",
       "collapse": "收起 diff",
       "openInEditor": "在编辑器中打开",
-      "noDiff": "没有可用的 diff"
+      "noDiff": "没有可用的 diff",
+      "openUnavailable": "无法打开该文件（已删除或位于远程工作区）",
+      "openFailed": "无法打开文件：{{error}}"
     },
     "agentMessage": {
       "title": "跨工作区消息",

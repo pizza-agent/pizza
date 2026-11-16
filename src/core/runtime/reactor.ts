@@ -34,6 +34,7 @@
  *   onCompactionRequested  — compaction orchestration
  */
 
+import { fileMutationDiff } from "./file-mutation-diff.js";
 import { compactWithDeadline } from "./compaction-deadline.js";
 import { isDeepStrictEqual } from "node:util";
 
@@ -1287,7 +1288,10 @@ export class Reactor {
 				details: result.details,
 				is_error: result.is_error,
 				duration_ms: startTime !== undefined ? Date.now() - startTime : 0,
-				file_mutations: result.file_mutations,
+				file_mutations: result.file_mutations?.map((mutation) => ({
+					...mutation,
+					...(mutation.diff ? {} : { diff: fileMutationDiff(result.details, mutation.path) }),
+				})),
 			},
 			caused_by: causedBy,
 		});
@@ -1335,7 +1339,7 @@ export class Reactor {
 					payload: {
 						path: mutation.path,
 						operation: mutation.operation,
-						diff: mutation.diff,
+						diff: mutation.diff ?? fileMutationDiff(payload.details, mutation.path),
 						tool_name: payload.tool_name,
 						tool_call_id: payload.tool_call_id,
 					},

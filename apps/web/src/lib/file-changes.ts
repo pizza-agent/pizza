@@ -15,6 +15,7 @@ export interface FileChange {
 	operation: FileChangeOperation;
 	/** Unified diff, when the runtime provided one. */
 	diff?: string;
+	/** Undefined when the runtime did not provide a diff; do not render +0 −0. */
 	additions?: number;
 	deletions?: number;
 	/** Tool call that produced the change, for attaching it to a tool card. */
@@ -51,35 +52,28 @@ function finiteNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-/** Count unified-diff additions/deletions, excluding file headers. */
+/** Count unified-diff additions/deletions inside hunks. */
 export function countDiffStats(diff: string | undefined): { additions: number; deletions: number } {
 	let additions = 0;
 	let deletions = 0;
 	if (!diff) return { additions, deletions };
+	let inHunk = false;
 	for (const line of diff.split("\n")) {
-		if (line.startsWith("+++") || line.startsWith("---")) continue;
+		if (line.startsWith("diff --git ")) {
+			inHunk = false;
+			continue;
+		}
+		if (line.startsWith("@@")) {
+			inHunk = true;
+			continue;
+		}
+		if (!inHunk) continue;
+		// A hunk line is content even when it begins with "+++" (adding `++i`)
+		// or "---" (removing `--x`). Only the pre-hunk file headers are excluded.
 		if (line.startsWith("+")) additions++;
 		else if (line.startsWith("-")) deletions++;
 	}
 	return { additions, deletions };
-}
-
-function hashText(text: string): string {
-	let hash = 0x811c9dc5;
-	for (let i = 0; i < text.length; i++) {
-		hash ^= text.charCodeAt(i);
-		hash = Math.imul(hash, 0x01000193);
-	}
-	return (hash >>> 0).toString(16);
-}
-
-function changeKey(change: FileChange): string {
-	return [
-		change.toolCallId ?? "",
-		change.path,
-		change.operation,
-		change.diff ? hashText(change.diff) : `${change.additions ?? ""}:${change.deletions ?? ""}`,
-	].join("|");
 }
 
 /** Normalize one raw mutation object from a tool result or event payload. */
@@ -91,7 +85,9 @@ export function parseFileChange(raw: unknown, fallbackToolCallId?: string, fallb
 	const path = normalizePath(mutation.path);
 	if (!path) return null;
 	const diff = typeof mutation.diff === "string" && mutation.diff.length > 0 ? mutation.diff : undefined;
-	const counted = countDiffStats(diff);
+	const counted = diff ? countDiffStats(diff) : undefined;
+	const additions = finiteNumber(mutation.additions) ?? counted?.additions;
+	const deletions = finiteNumber(mutation.deletions) ?? counted?.deletions;
 	const toolCallIdRaw =
 		source.tool_call_id ?? source.toolCallId ?? mutation.tool_call_id ?? mutation.toolCallId ?? fallbackToolCallId;
 	const toolNameRaw =
@@ -100,8 +96,8 @@ export function parseFileChange(raw: unknown, fallbackToolCallId?: string, fallb
 		path,
 		operation: normalizeOperation(mutation.operation),
 		...(diff ? { diff } : {}),
-		additions: finiteNumber(mutation.additions) ?? counted.additions,
-		deletions: finiteNumber(mutation.deletions) ?? counted.deletions,
+		...(additions !== undefined ? { additions } : {}),
+		...(deletions !== undefined ? { deletions } : {}),
 		...(typeof toolCallIdRaw === "string" && toolCallIdRaw.length > 0 ? { toolCallId: toolCallIdRaw } : {}),
 		...(typeof toolNameRaw === "string" && toolNameRaw.length > 0 ? { toolName: toolNameRaw } : {}),
 	};
@@ -124,15 +120,56 @@ export function fileChangeFromMutationEvent(payload: unknown): FileChange | null
 	return parseFileChange(payload);
 }
 
-/** Merge new changes, dropping exact duplicates (payload + event can both carry one). */
+/** Identity shared by a tool-end mutation and its corresponding applied event. */
+function changeIdentity(change: FileChange): string {
+	return `${change.toolCallId ?? ""}|${change.path}|${change.operation}`;
+}
+
+/**
+ * Merge new changes from both runtime paths.
+ *
+ * `TOOL_EXECUTION_END.file_mutations` may carry only path/operation while the
+ * matching `FILE_MUTATION_APPLIED` also carries the diff. Merge those into one
+ * richer card; keep genuinely different diffs as separate edits.
+ */
 export function mergeFileChanges(existing: FileChange[] | undefined, incoming: FileChange[]): FileChange[] {
 	const out = existing ? [...existing] : [];
-	const seen = new Set(out.map(changeKey));
 	for (const change of incoming) {
-		const key = changeKey(change);
-		if (seen.has(key)) continue;
-		seen.add(key);
-		out.push(change);
+		const index = out.findIndex((current) => changeIdentity(current) === changeIdentity(change));
+		if (index < 0) {
+			out.push(change);
+			continue;
+		}
+		const current = out[index];
+		if (current.diff && change.diff && current.diff !== change.diff) {
+			out.push(change);
+			continue;
+		}
+		if (!current.diff && change.diff) {
+			out[index] = {
+				...current,
+				...change,
+				additions: change.additions ?? current.additions,
+				deletions: change.deletions ?? current.deletions,
+			};
+		} else {
+			out[index] = {
+				...current,
+				additions: current.additions ?? change.additions,
+				deletions: current.deletions ?? change.deletions,
+			};
+		}
 	}
 	return out;
+}
+
+/** Select mutation events belonging to one thread before attaching them to history. */
+export function fileChangesForThread(
+	events: Array<{ thread_id?: string; payload: unknown }>,
+	threadId: string,
+): FileChange[] {
+	return events
+		.filter((event) => event.thread_id === threadId)
+		.map((event) => fileChangeFromMutationEvent(event.payload))
+		.filter((change): change is FileChange => change !== null);
 }

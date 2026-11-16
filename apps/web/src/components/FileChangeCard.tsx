@@ -4,7 +4,7 @@ import { ChevronRight, ExternalLink, FileDiff, FileMinus, FilePen, FilePlus } fr
 import { DiffViewer } from "./DiffViewer";
 import { openInEditor } from "@/lib/transport";
 import { countDiffStats, type FileChange } from "@/lib/file-changes";
-import { cn } from "@/lib/utils";
+import { cn, isRemoteWorkspaceKey } from "@/lib/utils";
 
 const OPERATION_ICON = {
 	create: FilePlus,
@@ -42,6 +42,7 @@ export function FileChangeCard({
 }) {
 	const { t } = useTranslation();
 	const [expanded, setExpanded] = useState<string | null>(null);
+	const [actionError, setActionError] = useState<{ path: string; message: string } | null>(null);
 	if (changes.length === 0) return null;
 
 	return (
@@ -51,13 +52,15 @@ export function FileChangeCard({
 				<span>{t("conversation.fileChanges.title", { count: changes.length })}</span>
 			</div>
 			<div className="divide-y divide-border/50">
-				{changes.map((change) => {
-					const key = changeKey(change);
+				{changes.map((change, index) => {
+					const key = `${changeKey(change)}:${index}`;
 					const open = expanded === key;
 					const Icon = OPERATION_ICON[change.operation];
 					const stats = countDiffStats(change.diff);
+					const hasStats = change.additions !== undefined || change.deletions !== undefined;
 					const additions = change.additions ?? stats.additions;
 					const deletions = change.deletions ?? stats.deletions;
+					const canOpen = Boolean(workspace) && change.operation !== "delete" && !isRemoteWorkspaceKey(workspace ?? "");
 					return (
 						<div key={key}>
 							<div className="flex items-center gap-2 px-3 py-1.5">
@@ -72,23 +75,39 @@ export function FileChangeCard({
 									<span className="shrink-0 text-[10px] uppercase tracking-wide text-muted">
 										{operationLabel(change.operation, t)}
 									</span>
-									<span className="shrink-0 font-mono text-[10px] tabular-nums">
-										<span className="text-success">+{additions}</span>{" "}
-										<span className="text-danger">−{deletions}</span>
-									</span>
+									{hasStats && (
+										<span className="shrink-0 font-mono text-[10px] tabular-nums">
+											<span className="text-success">+{additions}</span>{" "}
+											<span className="text-danger">−{deletions}</span>
+										</span>
+									)}
 									<ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted transition-transform", open && "rotate-90")} />
 								</button>
 								{workspace && (
 									<button
 										type="button"
-										onClick={() => void openInEditor(workspace, change.path).catch(() => {})}
-										className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted/70 transition-colors hover:bg-surface-2 hover:text-fg"
-										title={t("conversation.fileChanges.openInEditor")}
+										disabled={!canOpen}
+										onClick={() => {
+											setActionError(null);
+											void openInEditor(workspace, change.path).catch((error) => {
+												setActionError({
+													path: change.path,
+													message: error instanceof Error ? error.message : String(error),
+												});
+											});
+										}}
+										className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted/70 transition-colors hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
+										title={canOpen ? t("conversation.fileChanges.openInEditor") : t("conversation.fileChanges.openUnavailable")}
 									>
 										<ExternalLink className="h-3.5 w-3.5" />
 									</button>
 								)}
 							</div>
+							{actionError?.path === change.path && (
+								<div className="px-3 pb-1 text-[10px] text-danger">
+									{t("conversation.fileChanges.openFailed", { error: actionError.message })}
+								</div>
+							)}
 							{open && (
 								<div className="max-h-80 overflow-auto border-t border-border/50 bg-bg">
 									{change.diff ? (

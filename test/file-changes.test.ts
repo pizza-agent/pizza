@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	countDiffStats,
 	fileChangeFromMutationEvent,
+	fileChangesForThread,
 	fileChangesFromToolEnd,
 	mergeFileChanges,
 	parseFileChange,
@@ -31,7 +32,7 @@ describe("file change helpers", () => {
 		const changes = fileChangesFromToolEnd({
 			tool_call_id: "call_1",
 			tool_name: "_write",
-			file_mutations: [{ path: "src/a.ts", operation: "create", diff: "+a" }],
+			file_mutations: [{ path: "src/a.ts", operation: "create", diff: "@@ -0,0 +1 @@\n+a" }],
 		});
 		expect(changes).toHaveLength(1);
 		expect(changes[0]).toMatchObject({
@@ -78,5 +79,50 @@ describe("file change helpers", () => {
 
 	it("returns zero stats for an empty diff", () => {
 		expect(countDiffStats(undefined)).toEqual({ additions: 0, deletions: 0 });
+	});
+
+	it("counts hunk content that begins with +++ or ---", () => {
+		const diff = "--- a/a.c\n+++ b/a.c\n@@ -1,2 +1,2 @@\n+++i;\n---j;\n context";
+		expect(countDiffStats(diff)).toEqual({ additions: 1, deletions: 1 });
+	});
+
+	it("leaves stats unknown for the real runtime payload without a diff", () => {
+		const changes = fileChangesFromToolEnd({
+			tool_call_id: "call_real",
+			tool_name: "cli",
+			file_mutations: [{ path: "src/real.ts", operation: "modify" }],
+		});
+		expect(changes).toHaveLength(1);
+		expect(changes[0].additions).toBeUndefined();
+		expect(changes[0].deletions).toBeUndefined();
+		expect(changes[0].diff).toBeUndefined();
+	});
+
+	it("merges a path-only tool-end mutation with its diff-bearing applied event", () => {
+		const fromTool = fileChangesFromToolEnd({
+			tool_call_id: "call_edit",
+			tool_name: "cli",
+			file_mutations: [{ path: "src/edit.ts", operation: "modify" }],
+		});
+		const fromEvent = fileChangeFromMutationEvent({
+			path: "src/edit.ts",
+			operation: "modify",
+			diff: "@@ -1 +1 @@\n-a\n+b",
+			tool_call_id: "call_edit",
+		});
+		expect(fromEvent).not.toBeNull();
+		const merged = mergeFileChanges(fromTool, [fromEvent!]);
+		expect(merged).toHaveLength(1);
+		expect(merged[0]).toMatchObject({ additions: 1, deletions: 1, diff: fromEvent!.diff });
+	});
+
+	it("filters historical mutations to the active thread", () => {
+		const events = [
+			{ thread_id: "thread_a", payload: { path: "src/a.ts", operation: "modify", tool_call_id: "a" } },
+			{ thread_id: "thread_b", payload: { path: "src/leak.ts", operation: "modify", tool_call_id: "b" } },
+		];
+		const changes = fileChangesForThread(events, "thread_a");
+		expect(changes).toHaveLength(1);
+		expect(changes[0].path).toBe("src/a.ts");
 	});
 });
