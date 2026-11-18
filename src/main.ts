@@ -415,12 +415,12 @@ async function createCliSessionSetup(options: {
 	return { services, diagnostics, sessionOptions, cliThinkingFromModel };
 }
 
-async function applyCliThinkingClampToFacade(created: CreateSessionFacadeResult, cliThinkingOverride: boolean): Promise<void> {
+export async function applyCliThinkingClampToFacade(created: CreateSessionFacadeResult, cliThinkingOverride: boolean): Promise<void> {
 	if (!created.model || !cliThinkingOverride) return;
 	let effectiveThinking = created.thinkingLevel;
 	if (!created.model.reasoning) {
 		effectiveThinking = "off";
-	} else if (effectiveThinking === "xhigh" && (await supportsXhigh(created.model))) {
+	} else if (effectiveThinking === "xhigh" && !(await supportsXhigh(created.model))) {
 		effectiveThinking = "high";
 	}
 	if (effectiveThinking !== created.thinkingLevel) {
