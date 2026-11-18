@@ -18,8 +18,8 @@ import {
 	collectElements,
 	desktopError,
 	DESKTOP_COMMAND_NAME,
+	argsWithSurface,
 	extractRefs,
-	isBrowserApp,
 	isBrowserPageRequest,
 	isMutating,
 	isRejectedCommand,
@@ -166,15 +166,24 @@ function screenGranted(envelope: DesktopEnvelope | undefined): boolean {
 	const permissions = envelope?.data?.permissions as { screen_recording?: { state?: string } } | undefined;
 	const direct = envelope?.data?.screen_recording as { state?: string } | undefined;
 	const state = direct?.state ?? permissions?.screen_recording?.state;
-	return state === "granted" || state === "not_required" || state === undefined;
+	return state === "granted" || state === "not_required";
 }
 
-async function readPermissions(cwd: string, signal: AbortSignal | undefined): Promise<PermissionCache> {
+type PermissionRead = PermissionCache | { missing: true; message: string };
+
+async function readPermissions(cwd: string, signal: AbortSignal | undefined): Promise<PermissionRead> {
 	if (permissionCache && Date.now() - permissionCache.at < PERMISSION_CACHE_MS && permissionCache.accessibility) {
 		return permissionCache;
 	}
 	const run = await runAgentDesktop(["permissions"], { cwd, signal, timeout: 20_000 });
 	const envelope = parseEnvelope(run.stdout);
+	if (!envelope) {
+		const detail = run.stderr.trim();
+		return {
+			missing: true,
+			message: `agent-desktop CLI is not installed or did not return JSON. Install it with /desktop install.${detail ? ` ${detail}` : ""}`,
+		};
+	}
 	const cache: PermissionCache = {
 		at: Date.now(),
 		accessibility: accessibilityGranted(envelope),
@@ -225,13 +234,23 @@ function present(envelope: DesktopEnvelope, command: string, secret: string | un
 	return JSON.stringify(body, null, 2);
 }
 
-function applyObservation(binding: DesktopThreadBinding, envelope: DesktopEnvelope): string | undefined {
+function surfaceName(args: readonly string[]): string | undefined {
+	for (let i = 0; i < args.length; i++) {
+		const token = args[i]!;
+		if (token === "--surface") return args[i + 1];
+		if (token.startsWith("--surface=")) return token.slice("--surface=".length);
+	}
+	return undefined;
+}
+
+function applyObservation(binding: DesktopThreadBinding, envelope: DesktopEnvelope, surface: string | undefined): string | undefined {
 	const data = envelope.data;
 	if (!data?.snapshot_id || typeof data.snapshot_id !== "string") return undefined;
 	const elements = collectElements(data.tree ?? data.matches ?? data.match);
 	binding.snapshotId = data.snapshot_id;
 	binding.spent = false;
 	binding.app = typeof data.app === "string" ? data.app : binding.app;
+	binding.surface = surface;
 	binding.elements = indexElements(elements);
 	return data.snapshot_id;
 }
@@ -334,6 +353,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			await updateDesktopSession(ctx.cwd, (record) => {
 				const binding = threadBinding(record, threadId);
 				binding.snapshotId = undefined;
+				binding.surface = undefined;
 				binding.elements = {};
 				binding.spent = false;
 				binding.generation += 1;
@@ -349,7 +369,8 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 		const threadId = threadIdFrom(ctx);
 		const current = loadDesktopSession(ctx.cwd);
 		const binding = current.threads[threadId];
-		if (isBrowserPageRequest(subcommand, params.args, binding?.app)) {
+		const requestArgs = argsWithSurface(params.args, binding?.surface);
+		if (isBrowserPageRequest(subcommand, requestArgs, binding?.app)) {
 			return blocked(
 				ctx,
 				subcommand,
@@ -361,6 +382,9 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 		const needsGrant = !["status", "permissions", "version", "skills", "help"].includes(subcommand);
 		if (needsGrant) {
 			const permissions = await readPermissions(ctx.cwd, signal);
+			if ("missing" in permissions) {
+				return blocked(ctx, subcommand, "CLI", permissions.message, "error");
+			}
 			if (!permissions.accessibility) {
 				const caveat = platformCaveat();
 				return blocked(
@@ -446,7 +470,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			return blocked(ctx, subcommand, "CLI", message, "error");
 		}
 
-		if ((subcommand === "snapshot" || subcommand === "find") && envelope.ok === true && isBrowserApp(typeof envelope.data?.app === "string" ? envelope.data.app : undefined)) {
+		if ((subcommand === "snapshot" || subcommand === "find") && envelope.ok === true && isBrowserPageRequest(subcommand, requestArgs, typeof envelope.data?.app === "string" ? envelope.data.app : undefined)) {
 			return blocked(
 				ctx,
 				subcommand,
@@ -466,7 +490,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			}
 			await updateDesktopSession(ctx.cwd, (record) => {
 				const next = threadBinding(record, threadId);
-				applyObservation(next, envelope!);
+				applyObservation(next, envelope!, surfaceName(requestArgs));
 			});
 		} else if (envelope.ok === true && isMutating(subcommand)) {
 			await updateDesktopSession(ctx.cwd, (record) => {
@@ -477,6 +501,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			await updateDesktopSession(ctx.cwd, (record) => {
 				const next = threadBinding(record, threadId);
 				next.snapshotId = undefined;
+				next.surface = undefined;
 				next.elements = {};
 				next.spent = false;
 			});
@@ -494,7 +519,14 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			session_id: sessionId,
 		};
 		audit(ctx, details);
-		return result(present(envelope, subcommand, secret, artifact), details);
+		let text = present(envelope, subcommand, secret, artifact);
+		const caveat = platformCaveat();
+		if (subcommand === "status" && caveat) {
+			const body = JSON.parse(text) as Record<string, unknown>;
+			body.platform_note = caveat;
+			text = JSON.stringify(body, null, 2);
+		}
+		return result(text, details);
 	},
 };
 

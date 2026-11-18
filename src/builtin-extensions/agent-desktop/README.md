@@ -67,3 +67,11 @@ Typed text and clipboard writes are stashed outside the event log. The log
 records a desensitized `DESKTOP_ACTION` (action, outcome, app, snapshot id,
 artifact path) and does not store the vendor envelope, passwords, cookies, or
 screenshot bytes.
+
+## Tests
+
+`test/agent-desktop-simulator.ts` is a fake agent-desktop CLI. It returns
+JSON envelopes, session ids, snapshot refs, and permission, stale, and
+session-ended errors. `test/agent-desktop.test.ts` drives `_desktop` through
+that simulator. It does not click a real desktop. A real macOS Accessibility
+session is still required before trusting live clicks, typing, or screenshots.

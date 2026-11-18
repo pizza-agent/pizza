@@ -251,6 +251,12 @@ function flagValue(args: readonly string[], name: string): string | undefined {
 	return undefined;
 }
 
+/** Carry a snapshot's surface onto a later ref action that does not repeat `--surface`. */
+export function argsWithSurface(args: readonly string[], surface: string | undefined): string[] {
+	if (!surface || flagValue(args, "surface")) return [...args];
+	return [...args, "--surface", surface];
+}
+
 /** Browser window content stays on `_browser`. Menu-bar and dock surfaces are not page content. */
 export function isBrowserPageRequest(subcommand: string, args: readonly string[], boundApp?: string): boolean {
 	if (NO_SESSION.has(subcommand) || subcommand === "launch" || subcommand === "list-apps" || subcommand === "list-windows" || subcommand === "close-app") {
@@ -506,14 +512,18 @@ export function redactEnvelope(value: unknown, secret?: string): unknown {
 	}
 	if (Array.isArray(value)) return value.map((item) => redactEnvelope(item, secret));
 	if (!value || typeof value !== "object") return value;
+	const source = value as Record<string, unknown>;
 	const out: Record<string, unknown> = {};
-	for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+	for (const [key, inner] of Object.entries(source)) {
 		if (key === "data" && typeof inner === "string" && inner.length > 256) continue;
 		if (typeof inner === "string" && SECRET_KEY.test(key)) {
 			out[key] = "[redacted]";
 			continue;
 		}
 		out[key] = redactEnvelope(inner, secret);
+	}
+	if (typeof out.name === "string" && SECRET_KEY.test(out.name) && typeof out.value === "string") {
+		out.value = "[redacted]";
 	}
 	return out;
 }

@@ -23,6 +23,8 @@ export interface DesktopThreadBinding {
 	snapshotId?: string;
 	spent: boolean;
 	app?: string;
+	/** Surface that produced the current snapshot, such as `menubar` or `dock`. */
+	surface?: string;
 	elements: Record<string, DesktopElementRecord>;
 }
 
