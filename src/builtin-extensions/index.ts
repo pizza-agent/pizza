@@ -33,6 +33,10 @@ import {
 } from "./computer-use/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 import { createInteractionExtension, INTERACTION_EXTENSION_ID } from "./interaction/index.js";
+import {
+	createProvenanceLensExtension,
+	PROVENANCE_LENS_EXTENSION_ID,
+} from "./provenance-lens/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -127,6 +131,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
+	},
+	{
+		id: PROVENANCE_LENS_EXTENSION_ID,
+		name: "provenance-lens",
+		description: "Explain why a file changed from the event causal chain (_why).",
+		factory: createProvenanceLensExtension,
 	},
 	{
 		id: MCP_EXTENSION_ID,
