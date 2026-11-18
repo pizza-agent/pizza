@@ -32,6 +32,7 @@ import {
 	runComputerUseInstall,
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
+import { createContextRouterExtension, CONTEXT_ROUTER_EXTENSION_ID } from "./context-router/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 import {
 	AGENT_DESKTOP_EXTENSION_ID,
@@ -154,6 +155,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
+	},
+	{
+		id: CONTEXT_ROUTER_EXTENSION_ID,
+		name: "context-router",
+		description: "Read-only GoalPins, recent-window, and path context selectors (_context).",
+		factory: createContextRouterExtension,
 	},
 	{
 		id: MCP_EXTENSION_ID,
