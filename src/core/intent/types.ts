@@ -34,6 +34,11 @@ export interface IntentClassification {
 	affected_files?: string[];
 	/** Human-readable description */
 	description: string;
+	/**
+	 * When true, confirmation is required even if safe mode is off and even
+	 * if the session has "always allowed" this category.
+	 */
+	force_approval?: boolean;
 }
 
 /**
@@ -47,6 +52,11 @@ export interface ToolCallIntent {
 	description?: string;
 	/** Approval gate for file_write: "edits" uses require_approval_edits (default: writes). */
 	gate?: "writes" | "edits";
+	/**
+	 * Require runtime confirmation even when safe mode is off. Used for
+	 * irreversible desktop actions (send, pay, delete, account changes).
+	 */
+	forceApproval?: boolean;
 }
 
 /** Structured command a tool call resolved to (cli: `_write` + parsed params). */

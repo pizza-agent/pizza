@@ -19,6 +19,8 @@ export interface ExecOptions {
 	cwd?: string;
 	/** Extra environment variables to merge into the login-shell environment. */
 	env?: NodeJS.ProcessEnv;
+	/** Write this string to stdin, then close it. Omit to leave stdin closed. */
+	input?: string;
 }
 
 /**
@@ -48,7 +50,7 @@ export async function execCommand(
 		const proc = spawn(command, args, {
 			cwd,
 			shell: false,
-			stdio: ["ignore", "pipe", "pipe"],
+			stdio: [options?.input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
 			windowsHide: true,
 			// Inherit the login-shell PATH so user-installed tools (homebrew, nvm,
 			// cargo, etc.) are found even when the agent was launched from a GUI
@@ -57,6 +59,13 @@ export async function execCommand(
 			// on the inherited PATH.
 			env: { ...getShellEnv(), ...options?.env },
 		});
+
+		if (options?.input !== undefined) {
+			proc.stdin?.on("error", () => {
+				// The child may exit before it reads stdin. The exit code still reports the outcome.
+			});
+			proc.stdin?.end(options.input);
+		}
 
 		let stdout = "";
 		let stderr = "";

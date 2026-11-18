@@ -19,6 +19,7 @@
 import chalk from "chalk";
 import { getAgentDir } from "./config.js";
 import { SettingsManager } from "./core/config/settings-manager.js";
+import { isOptInBuiltinExtension } from "./builtin-extensions/defaults.js";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions/index.js";
 import { getBuiltinSkillInfos, isBuiltinSkillDefaultEnabled, isBuiltinSkillId } from "./builtin-skills/index.js";
 
@@ -49,7 +50,8 @@ export async function handleBuiltinCommand(args: string[]): Promise<boolean> {
 				console.log(chalk.bold("Built-in extensions:"));
 				for (const ext of BUILTIN_EXTENSIONS) {
 					const state = disabled.has(ext.id) ? chalk.red("disabled") : chalk.green("enabled");
-					console.log(`  ${ext.id.padEnd(20)} ${state}`);
+					const optIn = isOptInBuiltinExtension(ext.id) ? chalk.dim(" (opt-in)") : "";
+					console.log(`  ${ext.id.padEnd(20)} ${state}${optIn}`);
 				}
 			}
 
