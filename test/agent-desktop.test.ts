@@ -104,9 +104,14 @@ describe("agent-desktop simulated CLI", () => {
 	function installStubBinary() {
 		const bin = join(root, "bin");
 		mkdirSync(bin, { recursive: true });
-		const file = join(bin, "agent-desktop");
-		writeFileSync(file, "#!/bin/sh\nexit 0\n");
-		chmodSync(file, 0o755);
+		if (process.platform === "win32") {
+			// findOnPath only probes PATHEXT names on Windows (.CMD, .EXE, …).
+			writeFileSync(join(bin, "agent-desktop.cmd"), "@echo off\r\nexit /b 0\r\n");
+		} else {
+			const file = join(bin, "agent-desktop");
+			writeFileSync(file, "#!/bin/sh\nexit 0\n");
+			chmodSync(file, 0o755);
+		}
 		process.env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
 	}
 
