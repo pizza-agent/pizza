@@ -29,6 +29,8 @@ import {
   executeWaitFor,
 } from "./backend/bridge.js";
 import { loadComputerUseConfig } from "./backend/config.js";
+import { recordAct } from "./capsules.js";
+import type { ActParams } from "./backend/contract.js";
 
 /**
  * The vendored macOS backend drives this helper app via a local socket.
@@ -467,6 +469,11 @@ export const computerUseBuiltinCommand: CliCommandDefinition = {
         content: [{ type: "text", text: statusText(ctx.cwd) }],
         details: undefined,
       };
+    }
+    if (subcommand === "act") {
+      // A failed selector inspection must never change the tool call's
+      // semantics; recordAct already treats inspect failures as best-effort.
+      await recordAct(ctx, rest as unknown as ActParams);
     }
     const executor = EXECUTORS[subcommand as keyof typeof EXECUTORS];
     if (!executor) {
