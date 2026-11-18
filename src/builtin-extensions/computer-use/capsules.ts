@@ -198,6 +198,16 @@ async function resolveExpect(
 	if (!expect) return undefined;
 	const { selector, scopeSelector, ...rest } = expect;
 	const resolved: UiCondition = { ...rest };
+	if (rest.ref && !selector) {
+		throw new Error(
+			`Capsule expect ref "${rest.ref}" has no selector; re-observe and re-record this capsule.`,
+		);
+	}
+	if (rest.scopeRef && !scopeSelector) {
+		throw new Error(
+			`Capsule expect scopeRef "${rest.scopeRef}" has no selector; re-observe and re-record this capsule.`,
+		);
+	}
 	if (selector) resolved.ref = await resolveSelector(ctx, stateId, selector, executors);
 	if (scopeSelector) resolved.scopeRef = await resolveSelector(ctx, stateId, scopeSelector, executors);
 	return resolved;
@@ -332,6 +342,11 @@ export async function playCapsule(
 		const actions: UiAction[] = [];
 		for (const action of step.actions) {
 			if (!action.selector) {
+				if (action.ref) {
+					throw new Error(
+						`Capsule step ${i + 1} has an unresolved ref "${action.ref}"; re-observe and re-record this capsule.`,
+					);
+				}
 				actions.push(action as UiAction);
 				continue;
 			}
