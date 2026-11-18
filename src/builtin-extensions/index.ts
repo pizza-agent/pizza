@@ -33,6 +33,10 @@ import {
 } from "./computer-use/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 import { createInteractionExtension, INTERACTION_EXTENSION_ID } from "./interaction/index.js";
+import {
+	createDesktopCapsulesExtension,
+	DESKTOP_CAPSULES_EXTENSION_ID,
+} from "./desktop-capsules/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -127,6 +131,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
+	},
+	{
+		id: DESKTOP_CAPSULES_EXTENSION_ID,
+		name: "desktop-capsules",
+		description: "Record and replay selector-based desktop workflows (_capsule).",
+		factory: createDesktopCapsulesExtension,
 	},
 	{
 		id: MCP_EXTENSION_ID,
