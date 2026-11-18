@@ -336,7 +336,8 @@ export async function playCapsule(
 				continue;
 			}
 			const ref = await resolveSelector(ctx, currentStateId, action.selector, executors);
-			actions.push({ ...(action as UiAction), ref });
+			const { selector: _selector, ...rest } = action;
+			actions.push({ ...(rest as UiAction), ref });
 		}
 		const expect = await resolveExpect(ctx, currentStateId, step.expect, executors);
 		const result = await executors.act(

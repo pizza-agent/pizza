@@ -12,6 +12,7 @@ import {
 	deleteCapsule,
 } from "../src/builtin-extensions/computer-use/capsules";
 import { capsuleCommand } from "../src/builtin-extensions/desktop-capsules/index";
+import { BUILTIN_EXTENSIONS } from "../src/builtin-extensions/index";
 import type { ExtensionContext } from "../src/core/extensions/types";
 import type { ActParams } from "../src/builtin-extensions/computer-use/backend/contract";
 
@@ -91,6 +92,10 @@ describe("desktop capsules", () => {
 		expect(played.finalStateId).toBe("state-2");
 		expect((actParams?.actions as Array<{ ref?: string }>)[0]?.ref).toBe("@e9");
 		expect(actParams?.expect).toMatchObject({ ref: "@e9", text: "Approved" });
+	});
+
+	it("is registered as a built-in extension", () => {
+		expect(BUILTIN_EXTENSIONS.some((extension) => extension.id === "desktop-capsules")).toBe(true);
 	});
 
 	it("parses capsule commands", () => {
