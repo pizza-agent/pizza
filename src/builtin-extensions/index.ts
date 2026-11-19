@@ -45,6 +45,10 @@ import {
 	runAgentDesktopUninstall,
 } from "./agent-desktop/index.js";
 import { createInteractionExtension, INTERACTION_EXTENSION_ID } from "./interaction/index.js";
+import {
+	createProvenanceLensExtension,
+	PROVENANCE_LENS_EXTENSION_ID,
+} from "./provenance-lens/index.js";
 
 /** Result of an install/uninstall lifecycle action. */
 export interface ExtensionLifecycleResult {
@@ -161,6 +165,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		name: "context-router",
 		description: "Read-only GoalPins, recent-window, and path context selectors (_context).",
 		factory: createContextRouterExtension,
+	},
+	{
+		id: PROVENANCE_LENS_EXTENSION_ID,
+		name: "provenance-lens",
+		description: "Explain why a file changed from the event causal chain (_why).",
+		factory: createProvenanceLensExtension,
 	},
 	{
 		id: MCP_EXTENSION_ID,
