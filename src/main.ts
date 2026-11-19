@@ -7,61 +7,72 @@
 
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { type Api, type ImageContent, type Model, getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai/compat";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "../packages/cli/args.js";
-import { processFileArguments } from "../packages/cli/file-processor.js";
-import { buildInitialMessage } from "../packages/cli/initial-message.js";
-import { listModels } from "../packages/cli/list-models.js";
 import { getAgentDir, getMainDir, getMainMemoryDir, getModelsPath, VERSION } from "./config.js";
-import {
-	acquireMainLock,
-	getMainLockPath,
-	initializeMainAgent,
-	isProcessAlive,
-	readPidLock,
-	type MainAgentLock,
-} from "./core/agent/main-agent.js";
-import {
-	type SessionServices,
-	type SessionDiagnostic,
-	createSessionServices,
-} from "./core/session/session-services.js";
-import { AuthStorage } from "./core/auth/auth-storage.js";
-import { exportFromFile } from "./core/export-html/index.js";
+import type { MainAgentLock } from "./core/agent/main-agent.js";
+import type { SessionServices, SessionDiagnostic } from "./core/session/session-services.js";
+import type { AuthStorage } from "./core/auth/auth-storage.js";
 import type { ExtensionFactory } from "./core/extensions/types.js";
 import type { ModelRegistry } from "./core/models/model-registry.js";
-import { resolveCliModel } from "./core/models/model-resolver.js";
 import { installCrashHandlers } from "./core/ops/crash-handlers.js";
 import { restoreStdout, takeOverStdout } from "./core/exec/output-guard.js";
-import type { CreateSessionFacadeOptions } from "./core/session/session-facade-factory.js";
+import type { CreateSessionFacadeOptions, CreateSessionFacadeResult } from "./core/session/session-facade-factory.js";
 import type { ToolsOptionEntry } from "./core/tools/index.js";
-import { createSessionFacade, type CreateSessionFacadeResult } from "./core/session/session-facade-factory.js";
-import { getAgentDirFromSessionDir, parseSessionRef } from "./core/session/session-ref.js";
-import { listWorkspaceSessions, listAllSessions, type SessionListInfo } from "./core/session/session-listing.js";
+import type { SessionListInfo } from "./core/session/session-listing.js";
 import { SettingsManager } from "./core/config/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/ops/timings.js";
-
-import {
-	InteractiveMode,
-	runFsRpcMode,
-	runGuiModeWithFacade,
-	runPrintModeWithFacade,
-	runRpcModeWithFacade,
-} from "./modes/index.js";
-import { runProviderProvisioningMode } from "./core/remote/provider-provisioning.js";
 import { initTheme, stopThemeWatcher } from "../packages/tui/theme/theme.js";
-import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
-import { handleBuiltinCommand } from "./builtin-cli.js";
-import { handleUpdateCommand } from "./update-cli.js";
-import { checkForUpdate, formatUpdateNotice } from "./core/ops/update-checker.js";
-import { handleGatewayCommand } from "./gateway-cli.js";
-import { handleAuthCommand } from "./auth-cli.js";
-import { handleSessionsCommand } from "./sessions-cli.js";
-import { handleMcpCliCommand } from "./builtin-extensions/mcp/cli.js";
 import { isLocalPath } from "./utils/paths.js";
 
-function supportsXhigh(model: Model<Api>): boolean {
+// ── Lazy module handles ─────────────────────────────────────────────────
+// Startup cost is dominated by linking the ESM graph. Heavy modules are
+// imported on demand so cheap invocations (`--version`, `--export`,
+// subcommands, gateway, fs-rpc) never pay for the session/TUI machinery.
+// Each helper memoizes its promise: dynamic import itself is already cached
+// by Node, but keeping the resolved binding avoids a second microtask hop.
+
+const lazy = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+	let p: Promise<T> | undefined;
+	return () => (p ??= load());
+};
+
+const loadSessionServices = lazy(() => import("./core/session/session-services.js"));
+const loadSessionFacadeFactory = lazy(() => import("./core/session/session-facade-factory.js"));
+const loadSessionListing = lazy(() => import("./core/session/session-listing.js"));
+const loadSessionRef = lazy(() => import("./core/session/session-ref.js"));
+const loadAuthStorage = lazy(() => import("./core/auth/auth-storage.js"));
+const loadModelResolver = lazy(() => import("./core/models/model-resolver.js"));
+const loadMainAgent = lazy(() => import("./core/agent/main-agent.js"));
+const loadFileProcessor = lazy(() => import("../packages/cli/file-processor.js"));
+const loadInitialMessage = lazy(() => import("../packages/cli/initial-message.js"));
+const loadExportHtml = lazy(() => import("./core/export-html/index.js"));
+const loadListModels = lazy(() => import("../packages/cli/list-models.js"));
+const loadUpdateChecker = lazy(() => import("./core/ops/update-checker.js"));
+const loadPiAiCompat = lazy(() => import("@earendil-works/pi-ai/compat"));
+
+const loadInteractiveMode = lazy(() => import("../packages/tui/interactive-mode.js"));
+const loadRpcMode = lazy(() => import("../packages/rpc/rpc-mode.js"));
+const loadGuiMode = lazy(() => import("../packages/http-bridge/server.js"));
+const loadPrintMode = lazy(() => import("./modes/print-mode.js"));
+const loadFsRpcMode = lazy(() => import("./modes/fs-rpc-mode.js"));
+const loadProviderProvisioning = lazy(() => import("./core/remote/provider-provisioning.js"));
+
+/** First-word subcommands handled by dedicated modules, loaded on demand. */
+const SUBCOMMAND_HANDLERS: Record<string, () => Promise<(args: string[]) => Promise<boolean>>> = {
+	plugin: async () => (await import("./package-manager-cli.js")).handlePackageCommand,
+	config: async () => (await import("./package-manager-cli.js")).handleConfigCommand,
+	builtin: async () => (await import("./builtin-cli.js")).handleBuiltinCommand,
+	update: async () => (await import("./update-cli.js")).handleUpdateCommand,
+	gateway: async () => (await import("./gateway-cli.js")).handleGatewayCommand,
+	auth: async () => (await import("./auth-cli.js")).handleAuthCommand,
+	sessions: async () => (await import("./sessions-cli.js")).handleSessionsCommand,
+	mcp: async () => (await import("./builtin-extensions/mcp/cli.js")).handleMcpCliCommand,
+};
+
+async function supportsXhigh(model: Model<Api>): Promise<boolean> {
+	const { getSupportedThinkingLevels } = await loadPiAiCompat();
 	return getSupportedThinkingLevels(model).includes("xhigh" as any);
 }
 
@@ -161,9 +172,12 @@ async function prepareInitialMessage(
 	initialImages?: ImageContent[];
 }> {
 	if (parsed.fileArgs.length === 0) {
+		const { buildInitialMessage } = await loadInitialMessage();
 		return buildInitialMessage({ parsed, stdinContent });
 	}
 
+	const { buildInitialMessage } = await loadInitialMessage();
+	const { processFileArguments } = await loadFileProcessor();
 	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages });
 	return buildInitialMessage({
 		parsed,
@@ -189,6 +203,7 @@ async function resolveSessionPath(sessionArg: string, cwd: string, agentDir: str
 	}
 
 	// Try to match as session ID in current project first
+	const { listWorkspaceSessions, listAllSessions } = await loadSessionListing();
 	const localSessions = await listWorkspaceSessions(cwd, agentDir);
 	const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg) || s.path === sessionArg);
 
@@ -238,15 +253,15 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-function buildSessionOptions(
+async function buildSessionOptions(
 	parsed: Args,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-): {
+): Promise<{
 	options: CreateSessionFacadeOptions;
 	cliThinkingFromModel: boolean;
 	diagnostics: SessionDiagnostic[];
-} {
+}> {
 	const options: CreateSessionFacadeOptions = {};
 	const diagnostics: SessionDiagnostic[] = [];
 	let cliThinkingFromModel = false;
@@ -255,6 +270,7 @@ function buildSessionOptions(
 	// - supports --provider <name> --model <pattern>
 	// - supports --model <provider>/<pattern>
 	if (parsed.model) {
+		const { resolveCliModel } = await loadModelResolver();
 		const resolved = resolveCliModel({
 			cliProvider: parsed.provider,
 			cliModel: parsed.model,
@@ -338,6 +354,7 @@ async function createCliSessionSetup(options: {
 	memoryDir?: string;
 }): Promise<CliSessionSetup> {
 	const { cwd, agentDir, authStorage, parsed, resolvedPaths, extensionFactories } = options;
+	const { createSessionServices } = await loadSessionServices();
 	const services = await createSessionServices({
 		cwd,
 		agentDir,
@@ -377,7 +394,7 @@ async function createCliSessionSetup(options: {
 		options: sessionOptions,
 		cliThinkingFromModel,
 		diagnostics: sessionOptionDiagnostics,
-	} = buildSessionOptions(
+	} = await buildSessionOptions(
 		parsed,
 		modelRegistry,
 		settingsManager,
@@ -398,12 +415,12 @@ async function createCliSessionSetup(options: {
 	return { services, diagnostics, sessionOptions, cliThinkingFromModel };
 }
 
-function applyCliThinkingClampToFacade(created: CreateSessionFacadeResult, cliThinkingOverride: boolean): void {
+export async function applyCliThinkingClampToFacade(created: CreateSessionFacadeResult, cliThinkingOverride: boolean): Promise<void> {
 	if (!created.model || !cliThinkingOverride) return;
 	let effectiveThinking = created.thinkingLevel;
 	if (!created.model.reasoning) {
 		effectiveThinking = "off";
-	} else if (effectiveThinking === "xhigh" && !supportsXhigh(created.model)) {
+	} else if (effectiveThinking === "xhigh" && !(await supportsXhigh(created.model))) {
 		effectiveThinking = "high";
 	}
 	if (effectiveThinking !== created.thinkingLevel) {
@@ -431,6 +448,7 @@ async function resolveFacadePrintSessionTarget(
 		switch (resolved.type) {
 			case "local":
 			case "global": {
+				const { parseSessionRef } = await loadSessionRef();
 				const parsedRef = parseSessionRef(resolved.path);
 				if (!parsedRef.workspaceId) {
 					throw new Error(`Invalid session reference: ${resolved.path}`);
@@ -466,34 +484,10 @@ export async function main(args: string[], options?: MainOptions) {
 		process.env.PIZZA_SKIP_VERSION_CHECK = "1";
 	}
 
-	if (await handlePackageCommand(args)) {
-		return;
-	}
-
-	if (await handleBuiltinCommand(args)) {
-		return;
-	}
-
-	if (await handleConfigCommand(args)) {
-		return;
-	}
-	if (await handleUpdateCommand(args)) {
-		return;
-	}
-
-	if (await handleGatewayCommand(args)) {
-		return;
-	}
-
-	if (await handleAuthCommand(args)) {
-		return;
-	}
-
-	if (await handleSessionsCommand(args)) {
-		return;
-	}
-
-	if (await handleMcpCliCommand(args)) {
+	// First-word subcommands dispatch to their module on demand — a plain
+	// agent invocation never links plugin/auth/gateway/mcp/… code.
+	const subcommand = SUBCOMMAND_HANDLERS[args[0] ?? ""];
+	if (subcommand && (await (await subcommand())(args))) {
 		return;
 	}
 
@@ -513,6 +507,7 @@ export async function main(args: string[], options?: MainOptions) {
 	// Internal desktop-to-remote configuration channel. It accepts only the
 	// versioned provisioning envelope on stdin and emits a secret-free result.
 	if (appMode === "provider-provision-rpc") {
+		const { runProviderProvisioningMode } = await loadProviderProvisioning();
 		await runProviderProvisioningMode();
 		return;
 	}
@@ -612,6 +607,7 @@ export async function main(args: string[], options?: MainOptions) {
 		const parentPid = Number(process.env.PIZZA_GATEWAY_PARENT_PID);
 		delete process.env.PIZZA_GATEWAY_PARENT_PID;
 		if (Number.isInteger(parentPid) && parentPid > 0) {
+			const { isProcessAlive } = await loadMainAgent();
 			const parentWatch = setInterval(() => {
 				if (isProcessAlive(parentPid)) return;
 				clearInterval(parentWatch);
@@ -639,7 +635,9 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 	if (appMode === "fs-rpc") {
+		const { runFsRpcMode } = await loadFsRpcMode();
 		await runFsRpcMode();
+		return;
 	}
 	const shouldTakeOverStdout = appMode !== "interactive" && appMode !== "gui";
 	if (shouldTakeOverStdout) {
@@ -655,6 +653,7 @@ export async function main(args: string[], options?: MainOptions) {
 		let result: string;
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
+			const { exportFromFile } = await loadExportHtml();
 			result = await exportFromFile(parsed.export, outputPath);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
@@ -681,6 +680,7 @@ export async function main(args: string[], options?: MainOptions) {
 		mainDir = getMainDir(parsed.mainDir);
 		memoryDir = getMainMemoryDir(mainDir, parsed.memoryDir);
 
+		const { initializeMainAgent, acquireMainLock, readPidLock, getMainLockPath } = await loadMainAgent();
 		const fresh = initializeMainAgent(mainDir, memoryDir);
 		if (fresh) {
 			console.log(chalk.green(`Main agent initialized. Edit ${join(mainDir, "SOUL.md")} to define your personality.`));
@@ -712,6 +712,7 @@ export async function main(args: string[], options?: MainOptions) {
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
 	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
 	const sessionDir = parsed.sessionDir ?? startupSettingsManager.getSessionDir();
+	const { getAgentDirFromSessionDir } = await loadSessionRef();
 	const sessionStorageAgentDir = getAgentDirFromSessionDir(sessionDir);
 	const resolvedPaths: ResolvedCliResourcePaths = {
 		extensions: resolveCliPaths(cwd, parsed.extensions),
@@ -719,6 +720,7 @@ export async function main(args: string[], options?: MainOptions) {
 		promptTemplates: resolveCliPaths(cwd, parsed.promptTemplates),
 		themes: resolveCliPaths(cwd, parsed.themes),
 	};
+	const { AuthStorage } = await loadAuthStorage();
 	const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 
 	const target = await resolveFacadePrintSessionTarget(parsed, cwd, agentDir);
@@ -746,6 +748,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+		const { listModels } = await loadListModels();
 		await listModels(modelRegistry, searchPattern);
 		process.exit(0);
 	}
@@ -798,8 +801,9 @@ export async function main(args: string[], options?: MainOptions) {
 		// auto-rejected with guidance (fail closed) instead of hanging the turn.
 		// Desktop-GUI rpc keeps the default: its approve dialog resolves over rpc.
 		const headless = isTruthyEnvFlag(process.env.PIZZA_HEADLESS);
+		const { createSessionFacade } = await loadSessionFacadeFactory();
 		const created = await createSessionFacade(buildFacadeOptions(headless ? { approvalUi: false } : undefined));
-		applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
+		await applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
 		time("createSessionFacade");
 
 		if (!created.model) {
@@ -821,6 +825,7 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 
 		printTimings();
+		const { runRpcModeWithFacade } = await loadRpcMode();
 		await runRpcModeWithFacade(created.facade, { setSchedulerEngine: created.setSchedulerEngine, setLlmClient: created.setLlmClient });
 		return;
 	}
@@ -836,8 +841,9 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 		time("createSessionFacade.setup");
 
+		const { createSessionFacade } = await loadSessionFacadeFactory();
 		const created = await createSessionFacade(buildFacadeOptions());
-		applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
+		await applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
 		time("createSessionFacade");
 
 		if (!created.model) {
@@ -859,6 +865,7 @@ export async function main(args: string[], options?: MainOptions) {
 		time("prepareInitialMessage");
 
 		const startupBenchmark = isTruthyEnvFlag(process.env.PIZZA_STARTUP_BENCHMARK);
+		const { InteractiveMode } = await loadInteractiveMode();
 		const interactiveMode = InteractiveMode.fromFacade(created, {
 			modelFallbackMessage: created.modelFallbackMessage,
 			initialMessage,
@@ -884,11 +891,13 @@ export async function main(args: string[], options?: MainOptions) {
 		// Fire-and-forget update check: hits the registry matching the install
 		// channel (npm / GitHub releases), cached 24h, fully silent on failure.
 		if (settingsManager.getAutoUpdateCheck()) {
-			void checkForUpdate().then((result) => {
-				if (result?.updateAvailable) {
-					interactiveMode.showUpdateNotice(formatUpdateNotice(result));
-				}
-			});
+			void loadUpdateChecker().then(({ checkForUpdate, formatUpdateNotice }) =>
+				checkForUpdate().then((result) => {
+					if (result?.updateAvailable) {
+						interactiveMode.showUpdateNotice(formatUpdateNotice(result));
+					}
+				}),
+			);
 		}
 
 		printTimings();
@@ -906,8 +915,9 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 		time("createSessionFacade.setup");
 
+		const { createSessionFacade } = await loadSessionFacadeFactory();
 		const created = await createSessionFacade(buildFacadeOptions());
-		applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
+		await applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
 		time("createSessionFacade");
 
 		if (!created.model) {
@@ -928,6 +938,7 @@ export async function main(args: string[], options?: MainOptions) {
 		time("prepareInitialMessage");
 
 		printTimings();
+		const { runGuiModeWithFacade } = await loadGuiMode();
 		await runGuiModeWithFacade(created.facade, {
 			cwd: target.cwd,
 			initialMessage,
@@ -957,8 +968,9 @@ export async function main(args: string[], options?: MainOptions) {
 	// Print mode is a one-shot command the user explicitly typed, with no UI
 	// to answer approval prompts — keep the auto-run default. An explicit
 	// safeMode in settings.json still wins over this default.
+	const { createSessionFacade } = await loadSessionFacadeFactory();
 	const created = await createSessionFacade(buildFacadeOptions({ safeModeDefault: false }));
-	applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
+	await applyCliThinkingClampToFacade(created, parsed.thinking !== undefined || cliThinkingFromModel);
 	time("createSessionFacade");
 
 	if (!created.model) {
@@ -977,6 +989,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	printTimings();
 	try {
+		const { runPrintModeWithFacade } = await loadPrintMode();
 		const exitCode = await runPrintModeWithFacade(created.facade, {
 			mode: toPrintOutputMode(appMode),
 			messages: parsed.messages,
