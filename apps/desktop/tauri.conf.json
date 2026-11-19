@@ -1,6 +1,6 @@
 {
 	"productName": "Pizza",
-	"version": "0.5.6",
+	"version": "0.5.7",
 	"identifier": "ai.pizza.gui",
 	"build": {
 		"beforeDevCommand": {
