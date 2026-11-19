@@ -146,7 +146,12 @@ export type EventType =
 	| "BROWSER_TAB_CLOSED"
 	| "BROWSER_NAVIGATED"
 	| "BROWSER_ACTION"
-	| "BROWSER_SESSION_ENDED";
+	| "BROWSER_SESSION_ENDED"
+	// Desktop (agent-desktop execution layer). Audit-only: action, outcome,
+	// app name, snapshot id, and artifact paths. Never the vendor envelope,
+	// accessibility tree, typed text, clipboard contents, or screenshot bytes.
+	// Excluded from LLM context (not in CONTEXT_RELEVANT_EVENT_TYPES).
+	| "DESKTOP_ACTION";
 
 // ============================================================================
 // Supporting Types

@@ -381,6 +381,7 @@ function helpText(): string {
     "  stateId and @e refs stay valid across calls. Use the returned",
     "  successor stateId for follow-ups.",
     "  For web pages prefer agent-browser; use this for native desktop apps.",
+    "  Optional agent-desktop control is `_desktop` (off until `pizza builtin enable agent-desktop`).",
     "",
     "Subcommands:",
     "  roots    List controllable app roots as @r refs.",

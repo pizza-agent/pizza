@@ -59,6 +59,24 @@ const DEFAULT_CLASSIFIER_CONFIG: ResolvedClassifierConfig = {
 	require_approval_unknown: true,
 };
 
+/**
+ * Whether this call must wait for a person.
+ *
+ * `force_approval` is not skipped by safe mode (the classifier already set
+ * `requires_approval`) and is not skipped by a session-wide "always allow"
+ * for the category. Irreversible desktop actions use that flag.
+ */
+export function needsRuntimeApproval(
+	requiresApproval: boolean,
+	classification: Pick<IntentClassification, "category" | "force_approval"> | undefined,
+	allowedCategories: ReadonlySet<string>,
+): boolean {
+	if (!requiresApproval) return false;
+	if (classification?.force_approval) return true;
+	const category = classification?.category;
+	return !(category !== undefined && allowedCategories.has(category));
+}
+
 // ============================================================================
 // Intent Classifier
 // ============================================================================
@@ -91,10 +109,16 @@ export class IntentClassifier {
 	 */
 	classify(toolName: string, args: Record<string, unknown>, resolved?: ResolvedToolCall): IntentClassification {
 		const result = resolved?.intent ? this._classifyIntent(resolved.intent) : this._classifyRaw(toolName, args);
-		if (this.config.safe_mode === false) {
+		const forced = resolved?.intent?.forceApproval === true;
+		if (this.config.safe_mode === false && !forced) {
 			result.requires_approval = false;
 		} else if (this.config.safe_mode === true && result.risk !== "safe") {
 			result.requires_approval = true;
+		}
+		if (forced) {
+			result.requires_approval = true;
+			result.force_approval = true;
+			if (result.risk === "safe") result.risk = "dangerous";
 		}
 		return result;
 	}

@@ -428,7 +428,7 @@ function persistDisabled(cwd: string, disabled: boolean): void {
 function promptHint(): string {
   return `## computer-use (built-in)
 
-Desktop app automation via structured UI observation (accessibility outlines, not raw coordinates). For web pages, prefer agent-browser; use this only for native desktop apps.
+Desktop app automation via structured UI observation (accessibility outlines, not raw coordinates). For web pages, prefer agent-browser; use this only for native desktop apps. Optional agent-desktop control is _desktop (off until "pizza builtin enable agent-desktop").
 
 Interface — the _computer_use cli command (pure single commands, no shell operators):
 

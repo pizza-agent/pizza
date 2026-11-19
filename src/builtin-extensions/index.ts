@@ -12,6 +12,7 @@
  * 2. Register it in `BUILTIN_EXTENSIONS` below with a stable id.
  */
 
+import { isOptInBuiltinExtension } from "./defaults.js";
 import { BUILTIN_EXTENSION_SOURCE, type ExtensionRegistry } from "../core/extensions/extension-registry.js";
 import type { ExtensionFactory } from "../core/extensions/types.js";
 import {
@@ -31,7 +32,18 @@ import {
 	runComputerUseInstall,
 	runComputerUseUninstall,
 } from "./computer-use/index.js";
+import { createContextRouterExtension, CONTEXT_ROUTER_EXTENSION_ID } from "./context-router/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
+import {
+	AGENT_DESKTOP_EXTENSION_ID,
+	checkAgentDesktopInstalled,
+	createAgentDesktopExtension,
+	getAgentDesktopPermissionStatus,
+	openAgentDesktopPermissionSettings,
+	recheckAgentDesktopPermissionStatus,
+	runAgentDesktopInstall,
+	runAgentDesktopUninstall,
+} from "./agent-desktop/index.js";
 import { createInteractionExtension, INTERACTION_EXTENSION_ID } from "./interaction/index.js";
 import {
 	createProvenanceLensExtension,
@@ -80,6 +92,8 @@ export interface BuiltinExtension {
 	factory: ExtensionFactory;
 	/** Whether this built-in ships an external dependency that can be installed/uninstalled (e.g. a CLI binary). */
 	installable?: boolean;
+	/** When false, the extension stays unloaded until the user enables it. */
+	enabledByDefault?: boolean;
 	/**
 	 * Legacy probe for whether the external dependency is installed. Only used
 	 * once, to seed extensions.json for installs made before the registry
@@ -120,6 +134,20 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		uninstall: (cwd) => runAgentBrowserUninstall(cwd),
 	},
 	{
+		id: AGENT_DESKTOP_EXTENSION_ID,
+		name: "agent-desktop",
+		description: "Optional native desktop control via agent-desktop (off until enabled; web pages stay on agent-browser).",
+		factory: createAgentDesktopExtension,
+		installable: true,
+		enabledByDefault: false,
+		checkInstalled: (cwd) => checkAgentDesktopInstalled(cwd),
+		install: (cwd) => runAgentDesktopInstall(cwd),
+		uninstall: (cwd) => runAgentDesktopUninstall(cwd),
+		checkPermissions: (cwd) => getAgentDesktopPermissionStatus(cwd),
+		recheckPermissions: (cwd) => recheckAgentDesktopPermissionStatus(cwd),
+		openPermissionSettings: (cwd, kind) => openAgentDesktopPermissionSettings(cwd, kind),
+	},
+	{
 		id: COMPUTER_USE_EXTENSION_ID,
 		name: "computer-use",
 		description: "Desktop app automation via structured UI observation (vendored pi-computer-use backend).",
@@ -131,6 +159,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
+	},
+	{
+		id: CONTEXT_ROUTER_EXTENSION_ID,
+		name: "context-router",
+		description: "Read-only GoalPins, recent-window, and path context selectors (_context).",
+		factory: createContextRouterExtension,
 	},
 	{
 		id: PROVENANCE_LENS_EXTENSION_ID,
@@ -213,7 +247,7 @@ export function recordBuiltinInstallState(registry: ExtensionRegistry, id: strin
 			version: state.installed ? state.version : undefined,
 			installedAt: state.installed ? new Date().toISOString() : undefined,
 		},
-		{ source: BUILTIN_EXTENSION_SOURCE, enabled: true },
+		{ source: BUILTIN_EXTENSION_SOURCE, enabled: !isOptInBuiltinExtension(id) },
 	);
 }
 

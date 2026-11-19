@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
+import { OPT_IN_BUILTIN_EXTENSION_IDS } from "../../builtin-extensions/defaults.js";
 import { isBuiltinSkillDefaultEnabled, isBuiltinSkillEnabled } from "../../builtin-skills/index.js";
 import {
 	BUILTIN_EXTENSION_SOURCE,
@@ -1163,11 +1164,20 @@ export class SettingsManager {
 		this.save();
 	}
 
-	/** Return the set of built-in extension ids the user has disabled. */
+	/**
+	 * Built-in extension ids that should not be loaded.
+	 * Opt-in ids (agent-desktop) are disabled until the user enables them.
+	 * Every other built-in is loaded unless its record says `enabled: false`.
+	 */
 	getDisabledBuiltinExtensions(): Set<string> {
 		const disabled = new Set<string>();
-		for (const [id, record] of Object.entries(this.extensions.list())) {
-			if (record.source === BUILTIN_EXTENSION_SOURCE && !record.enabled) disabled.add(id);
+		const records = this.extensions.list();
+		for (const id of OPT_IN_BUILTIN_EXTENSION_IDS) {
+			const record = records[id];
+			if (!(record?.source === BUILTIN_EXTENSION_SOURCE && record.enabled)) disabled.add(id);
+		}
+		for (const [id, record] of Object.entries(records)) {
+			if (record.source === BUILTIN_EXTENSION_SOURCE && record.enabled === false) disabled.add(id);
 		}
 		return disabled;
 	}
