@@ -703,6 +703,25 @@ export interface BrowserSessionEndedEvent extends EventBase {
 	};
 }
 
+/**
+ * One native desktop command. Payload is Pizza's audit record, not the
+ * agent-desktop JSON envelope. Secrets and screenshot bytes stay out.
+ */
+export interface DesktopActionEvent extends EventBase {
+	type: "DESKTOP_ACTION";
+	payload: {
+		action: string;
+		outcome: "ok" | "error" | "blocked" | "stale";
+		app?: string;
+		snapshot_id?: string;
+		ref?: string;
+		artifact?: string;
+		reason?: string;
+		/** Durable agent-desktop session id for this workspace. */
+		session_id?: string;
+	};
+}
+
 // ============================================================================
 // Type Exports
 // ============================================================================
@@ -764,4 +783,5 @@ export type TypedEvent =
 	| BrowserTabClosedEvent
 	| BrowserNavigatedEvent
 	| BrowserActionEvent
-	| BrowserSessionEndedEvent;
+	| BrowserSessionEndedEvent
+	| DesktopActionEvent;

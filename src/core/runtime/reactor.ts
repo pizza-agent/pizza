@@ -50,7 +50,7 @@ import type {
 	ToolExecutionResult,
 	ToolRegistry,
 } from "../intent/types.js";
-import type { IntentClassifier } from "../intent/classifier.js";
+import { needsRuntimeApproval, type IntentClassifier } from "../intent/classifier.js";
 import type { LLMChunk, LLMClient, LLMResponse, ToolDefinition } from "./llm-types.js";
 import type { RuntimeAdapter } from "./types.js";
 import { extractToolCalls } from "../projection/event-to-message.js";
@@ -1130,10 +1130,11 @@ export class Reactor {
 		// this session skips the dialog entirely (TurnState.allowedCategories
 		// is memory-only; nothing is persisted). Local flag — payload is the
 		// logged event object and must not be mutated.
-		const category = payload.classification?.category;
-		const needsApproval =
-			payload.requires_approval &&
-			!(category !== undefined && this.turnState.allowedCategories.has(category));
+		const needsApproval = needsRuntimeApproval(
+			payload.requires_approval,
+			payload.classification,
+			this.turnState.allowedCategories,
+		);
 		if (needsApproval) {
 			if (!this.config.approvalHandler) {
 				this._emitToolExecutionRejected(payload.tool_call_id, payload.tool_name, {

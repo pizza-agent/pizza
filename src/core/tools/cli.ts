@@ -16,6 +16,7 @@ import { type ResolvedCliCommand, resolveCliCommand, toResolvedToolCall } from "
 import { toolRenderBridge as tui } from "./render-bridge.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { createLocalBashOperations, DEFAULT_CLI_SHELL_TIMEOUT_MS, runShellCommand, type ShellDetails, type ShellOptions } from "./shell.js";
+import { redactCommandForLog } from "./command-redaction.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.js";
 
 const cliSchema = Type.Object({
@@ -254,6 +255,13 @@ export function createCliToolDefinition(
 		description,
 		promptSnippet: snippet,
 		parameters: cliSchema,
+		prepareArguments(args: unknown): CliToolInput {
+			if (!args || typeof args !== "object") return { command: "" };
+			const record = args as Partial<CliToolInput>;
+			if (typeof record.command !== "string") return { command: "", ...(record.timeout !== undefined ? { timeout: record.timeout } : {}) };
+			const command = redactCommandForLog(record.command);
+			return command === record.command ? (record as CliToolInput) : { ...record, command };
+		},
 		resolve(args, toolCallId) {
 			const resolved = resolveCliCommand(String(args?.command ?? ""), resolveContext);
 			resolvedCache.set(toolCallId, resolved);

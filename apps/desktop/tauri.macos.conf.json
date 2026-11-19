@@ -18,7 +18,9 @@
 			}
 		},
 		"resources": {
-			"../../dist/pizza": "pizza"
+			"../../dist/pizza": "pizza",
+			"../../dist/agent-desktop": "agent-desktop",
+			"../../dist/agent-desktop-macos-helper": "agent-desktop-macos-helper"
 		}
 	}
 }

@@ -423,7 +423,7 @@ function ExtensionCard({
 	const notInstalledInstallable = ext.installable && !ext.installed;
 	const showToggle = ext.canToggle && !notInstalledInstallable;
 	const showEnabledBadge = !notInstalledInstallable;
-	const showPermissionGuide = ext.id === "computer-use" && ext.installable && ext.installed;
+	const showPermissionGuide = extensionShowsPermissionGuide(ext);
 	const menuItems: ContextMenuItem[] = [
 		...(ext.installable
 			? [{
@@ -712,6 +712,11 @@ function ExtensionPermissionGuide({
 	);
 }
 
+/** Desktop extensions whose OS permission panes belong on the plugin card. */
+function extensionShowsPermissionGuide(ext: { id: string; installable?: boolean; installed?: boolean }): boolean {
+	return (ext.id === "computer-use" || ext.id === "agent-desktop") && Boolean(ext.installable && ext.installed);
+}
+
 /** Extract the npm package name from an installed package source ("npm:foo@1.2.3" -> "foo"). */
 function packageSourceNpmName(source: string | undefined): string | null {
 	if (!source || !source.startsWith("npm:")) return null;
@@ -736,7 +741,7 @@ function ExtensionsTab() {
 	const permissionRequestSeq = useRef(0);
 
 	const refreshPermissions = useCallback(async (exts: ExtensionInfo[]) => {
-		const permissionExts = exts.filter((ext) => ext.id === "computer-use" && ext.installable && ext.installed);
+		const permissionExts = exts.filter((ext) => extensionShowsPermissionGuide(ext));
 		if (permissionExts.length === 0) {
 			setExtensionPermissions({});
 			return;

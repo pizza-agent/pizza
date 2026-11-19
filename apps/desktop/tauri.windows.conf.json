@@ -2,6 +2,7 @@
 	"bundle": {
 		"resources": {
 			"../../dist/pizza.exe": "pizza.exe",
+			"../../dist/agent-desktop.exe": "agent-desktop.exe",
 			"../../dist/theme/": "theme/",
 			"../../dist/assets/": "assets/",
 			"../../dist/export-html/": "export-html/",
