@@ -15,13 +15,16 @@ The existing `_computer_use` extension (vendored pi-computer-use) is unchanged.
 
 The extension is **off by default**.
 
+The CLI ships with Pizza (`agent-desktop@1.3.1`, an optional dependency).
+Installing Pizza is enough. Do not run `npm install -g agent-desktop`.
+
 ```bash
-npm install -g agent-desktop          # or: /desktop install, once the extension is loaded
 pizza builtin enable agent-desktop    # takes effect on the next session
 ```
 
 Inside a session that already loaded it: `/desktop enable`, `/desktop status`,
-`/desktop permissions`.
+`/desktop permissions`. `/desktop install` only reports that the binary is
+already part of Pizza.
 
 ### Permissions
 
@@ -68,10 +71,16 @@ records a desensitized `DESKTOP_ACTION` (action, outcome, app, snapshot id,
 artifact path) and does not store the vendor envelope, passwords, cookies, or
 screenshot bytes.
 
+The published `agent-desktop` package contains the native binaries for macOS,
+Windows, and Linux (about 32 MB unpacked). npm installs that one package on
+darwin, win32, and linux. The desktop app build copies only the current
+platform binary and its helper next to the Pizza executable.
+
 ## Tests
 
 `test/agent-desktop-simulator.ts` is a fake agent-desktop CLI. It returns
 JSON envelopes, session ids, snapshot refs, and permission, stale, and
 session-ended errors. `test/agent-desktop.test.ts` drives `_desktop` through
-that simulator. It does not click a real desktop. A real macOS Accessibility
-session is still required before trusting live clicks, typing, or screenshots.
+that simulator and checks that the bundled package resolves without PATH.
+It does not click a real desktop. A real macOS Accessibility session is still
+required before trusting live clicks, typing, or screenshots.

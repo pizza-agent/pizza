@@ -1,7 +1,9 @@
 {
 	"bundle": {
 		"resources": {
-			"../../dist/pizza": "pizza"
+			"../../dist/pizza": "pizza",
+			"../../dist/agent-desktop": "agent-desktop",
+			"../../dist/agent-desktop-linux-clipboard-owner": "agent-desktop-linux-clipboard-owner"
 		}
 	}
 }

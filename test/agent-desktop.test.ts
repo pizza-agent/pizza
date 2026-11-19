@@ -16,6 +16,7 @@ import {
 	setActiveDesktopCwd,
 } from "../src/builtin-extensions/agent-desktop/cli-command.js";
 import { platformCaveat, redactDesktopCommandLine } from "../src/builtin-extensions/agent-desktop/policy.js";
+import { BUNDLED_AGENT_DESKTOP_VERSION, binaryFromPackageRoot, platformBinary, resolveAgentDesktop } from "../src/builtin-extensions/agent-desktop/resolve-binary.js";
 import { resetDesktopSecretsForTests } from "../src/builtin-extensions/agent-desktop/secrets.js";
 import { resetDesktopSessionsForTests } from "../src/builtin-extensions/agent-desktop/session.js";
 import { setDesktopRunnerForTests } from "../src/builtin-extensions/agent-desktop/runner.js";
@@ -167,7 +168,7 @@ describe("agent-desktop simulated CLI", () => {
 			const missingPermissions = await getAgentDesktopPermissionStatus(workspaceA);
 			expect(missingPermissions.installed).toBe(false);
 			expect(missingPermissions.ready).toBe(false);
-			expect(missingPermissions.message).toContain("Install agent-desktop");
+			expect(missingPermissions.message).toContain("does not include its agent-desktop binary");
 			if (platformCaveat()) expect(missingPermissions.message).toContain(platformCaveat());
 		}
 
@@ -361,6 +362,30 @@ describe("agent-desktop simulated CLI", () => {
 		const redacted = redactCommandForLog("_desktop type @s1:e1 hunter2");
 		expect(redacted).not.toContain("hunter2");
 		expect(redactDesktopCommandLine(redacted)).toBe(redacted);
+	});
+
+	it("resolves the agent-desktop package that ships with Pizza", async () => {
+		const resolved = await resolveAgentDesktop();
+		expect(resolved?.source).toBe("bundled");
+		expect(resolved?.version).toBe(BUNDLED_AGENT_DESKTOP_VERSION);
+		expect(resolved?.command.length).toBeGreaterThan(0);
+		const status = await checkAgentDesktopInstalled(workspaceA);
+		expect(status.installed).toBe(true);
+		expect(status.version).toBe(BUNDLED_AGENT_DESKTOP_VERSION);
+		expect(status.source).toBe("bundled");
+
+		const spec = platformBinary();
+		expect(spec).toBeDefined();
+		const packageRoot = join(root, "fake-agent-desktop");
+		mkdirSync(join(packageRoot, "bin"), { recursive: true });
+		writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "agent-desktop", version: "9.9.9" }));
+		writeFileSync(join(packageRoot, "bin", spec!.binary), "");
+		chmodSync(join(packageRoot, "bin", spec!.binary), 0o755);
+		const fromPackage = binaryFromPackageRoot(packageRoot);
+		expect(fromPackage?.source).toBe("bundled");
+		expect(fromPackage?.version).toBe("9.9.9");
+		expect(fromPackage?.command).toBe(join(packageRoot, "bin", spec!.binary));
+		expect(binaryFromPackageRoot(join(root, "empty"))).toBeUndefined();
 	});
 
 	it("states that Windows and Linux are not the primary path", async () => {

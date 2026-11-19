@@ -11,9 +11,6 @@
  * grants OS accessibility permission. Web pages stay on `_browser`.
  */
 
-import { constants as fsConstants } from "node:fs";
-import { access, readFile, realpath, stat } from "node:fs/promises";
-import { delimiter, dirname, join } from "node:path";
 import { getAgentDir } from "../../config.js";
 import { SettingsManager } from "../../core/config/settings-manager.js";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "../../core/extensions/types.js";
@@ -25,6 +22,7 @@ import {
 	setActiveDesktopCwd,
 } from "./cli-command.js";
 import { platformCaveat, redactDesktopCommandLine } from "./policy.js";
+import { resolveAgentDesktop, type AgentDesktopSource } from "./resolve-binary.js";
 import { parseEnvelope, runAgentDesktop } from "./runner.js";
 
 export { AGENT_DESKTOP_EXTENSION_ID };
@@ -34,53 +32,13 @@ let redactorRegistered = false;
 interface DesktopAvailability {
 	installed: boolean;
 	version?: string;
-}
-
-async function findOnPath(name: string): Promise<string | undefined> {
-	const { prefetchLoginShellPath } = await import("../../utils/login-shell-path.js");
-	const { getShellEnv } = await import("../../utils/shell.js");
-	await prefetchLoginShellPath();
-	const env = getShellEnv();
-	const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
-	const isWindows = process.platform === "win32";
-	const exts = isWindows ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean) : [""];
-	for (const dir of (env[pathKey] ?? "").split(delimiter)) {
-		if (!dir) continue;
-		for (const ext of exts) {
-			const candidate = join(dir, name + ext);
-			try {
-				if (!(await stat(candidate)).isFile()) continue;
-				await access(candidate, isWindows ? fsConstants.F_OK : fsConstants.X_OK);
-				return candidate;
-			} catch {
-				// not here
-			}
-		}
-	}
-	return undefined;
-}
-
-async function readPackageVersion(bin: string): Promise<string | undefined> {
-	const resolved = await realpath(bin).catch(() => bin);
-	const candidates = [join(dirname(bin), "node_modules", "agent-desktop", "package.json")];
-	for (let dir = dirname(resolved), i = 0; i < 4; dir = dirname(dir), i++) {
-		candidates.push(join(dir, "package.json"));
-	}
-	for (const file of candidates) {
-		try {
-			const pkg = JSON.parse(await readFile(file, "utf-8")) as { name?: string; version?: string };
-			if (pkg.name === "agent-desktop") return pkg.version;
-		} catch {
-			// keep looking
-		}
-	}
-	return undefined;
+	source?: AgentDesktopSource;
 }
 
 export async function checkAgentDesktopInstalled(_cwd: string): Promise<DesktopAvailability> {
-	const bin = await findOnPath("agent-desktop");
-	if (!bin) return { installed: false };
-	return { installed: true, version: await readPackageVersion(bin) };
+	const resolved = await resolveAgentDesktop();
+	if (!resolved) return { installed: false };
+	return { installed: true, version: resolved.version, source: resolved.source };
 }
 
 async function recordInstallState(cwd: string, state: DesktopAvailability): Promise<void> {
@@ -89,33 +47,25 @@ async function recordInstallState(cwd: string, state: DesktopAvailability): Prom
 	recordBuiltinInstallState(registry, AGENT_DESKTOP_EXTENSION_ID, state);
 }
 
+const BUNDLED_MISSING =
+	"This Pizza install does not include its agent-desktop binary. Reinstall Pizza. A separate global install is not required.";
+
 export async function runAgentDesktopInstall(cwd: string): Promise<{ ok: boolean; message: string }> {
-	const { execCommand } = await import("../../core/exec/exec.js");
-	const npmInstall = await execCommand("npm", ["install", "-g", "agent-desktop"], cwd, { timeout: 180_000 });
-	if (npmInstall.code !== 0) {
-		return {
-			ok: false,
-			message: `npm install -g agent-desktop failed (exit ${npmInstall.code})${npmInstall.stderr ? `:\n${npmInstall.stderr.trim()}` : ""}`,
-		};
-	}
-	await recordInstallState(cwd, await checkAgentDesktopInstalled(cwd));
+	const available = await checkAgentDesktopInstalled(cwd);
+	if (!available.installed) return { ok: false, message: BUNDLED_MISSING };
+	await recordInstallState(cwd, available);
+	const where = available.source === "path" ? "on PATH" : "with Pizza";
 	return {
 		ok: true,
-		message: "agent-desktop CLI installed. Enable it with `pizza builtin enable agent-desktop` if you have not already, then grant Accessibility (`/desktop permissions`) before use.",
+		message: `agent-desktop ${available.version ?? ""} is already ${where}. Enable it with \`pizza builtin enable agent-desktop\`, then grant Accessibility (\`/desktop permissions\`) before use.`.replace("  ", " "),
 	};
 }
 
-export async function runAgentDesktopUninstall(cwd: string): Promise<{ ok: boolean; message: string }> {
-	const { execCommand } = await import("../../core/exec/exec.js");
-	const result = await execCommand("npm", ["uninstall", "-g", "agent-desktop"], cwd, { timeout: 120_000 });
-	if (result.code !== 0) {
-		return {
-			ok: false,
-			message: `npm uninstall -g agent-desktop failed (exit ${result.code})${result.stderr ? `:\n${result.stderr.trim()}` : ""}`,
-		};
-	}
-	await recordInstallState(cwd, { installed: false });
-	return { ok: true, message: "agent-desktop CLI uninstalled." };
+export async function runAgentDesktopUninstall(_cwd: string): Promise<{ ok: boolean; message: string }> {
+	return {
+		ok: false,
+		message: "agent-desktop ships with Pizza and is not removed separately. Turn the feature off with /desktop disable or `pizza builtin disable agent-desktop`.",
+	};
 }
 
 function permissionRows(accessibility: boolean, screen: boolean) {
@@ -144,7 +94,7 @@ async function permissionState(cwd: string, installed: boolean) {
 			supported: process.platform === "darwin" || process.platform === "win32" || process.platform === "linux",
 			installed: false,
 			ready: false,
-			message: `Install agent-desktop before granting permissions (\`/desktop install\`).${caveat ? ` ${caveat}` : ""}`,
+			message: `${BUNDLED_MISSING}${caveat ? ` ${caveat}` : ""}`,
 			permissions: permissionRows(false, false),
 		};
 	}
@@ -185,7 +135,7 @@ export async function recheckAgentDesktopPermissionStatus(cwd: string) {
 
 export async function openAgentDesktopPermissionSettings(cwd: string, _kind: "accessibility" | "screenRecording") {
 	if (!(await checkAgentDesktopInstalled(cwd)).installed) {
-		return { ok: false, message: "Install agent-desktop before opening permission settings." };
+		return { ok: false, message: BUNDLED_MISSING };
 	}
 	if (process.platform !== "darwin") {
 		return {
@@ -217,9 +167,7 @@ function notify(ctx: ExtensionCommandContext, message: string, type?: "info" | "
 }
 
 const USAGE = `Usage:
-  /desktop install      Install the agent-desktop CLI
-  /desktop uninstall    Uninstall the agent-desktop CLI
-  /desktop status       Install, permission, and enablement status
+  /desktop status       Permission and enablement status (the CLI ships with Pizza)
   /desktop permissions  Open the macOS Accessibility guide (other platforms: print the requirement)
   /desktop enable       Enable this built-in (also: pizza builtin enable agent-desktop)
   /desktop disable      Disable this built-in
@@ -255,26 +203,26 @@ export const createAgentDesktopExtension: ExtensionFactory = (pizza: ExtensionAP
 			const subcommand = (args.trim().split(/\s+/)[0] || "help").toLowerCase();
 			const cwd = ctx.cwd;
 			switch (subcommand) {
-				case "install": {
-					notify(ctx, "Installing agent-desktop…", "info");
-					const result = await runAgentDesktopInstall(cwd);
-					notify(ctx, result.message, result.ok ? "info" : "error");
-					return;
-				}
+				case "install":
 				case "uninstall": {
-					const result = await runAgentDesktopUninstall(cwd);
-					notify(ctx, result.message, result.ok ? "info" : "error");
+					const result = subcommand === "install" ? await runAgentDesktopInstall(cwd) : await runAgentDesktopUninstall(cwd);
+					notify(ctx, result.message, result.ok ? "info" : "warning");
 					return;
 				}
 				case "status": {
 					const available = await checkAgentDesktopInstalled(cwd);
 					const permissions = await permissionState(cwd, available.installed);
 					const enabled = isAgentDesktopEnabled(cwd);
+					const cli = !available.installed
+						? "missing from this Pizza install"
+						: available.source === "path"
+							? `on PATH${available.version ? ` (${available.version})` : ""}`
+							: `bundled with Pizza${available.version ? ` (${available.version})` : ""}`;
 					notify(
 						ctx,
 						[
 							`agent-desktop: ${enabled ? "enabled" : "disabled (pizza builtin enable agent-desktop)"}`,
-							`CLI: ${available.installed ? `installed${available.version ? ` (${available.version})` : ""}` : "not installed"}`,
+							`CLI: ${cli}`,
 							`Accessibility: ${permissions.permissions[0]?.granted ? "granted" : "missing"}`,
 							permissions.message ?? "",
 						]

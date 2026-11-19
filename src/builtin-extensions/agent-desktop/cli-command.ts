@@ -81,8 +81,9 @@ function helpText(): string {
 		"is the supported path. Windows (UI Automation) and Linux (AT-SPI) run",
 		"the same commands with the platform limits below.",
 		caveat ? `\n${caveat}\n` : "",
-		"The command is off until `pizza builtin enable agent-desktop`. Grant",
-		"Accessibility before the first action (`/desktop permissions`).",
+		"The CLI ships with Pizza. The command stays off until",
+		"`pizza builtin enable agent-desktop`. Grant Accessibility before",
+		"the first action (`/desktop permissions`).",
 		"",
 		"Loop: snapshot -> act on @<snapshot>:eN -> snapshot again.",
 		"Refs belong to the current workspace and thread. After an action, or",
@@ -181,7 +182,7 @@ async function readPermissions(cwd: string, signal: AbortSignal | undefined): Pr
 		const detail = run.stderr.trim();
 		return {
 			missing: true,
-			message: `agent-desktop CLI is not installed or did not return JSON. Install it with /desktop install.${detail ? ` ${detail}` : ""}`,
+			message: `agent-desktop CLI is missing from this Pizza install or did not return JSON. Reinstall Pizza; a separate global install is not required.${detail ? ` ${detail}` : ""}`,
 		};
 	}
 	const cache: PermissionCache = {
@@ -320,7 +321,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 	],
 	isAvailable: () => isAgentDesktopEnabled(activeCwd ?? process.cwd()),
 	unavailableReason:
-		"agent-desktop is off. Enable it with `pizza builtin enable agent-desktop`, install the CLI with `/desktop install`, and grant Accessibility permission before use.",
+		"agent-desktop is off. Enable it with `pizza builtin enable agent-desktop` and grant Accessibility permission before use. The CLI ships with Pizza.",
 	parseArguments(args, heredoc) {
 		const params = parseDesktopInvocation(args, heredoc);
 		params.targetNames = lookupRefNames(extractRefs(params.args));
@@ -466,7 +467,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 		}
 
 		if (!envelope) {
-			const message = run.stderr.trim() || run.stdout.trim() || `agent-desktop exited ${run.code}. Install it with /desktop install.`;
+			const message = run.stderr.trim() || run.stdout.trim() || `agent-desktop exited ${run.code}. Reinstall Pizza if its bundled CLI is missing.`;
 			return blocked(ctx, subcommand, "CLI", message, "error");
 		}
 

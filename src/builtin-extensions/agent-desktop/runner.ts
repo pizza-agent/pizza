@@ -6,6 +6,7 @@
  */
 
 import { execCommand, type ExecResult } from "../../core/exec/exec.js";
+import { resolveAgentDesktop } from "./resolve-binary.js";
 
 export interface DesktopRunOptions {
 	cwd: string;
@@ -23,12 +24,21 @@ export interface DesktopRunResult {
 export type DesktopRunner = (args: string[], options: DesktopRunOptions) => Promise<DesktopRunResult>;
 
 async function defaultRunner(args: string[], options: DesktopRunOptions): Promise<DesktopRunResult> {
+	const resolved = await resolveAgentDesktop();
+	if (!resolved) {
+		return {
+			code: 127,
+			stdout: "",
+			stderr: "agent-desktop is not in this Pizza install and was not found on PATH.",
+		};
+	}
 	let result: ExecResult;
 	try {
-		result = await execCommand("agent-desktop", args, options.cwd, {
+		result = await execCommand(resolved.command, [...resolved.argsPrefix, ...args], options.cwd, {
 			timeout: options.timeout,
 			signal: options.signal,
 			input: options.input,
+			env: resolved.env,
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
