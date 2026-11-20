@@ -33,7 +33,7 @@ export interface CliCommandDetails {
 	name: string;
 	/** Parsed params the command executed with. */
 	args: unknown;
-	/** The command's own result details (e.g. edit diff, computer-use state). */
+	/** The command's own result details (e.g. edit diff, desktop state). */
 	details?: unknown;
 }
 

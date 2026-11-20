@@ -714,7 +714,7 @@ function ExtensionPermissionGuide({
 
 /** Desktop extensions whose OS permission panes belong on the plugin card. */
 function extensionShowsPermissionGuide(ext: { id: string; installable?: boolean; installed?: boolean }): boolean {
-	return (ext.id === "computer-use" || ext.id === "agent-desktop") && Boolean(ext.installable && ext.installed);
+	return ext.id === "agent-desktop" && Boolean(ext.installable && ext.installed);
 }
 
 /** Extract the npm package name from an installed package source ("npm:foo@1.2.3" -> "foo"). */

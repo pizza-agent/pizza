@@ -1092,8 +1092,8 @@ export interface ExtensionAPI {
 	registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void;
 
 	/**
-	 * Register a command in the cli tool's command table (e.g. computer-use's
-	 * `_computer_use`). Like the built-in _read/_edit family it is intercepted
+	 * Register a command in the cli tool's command table (e.g. agent-desktop's
+	 * `_desktop`). Like the built-in _read/_edit family it is intercepted
 	 * by the cli tool before shell fallback: it must be a pure single command
 	 * (no shell operators) and its execute runs in-process with the session's
 	 * ExtensionContext. The name must be an underscore token ("_" + lowercase
@@ -1380,7 +1380,7 @@ export interface CliCommandParseMeta {
 export interface CliCommandDefinition<P = any> {
 	/** Serial commands run exclusively with respect to other tool calls. */
 	executionMode?: ToolExecutionMode;
-	/** Command token including the underscore prefix, e.g. `_computer_use`. */
+	/** Command token including the underscore prefix, e.g. `_desktop`. */
 	name: string;
 	/** One-line summary, shown in the cli tool description and the system prompt command table. */
 	description: string;

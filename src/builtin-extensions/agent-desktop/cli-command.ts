@@ -81,8 +81,7 @@ function helpText(): string {
 		"is the supported path. Windows (UI Automation) and Linux (AT-SPI) run",
 		"the same commands with the platform limits below.",
 		caveat ? `\n${caveat}\n` : "",
-		"The CLI ships with Pizza. The command stays off until",
-		"`pizza builtin enable agent-desktop`. Grant Accessibility before",
+		"The CLI ships with Pizza and is on by default. Grant Accessibility before",
 		"the first action (`/desktop permissions`).",
 		"",
 		"Loop: snapshot -> act on @<snapshot>:eN -> snapshot again.",
@@ -310,7 +309,7 @@ function forgetSession(cwd: string): void {
 
 export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 	name: DESKTOP_COMMAND_NAME,
-	description: "Observe and act on native desktop apps (agent-desktop). Off until enabled. Web pages use _browser.",
+	description: "Observe and act on native desktop apps (agent-desktop). Web pages use _browser.",
 	usage: "_desktop <snapshot|click|type|press|...> [flags]",
 	help: helpText(),
 	executionMode: "sequential",
@@ -321,7 +320,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 	],
 	isAvailable: () => isAgentDesktopEnabled(activeCwd ?? process.cwd()),
 	unavailableReason:
-		"agent-desktop is off. Enable it with `pizza builtin enable agent-desktop` and grant Accessibility permission before use. The CLI ships with Pizza.",
+		"agent-desktop is disabled or its CLI is missing. It ships with Pizza and is on by default; check /desktop status and Accessibility permission.",
 	parseArguments(args, heredoc) {
 		const params = parseDesktopInvocation(args, heredoc);
 		params.targetNames = lookupRefNames(extractRefs(params.args));
@@ -338,7 +337,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 				ctx,
 				subcommand,
 				"NOT_ENABLED",
-				"agent-desktop is off. Enable it with `pizza builtin enable agent-desktop`, then grant Accessibility (`/desktop permissions`) before use.",
+				"agent-desktop is disabled. Re-enable with `pizza builtin enable agent-desktop`, then grant Accessibility (`/desktop permissions`) before use.",
 			);
 		}
 		if (isRejectedCommand(subcommand)) {
@@ -534,3 +533,18 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 export function desktopWorkspaceKey(cwd: string): string {
 	return workspaceKey(cwd);
 }
+
+/**
+ * Deprecated alias kept for one release: `_computer_use` used to drive the
+ * vendored pi-computer-use backend. It now forwards to `_desktop`
+ * (agent-desktop) with identical arguments so older prompts and docs do not
+ * break. Hidden from prompt guidelines; `_desktop` remains the documented
+ * command.
+ */
+export const computerUseAliasCommand: CliCommandDefinition<DesktopParams> = {
+	...desktopBuiltinCommand,
+	name: "_computer_use",
+	description: "Deprecated alias for _desktop. Prefer _desktop.",
+	usage: "_computer_use <snapshot|click|type|press|...> [flags] — deprecated alias of _desktop",
+	promptGuidelines: [],
+};

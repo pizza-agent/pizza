@@ -601,7 +601,7 @@ export interface ExtensionInfo {
 	path: string;
 	toolCount: number;
 	commandCount: number;
-	/** Dynamic built-in cli commands registered by this extension (e.g. `_computer_use`). */
+	/** Dynamic built-in cli commands registered by this extension (e.g. `_desktop`). */
 	builtinCommandCount: number;
 	/** For package extensions: load errors attributed to this package (e.g. pi packages needing APIs pizza lacks). */
 	loadError?: string;

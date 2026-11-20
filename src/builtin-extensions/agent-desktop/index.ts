@@ -7,8 +7,9 @@
  * pause, resume, and approval. The model calls `_desktop` through the single
  * `cli` tool.
  *
- * Off until the user enables it (`pizza builtin enable agent-desktop`) and
- * grants OS accessibility permission. Web pages stay on `_browser`.
+ * On by default (it replaced the vendored `computer-use` backend);
+ * disable with `pizza builtin disable agent-desktop`. Requires OS
+ * accessibility permission. Web pages stay on `_browser`.
  */
 
 import { getAgentDir } from "../../config.js";
@@ -17,6 +18,7 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "..
 import { registerCommandRedactor } from "../../core/tools/command-redaction.js";
 import {
 	AGENT_DESKTOP_EXTENSION_ID,
+	computerUseAliasCommand,
 	desktopBuiltinCommand,
 	isAgentDesktopEnabled,
 	setActiveDesktopCwd,
@@ -173,7 +175,7 @@ const USAGE = `Usage:
   /desktop disable      Disable this built-in
   /desktop help         Show this help`;
 
-const PROMPT_HINT = `## desktop automation (agent-desktop, optional)
+const PROMPT_HINT = `## desktop automation (agent-desktop)
 
 Native desktop apps only, through the \`_desktop\` cli command. Web pages stay on \`_browser\` (agent-browser). Do not drive browser page content from here.
 
@@ -189,6 +191,9 @@ export const createAgentDesktopExtension: ExtensionFactory = (pizza: ExtensionAP
 		registerCommandRedactor(redactDesktopCommandLine);
 	}
 	pizza.registerCliCommand(desktopBuiltinCommand);
+	// `_computer_use` is kept as a deprecated alias so older prompts, docs,
+	// and muscle memory keep working while the vendored backend is gone.
+	pizza.registerCliCommand(computerUseAliasCommand);
 	pizza.on("session_start", (_event, ctx) => {
 		setActiveDesktopCwd(ctx.cwd);
 	});
@@ -198,7 +203,7 @@ export const createAgentDesktopExtension: ExtensionFactory = (pizza: ExtensionAP
 		return { systemPrompt: event.systemPrompt + sep + PROMPT_HINT };
 	});
 	pizza.registerCommand("desktop", {
-		description: "Manage the optional agent-desktop native desktop automation CLI.",
+		description: "Manage the agent-desktop native desktop automation CLI.",
 		async handler(args, ctx) {
 			const subcommand = (args.trim().split(/\s+/)[0] || "help").toLowerCase();
 			const cwd = ctx.cwd;

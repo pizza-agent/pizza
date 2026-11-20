@@ -20,7 +20,6 @@ import { BUNDLED_AGENT_DESKTOP_VERSION, binaryFromPackageRoot, platformBinary, r
 import { resetDesktopSecretsForTests } from "../src/builtin-extensions/agent-desktop/secrets.js";
 import { resetDesktopSessionsForTests } from "../src/builtin-extensions/agent-desktop/session.js";
 import { setDesktopRunnerForTests } from "../src/builtin-extensions/agent-desktop/runner.js";
-import { createComputerUseExtension } from "../src/builtin-extensions/computer-use/index.js";
 import { CONTEXT_ROUTER_EXTENSION_ID, createContextRouterExtension } from "../src/builtin-extensions/context-router/index.js";
 import { BUILTIN_EXTENSIONS, getBuiltinExtensionFactories } from "../src/builtin-extensions/index.js";
 import { SettingsManager } from "../src/core/config/settings-manager.js";
@@ -116,19 +115,21 @@ describe("agent-desktop simulated CLI", () => {
 		process.env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
 	}
 
-	it("stays off until enabled, then can be disabled again, without a second tool", async () => {
+	it("is on by default and can be disabled and re-enabled, without a second tool", async () => {
 		const manager = SettingsManager.create(workspaceA, agentDir);
 		const disabled = manager.getDisabledBuiltinExtensions();
-		expect(disabled.has(AGENT_DESKTOP_EXTENSION_ID)).toBe(true);
+		expect(disabled.has(AGENT_DESKTOP_EXTENSION_ID)).toBe(false);
 		expect(disabled.has(CONTEXT_ROUTER_EXTENSION_ID)).toBe(false);
 		const initial = getBuiltinExtensionFactories(disabled);
-		expect(initial.some((ext) => ext.id === AGENT_DESKTOP_EXTENSION_ID)).toBe(false);
+		expect(initial.some((ext) => ext.id === AGENT_DESKTOP_EXTENSION_ID)).toBe(true);
 		expect(initial.some((ext) => ext.id === CONTEXT_ROUTER_EXTENSION_ID)).toBe(true);
-		expect(initial.some((ext) => ext.id === "computer-use")).toBe(true);
 		expect(initial.some((ext) => ext.id === "agent-browser")).toBe(true);
-		expect(BUILTIN_EXTENSIONS.find((ext) => ext.id === AGENT_DESKTOP_EXTENSION_ID)?.enabledByDefault).toBe(false);
+		expect(BUILTIN_EXTENSIONS.find((ext) => ext.id === AGENT_DESKTOP_EXTENSION_ID)?.enabledByDefault).not.toBe(false);
 
 		process.chdir(workspaceA);
+		expect(desktopBuiltinCommand.isAvailable?.()).toBe(true);
+
+		manager.setBuiltinExtensionDisabled(AGENT_DESKTOP_EXTENSION_ID, true);
 		expect(desktopBuiltinCommand.isAvailable?.()).toBe(false);
 		const blocked = await run(workspaceA, "thread-a", ["snapshot", "--app", "Notes"]);
 		expect(blocked.body.error.code).toBe("NOT_ENABLED");
@@ -139,12 +140,6 @@ describe("agent-desktop simulated CLI", () => {
 		expect(desktopBuiltinCommand.isAvailable?.()).toBe(true);
 		expect(getBuiltinExtensionFactories(manager.getDisabledBuiltinExtensions()).some((ext) => ext.id === AGENT_DESKTOP_EXTENSION_ID)).toBe(true);
 
-		manager.setBuiltinExtensionDisabled(AGENT_DESKTOP_EXTENSION_ID, true);
-		expect(desktopBuiltinCommand.isAvailable?.()).toBe(false);
-		const disabledAgain = await run(workspaceA, "thread-a", ["click", "@s1:e1"]);
-		expect(disabledAgain.body.error.code).toBe("NOT_ENABLED");
-		expect(sim.calls).toEqual([]);
-
 		const tools: string[] = [];
 		const builtins: string[] = [];
 		const register = {
@@ -154,7 +149,6 @@ describe("agent-desktop simulated CLI", () => {
 			on: () => undefined,
 		};
 		await createAgentDesktopExtension(register as never);
-		await createComputerUseExtension(register as never);
 		await createAgentBrowserExtension(register as never);
 		await createContextRouterExtension(register as never);
 		expect(tools).toEqual([]);
