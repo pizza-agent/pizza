@@ -9,7 +9,7 @@ has no model loop, and this extension does not add one.
 Web pages stay on `_browser` / the `agent-browser` built-in. Do not drive
 browser page content through the accessibility tree.
 
-It replaces the removed vendored `computer-use` extension; `_computer_use` remains registered as a deprecated alias that forwards to `_desktop`.
+It replaces the removed vendored `computer-use` extension (`_computer_use` is gone entirely).
 
 ## Enable
 
