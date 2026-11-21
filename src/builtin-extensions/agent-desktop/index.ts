@@ -18,7 +18,6 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionFactory } from "..
 import { registerCommandRedactor } from "../../core/tools/command-redaction.js";
 import {
 	AGENT_DESKTOP_EXTENSION_ID,
-	computerUseAliasCommand,
 	desktopBuiltinCommand,
 	isAgentDesktopEnabled,
 	setActiveDesktopCwd,
@@ -191,9 +190,6 @@ export const createAgentDesktopExtension: ExtensionFactory = (pizza: ExtensionAP
 		registerCommandRedactor(redactDesktopCommandLine);
 	}
 	pizza.registerCliCommand(desktopBuiltinCommand);
-	// `_computer_use` is kept as a deprecated alias so older prompts, docs,
-	// and muscle memory keep working while the vendored backend is gone.
-	pizza.registerCliCommand(computerUseAliasCommand);
 	pizza.on("session_start", (_event, ctx) => {
 		setActiveDesktopCwd(ctx.cwd);
 	});

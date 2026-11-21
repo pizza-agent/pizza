@@ -533,18 +533,3 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 export function desktopWorkspaceKey(cwd: string): string {
 	return workspaceKey(cwd);
 }
-
-/**
- * Deprecated alias kept for one release: `_computer_use` used to drive the
- * vendored pi-computer-use backend. It now forwards to `_desktop`
- * (agent-desktop) with identical arguments so older prompts and docs do not
- * break. Hidden from prompt guidelines; `_desktop` remains the documented
- * command.
- */
-export const computerUseAliasCommand: CliCommandDefinition<DesktopParams> = {
-	...desktopBuiltinCommand,
-	name: "_computer_use",
-	description: "Deprecated alias for _desktop. Prefer _desktop.",
-	usage: "_computer_use <snapshot|click|type|press|...> [flags] — deprecated alias of _desktop",
-	promptGuidelines: [],
-};

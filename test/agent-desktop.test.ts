@@ -152,7 +152,8 @@ describe("agent-desktop simulated CLI", () => {
 		await createAgentBrowserExtension(register as never);
 		await createContextRouterExtension(register as never);
 		expect(tools).toEqual([]);
-		expect(builtins).toEqual(expect.arrayContaining(["_desktop", "_computer_use", "_browser", "_context"]));
+		expect(builtins).toEqual(expect.arrayContaining(["_desktop", "_browser", "_context"]));
+		expect(builtins).not.toContain("_computer_use");
 	});
 
 	it("reports a missing CLI separately from a permission denial, and ready when both are present", async () => {
