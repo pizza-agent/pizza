@@ -7,9 +7,8 @@
  * pause, resume, and approval. The model calls `_desktop` through the single
  * `cli` tool.
  *
- * On by default (it replaced the vendored `computer-use` backend);
- * disable with `pizza builtin disable agent-desktop`. Requires OS
- * accessibility permission. Web pages stay on `_browser`.
+ * On by default; disable with `pizza builtin disable agent-desktop`.
+ * Requires OS accessibility permission. Web pages stay on `_browser`.
  */
 
 import { getAgentDir } from "../../config.js";
