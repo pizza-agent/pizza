@@ -22,16 +22,6 @@ import {
 	runAgentBrowserInstall,
 	runAgentBrowserUninstall,
 } from "./agent-browser/index.js";
-import {
-	COMPUTER_USE_EXTENSION_ID,
-	checkComputerUseInstalled,
-	createComputerUseExtension,
-	getComputerUsePermissionStatus,
-	openComputerUsePermissionSettings,
-	recheckComputerUsePermissionStatus,
-	runComputerUseInstall,
-	runComputerUseUninstall,
-} from "./computer-use/index.js";
 import { createContextRouterExtension, CONTEXT_ROUTER_EXTENSION_ID } from "./context-router/index.js";
 import { createMcpExtension, MCP_EXTENSION_ID } from "./mcp/index.js";
 import {
@@ -136,29 +126,15 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 	{
 		id: AGENT_DESKTOP_EXTENSION_ID,
 		name: "agent-desktop",
-		description: "Optional native desktop control via agent-desktop (off until enabled; web pages stay on agent-browser).",
+		description: "Native desktop control via agent-desktop (web pages stay on agent-browser).",
 		factory: createAgentDesktopExtension,
 		installable: true,
-		enabledByDefault: false,
 		checkInstalled: (cwd) => checkAgentDesktopInstalled(cwd),
 		install: (cwd) => runAgentDesktopInstall(cwd),
 		uninstall: (cwd) => runAgentDesktopUninstall(cwd),
 		checkPermissions: (cwd) => getAgentDesktopPermissionStatus(cwd),
 		recheckPermissions: (cwd) => recheckAgentDesktopPermissionStatus(cwd),
 		openPermissionSettings: (cwd, kind) => openAgentDesktopPermissionSettings(cwd, kind),
-	},
-	{
-		id: COMPUTER_USE_EXTENSION_ID,
-		name: "computer-use",
-		description: "Desktop app automation via structured UI observation (vendored pi-computer-use backend).",
-		factory: createComputerUseExtension,
-		installable: true,
-		checkInstalled: (cwd) => checkComputerUseInstalled(cwd),
-		install: (cwd) => runComputerUseInstall(cwd),
-		uninstall: (cwd) => runComputerUseUninstall(cwd),
-		checkPermissions: (cwd) => getComputerUsePermissionStatus(cwd),
-		recheckPermissions: (cwd) => recheckComputerUsePermissionStatus(cwd),
-		openPermissionSettings: (cwd, kind) => openComputerUsePermissionSettings(cwd, kind),
 	},
 	{
 		id: CONTEXT_ROUTER_EXTENSION_ID,

@@ -224,7 +224,7 @@ Built-ins ship with Pizza and are toggled, not installed:
 
     pizza builtin list|enable|disable <id>
 
-covers both built-in extensions (`agent-browser`, `computer-use`) and built-in
+covers both built-in extensions (`agent-browser`, `agent-desktop`) and built-in
 skills — note that most built-in skills are **disabled by default** and must
 be enabled explicitly (or via `/settings`).
 

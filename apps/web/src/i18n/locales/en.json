@@ -692,7 +692,7 @@
         "missing": "Off",
         "openSettings": "Open Settings",
         "recheck": "Recheck",
-        "afterOpen": "After Settings opens, enable pizza-computer-use or Pizza Computer Use, then return here and recheck.",
+        "afterOpen": "After Settings opens, enable agent-desktop or Pizza, then return here and recheck.",
         "stillMissing": "Some permissions are still off. Enable the missing toggles, then recheck."
       }
     },

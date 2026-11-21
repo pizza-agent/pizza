@@ -21,7 +21,7 @@ import type { Skill } from "../src/core/skills/skills.js";
 
 /**
  * Regression: `/<name> [args]` dispatch was dropped when AgentSession was
- * replaced by EventSourcedRuntime — extension commands (e.g. /computer
+ * replaced by EventSourcedRuntime — extension commands (e.g. /desktop
  * install, /browser install) reached the model as plain text instead of
  * running their handler. The interception now lives in SessionFacade so
  * prompt/steer/followUp all share it.
@@ -152,10 +152,10 @@ describe("SessionFacade slash-command dispatch", () => {
 		const calls = { args: [] as string[] };
 		const { facade, runtime, captured } = makeFacade({
 			cwd,
-			extensions: [makeExtension("computer", calls)],
+			extensions: [makeExtension("desktop", calls)],
 		});
 
-		await facade.prompt("/computer install");
+		await facade.prompt("/desktop install");
 
 		expect(calls.args).toEqual(["install"]);
 		// No LLM turn must be started — the command handled the input.

@@ -98,7 +98,7 @@ export class SessionFacade {
 	/**
 	 * `/<name> [args]` interception — the pre-event-sourced AgentSession ran
 	 * this inside prompt()/steer()/followUp() and it was dropped in the
-	 * refactor, so `/computer install`-style extension commands reached the
+	 * refactor, so `/desktop install`-style extension commands reached the
 	 * model as plain text. Order matches the original:
 	 *   1. extension commands execute in-process (no LLM turn)
 	 *   2. the `input` extension event may transform or swallow the input

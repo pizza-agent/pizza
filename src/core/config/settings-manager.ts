@@ -1166,8 +1166,9 @@ export class SettingsManager {
 
 	/**
 	 * Built-in extension ids that should not be loaded.
-	 * Opt-in ids (agent-desktop) are disabled until the user enables them.
-	 * Every other built-in is loaded unless its record says `enabled: false`.
+	 * Opt-in ids (see OPT_IN_BUILTIN_EXTENSION_IDS) are disabled until the
+	 * user enables them; every other built-in is loaded unless its record
+	 * says `enabled: false`.
 	 */
 	getDisabledBuiltinExtensions(): Set<string> {
 		const disabled = new Set<string>();

@@ -547,7 +547,7 @@ export interface RpcExtensionInfo {
 	toolCount: number;
 	/** Number of slash commands this extension registers. */
 	commandCount: number;
-	/** Number of dynamic built-in cli commands this extension registers (e.g. computer-use's `_computer_use`). */
+	/** Number of dynamic built-in cli commands this extension registers (e.g. agent-desktop's `_desktop`). */
 	builtinCommandCount: number;
 	/**
 	 * For package extensions: extension load errors attributed to this package
