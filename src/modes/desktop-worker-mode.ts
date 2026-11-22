@@ -13,7 +13,7 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createServer, type Server, type Socket } from "node:net";
+import { connect, createServer, type Server, type Socket } from "node:net";
 import { execCommand } from "../core/exec/exec.js";
 import { loadDesktopFfi, type FfiAdapter } from "../builtin-extensions/agent-desktop/ffi.js";
 import { dispatchViaFfi } from "../builtin-extensions/agent-desktop/ffi-dispatch.js";
@@ -41,6 +41,7 @@ export async function runDesktopWorkerMode(agentDir: string): Promise<void> {
 	const socketPath = desktopWorkerSocketPath(agentDir);
 	// The macOS clipboard/keyboard helper path travels in the resolved spawn
 	// env for CLI calls; FFI needs it in this process's environment instead.
+	// Resolved once — the binary location does not change over a worker's life.
 	const resolved = await resolveAgentDesktop();
 	if (resolved?.env) Object.assign(process.env, resolved.env);
 	const ffi: FfiAdapter | undefined = await loadDesktopFfi();
@@ -54,7 +55,6 @@ export async function runDesktopWorkerMode(agentDir: string): Promise<void> {
 			const ffiResult = dispatchViaFfi(ffi, args, stdin);
 			if (ffiResult) return { id, ...ffiResult };
 		}
-		const resolved = await resolveAgentDesktop();
 		if (!resolved) {
 			return {
 				id,
@@ -109,7 +109,23 @@ export async function runDesktopWorkerMode(agentDir: string): Promise<void> {
 		socket.on("error", () => pending.delete(socket));
 	});
 
-	if (existsSync(socketPath)) unlinkSync(socketPath);
+	if (existsSync(socketPath)) {
+		// A live worker already owns this path — a second instance must not
+		// unlink it and strand the incumbent. Probe first; exit when it answers.
+		const alive = await new Promise<boolean>((resolvePromise) => {
+			const probe = connect(socketPath);
+			probe.once("connect", () => {
+				probe.destroy();
+				resolvePromise(true);
+			});
+			probe.once("error", () => resolvePromise(false));
+		});
+		if (alive) {
+			process.stderr.write(`desktop-worker: another worker owns ${socketPath}; exiting duplicate.\n`);
+			return;
+		}
+		unlinkSync(socketPath);
+	}
 	await new Promise<void>((resolvePromise, rejectPromise) => {
 		server.once("error", rejectPromise);
 		server.listen(socketPath, () => resolvePromise());

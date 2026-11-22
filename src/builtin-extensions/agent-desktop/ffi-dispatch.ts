@@ -172,8 +172,7 @@ export function dispatchViaFfi(ffi: FfiAdapter, argv: string[], stdin?: string):
 			// --root has no FFI equivalent; subtree snapshots go to the CLI.
 			if (parsed.flags.has("root") || parsed.flags.has("window-id")) return null;
 			const surfaceFlag = parsed.flags.get("surface");
-			const surface =
-				typeof surfaceFlag === "string" ? SURFACES[surfaceFlag] : SURFACES[surfaceFlag === true ? "window" : "window"];
+			const surface = typeof surfaceFlag === "string" ? SURFACES[surfaceFlag] : SURFACES.window;
 			if (surface === undefined) return null;
 			const depthFlag = parsed.flags.get("max-depth");
 			const maxDepth = typeof depthFlag === "string" ? Number.parseInt(depthFlag, 10) : 10;
