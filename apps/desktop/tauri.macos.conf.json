@@ -20,7 +20,8 @@
 		"resources": {
 			"../../dist/pizza": "pizza",
 			"../../dist/agent-desktop": "agent-desktop",
-			"../../dist/agent-desktop-macos-helper": "agent-desktop-macos-helper"
+			"../../dist/agent-desktop-macos-helper": "agent-desktop-macos-helper",
+			"../../dist/libagent_desktop_ffi.dylib": "libagent_desktop_ffi.dylib"
 		}
 	}
 }

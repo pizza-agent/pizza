@@ -130,6 +130,7 @@ type AppMode =
 	| "gui"
 	| "gateway"
 	| "fs-rpc"
+	| "desktop-worker"
 	| "provider-provision-rpc";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
@@ -145,6 +146,9 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	if (parsed.mode === "fs-rpc") {
 		return "fs-rpc";
 	}
+	if (parsed.mode === "desktop-worker") {
+		return "desktop-worker";
+	}
 	if (parsed.mode === "provider-provision-rpc") {
 		return "provider-provision-rpc";
 	}
@@ -159,7 +163,7 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 
 function toPrintOutputMode(
 	appMode: AppMode,
-): Exclude<Mode, "rpc" | "gui" | "gateway" | "fs-rpc" | "provider-provision-rpc"> {
+): Exclude<Mode, "rpc" | "gui" | "gateway" | "fs-rpc" | "desktop-worker" | "provider-provision-rpc"> {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -509,6 +513,17 @@ export async function main(args: string[], options?: MainOptions) {
 	if (appMode === "provider-provision-rpc") {
 		const { runProviderProvisioningMode } = await loadProviderProvisioning();
 		await runProviderProvisioningMode();
+		return;
+	}
+
+	// ── Desktop worker mode ────────────────────────────────────────────────
+	// `pizza --mode desktop-worker` hosts the agent-desktop FFI in a pizza-owned
+	// process so `_desktop` commands run in-process instead of spawning the CLI.
+	// Spawned on demand by runDesktopViaWorker(); isolates vendor native code
+	// from the agent process.
+	if (appMode === "desktop-worker") {
+		const { runDesktopWorkerMode } = await import("./modes/desktop-worker-mode.js");
+		await runDesktopWorkerMode(getAgentDir());
 		return;
 	}
 
