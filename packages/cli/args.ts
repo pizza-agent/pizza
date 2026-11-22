@@ -14,6 +14,7 @@ export type Mode =
 	| "gui"
 	| "gateway"
 	| "fs-rpc"
+	| "desktop-worker"
 	| "provider-provision-rpc";
 
 export interface Args {
@@ -96,6 +97,7 @@ export function parseArgs(args: string[]): Args {
 				mode === "gui" ||
 				mode === "gateway" ||
 				mode === "fs-rpc" ||
+				mode === "desktop-worker" ||
 				mode === "provider-provision-rpc"
 			) {
 				result.mode = mode;

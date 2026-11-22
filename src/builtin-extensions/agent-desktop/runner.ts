@@ -7,6 +7,7 @@
 
 import { execCommand, type ExecResult } from "../../core/exec/exec.js";
 import { resolveAgentDesktop } from "./resolve-binary.js";
+import { runDesktopViaWorker } from "./worker.js";
 
 export interface DesktopRunOptions {
 	cwd: string;
@@ -24,6 +25,11 @@ export interface DesktopRunResult {
 export type DesktopRunner = (args: string[], options: DesktopRunOptions) => Promise<DesktopRunResult>;
 
 async function defaultRunner(args: string[], options: DesktopRunOptions): Promise<DesktopRunResult> {
+	// Preferred path: the pizza-owned desktop worker (FFI in-process, CLI
+	// passthrough for the rest). Null means the worker is unreachable and we
+	// run the command through a direct CLI spawn instead.
+	const viaWorker = await runDesktopViaWorker(args, options);
+	if (viaWorker) return viaWorker;
 	const resolved = await resolveAgentDesktop();
 	if (!resolved) {
 		return {
