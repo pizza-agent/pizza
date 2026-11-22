@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="${AGENT_DESKTOP_SRC:-$ROOT/.agent-desktop-src}"
-VERSION="$(node -e 'console.log(require("'"$ROOT"'/package.json).optionalDependencies["agent-desktop"].replace(/[^0-9.]/g,""))')"
+VERSION="$(node -e 'console.log(require(process.argv[1]).optionalDependencies["agent-desktop"].replace(/[^0-9.]/g,""))' "$ROOT/package.json")"
 
 if [ ! -d "$SRC/crates/ffi" ]; then
 	echo "cloning agent-desktop v$VERSION into $SRC"
@@ -25,6 +25,9 @@ case "$(uname -s)" in
 esac
 
 (cd "$SRC" && cargo build --profile release-ffi -p agent-desktop-ffi)
-mkdir -p "$ROOT/dist"
-cp "$SRC/target/release-ffi/$LIB" "$ROOT/dist/$LIB"
-echo "staged dist/$LIB — the desktop bundle signs it with the app via codesign --deep"
+# Cache outside dist/ — `npm run clean` wipes dist/ at the start of
+# build:desktop. scripts/copy-agent-desktop.mjs stages this into dist/ during
+# the build so tauri picks it up via the resources map.
+mkdir -p "$ROOT/.desktop-ffi"
+cp "$SRC/target/release-ffi/$LIB" "$ROOT/.desktop-ffi/$LIB"
+echo "cached .desktop-ffi/$LIB — copy-agent-desktop.mjs stages it into dist/ at build time"

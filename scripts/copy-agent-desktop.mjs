@@ -21,10 +21,29 @@ function empty(name) {
 	if (!existsSync(file)) writeFileSync(file, "");
 }
 
+const FFI_NAMES = {
+	darwin: "libagent_desktop_ffi.dylib",
+	linux: "libagent_desktop_ffi.so",
+	win32: "agent_desktop_ffi.dll",
+};
+const ffiName = FFI_NAMES[process.platform];
+
+function stageFfiDylib() {
+	if (!ffiName) return;
+	const cache = join(root, ".desktop-ffi", ffiName);
+	const dest = join(dist, ffiName);
+	if (existsSync(cache) && !existsSync(dest)) {
+		mkdirSync(dist, { recursive: true });
+		copyFileSync(cache, dest);
+		console.log(`staged ${ffiName} to dist/`);
+	}
+}
+
 if (placeholder) {
 	empty(process.platform === "win32" ? "agent-desktop.exe" : "agent-desktop");
 	empty("agent-desktop-macos-helper");
 	empty("agent-desktop-linux-clipboard-owner");
+	if (ffiName) empty(ffiName);
 	process.exit(0);
 }
 
@@ -73,3 +92,7 @@ if (helperName) {
 } else {
 	console.log(`copied ${entry.binaryName} to dist/${destName}`);
 }
+
+// Stage the FFI dylib when scripts/build-desktop-ffi.sh has produced one.
+// Optional: the desktop worker CLI-fallbacks when it is absent.
+stageFfiDylib();

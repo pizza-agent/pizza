@@ -48,6 +48,8 @@ collect.sh
 
 # Downloaded vendor tool archives
 .vendor-tools/
+.desktop-ffi/
+
 # Staged platform-specific vendor binaries for desktop bundle
 /apps/desktop/vendor-bin/
 /apps/desktop/prebuilds-bin/
