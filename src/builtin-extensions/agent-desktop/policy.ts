@@ -502,7 +502,9 @@ export function secretText(secretRef: number | undefined): string | undefined {
 	return peekSecret(secretRef);
 }
 
-const SECRET_KEY = /password|token|cookie|authorization|secret|api[-_]?key/i;
+export const SECRET_NAME_KEY = /password|token|cookie|authorization|secret|api[-_]?key/i;
+
+const SECRET_KEY = SECRET_NAME_KEY;
 
 /** Drop secrets, image bytes, and vendor-only bulk from an envelope before it is shown or stored. */
 export function redactEnvelope(value: unknown, secret?: string): unknown {
@@ -536,7 +538,12 @@ export interface CompactElement {
 }
 
 export function collectElements(node: unknown, out: CompactElement[] = [], limit = 400): CompactElement[] {
-	if (!node || typeof node !== "object" || out.length >= limit) return out;
+	if (!node || out.length >= limit) return out;
+	if (Array.isArray(node)) {
+		for (const item of node) collectElements(item, out, limit);
+		return out;
+	}
+	if (typeof node !== "object") return out;
 	const record = node as Record<string, unknown>;
 	if (typeof record.ref_id === "string") {
 		const element: CompactElement = { ref_id: record.ref_id };

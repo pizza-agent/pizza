@@ -61,7 +61,7 @@ export interface DesktopEnvelope {
 	ok?: boolean;
 	command?: string;
 	data?: Record<string, unknown> & { snapshot_id?: string; app?: string; tree?: unknown; matches?: unknown };
-	error?: { code?: string; message?: string; details?: { kind?: string } };
+	error?: { code?: string; message?: string; suggestion?: string; details?: { kind?: string } };
 }
 
 export function parseEnvelope(stdout: string): DesktopEnvelope | undefined {

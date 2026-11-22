@@ -27,6 +27,7 @@ import {
 	parseDesktopInvocation,
 	platformCaveat,
 	redactEnvelope,
+	SECRET_NAME_KEY,
 	secretText,
 	type DesktopParams,
 } from "./policy.js";
@@ -94,7 +95,7 @@ function helpText(): string {
 		"  _desktop snapshot --root @s1:e1 -i --compact",
 		"  _desktop find --app Notes --role button --name Save",
 		"  _desktop get @s1:e1 --property value",
-		"  _desktop is @s1:e1 --state enabled",
+		"  _desktop is @s1:e1 --property enabled",
 		"  _desktop screenshot --app Notes",
 		"  _desktop list-apps | list-windows | list-displays | list-surfaces",
 		"  _desktop wait --element @s1:e1 --predicate value --value Saved",
@@ -193,7 +194,7 @@ async function readPermissions(cwd: string, signal: AbortSignal | undefined): Pr
 	return cache;
 }
 
-function present(envelope: DesktopEnvelope, command: string, secret: string | undefined, artifact?: string): string {
+function present(envelope: DesktopEnvelope, command: string, secret: string | undefined, artifact?: string, binding?: DesktopThreadBinding): string {
 	const redacted = redactEnvelope(envelope, secret) as DesktopEnvelope;
 	if (command === "snapshot" || command === "find") {
 		const data = (redacted.data ?? {}) as Record<string, unknown>;
@@ -203,13 +204,16 @@ function present(envelope: DesktopEnvelope, command: string, secret: string | un
 			command,
 			app: data.app,
 			snapshot_id: data.snapshot_id,
-			ref_count: data.ref_count ?? elements.length,
+			ref_count: data.ref_count ?? data.total_matches ?? elements.length,
 			complete: data.complete,
 			elements,
 		};
+		if (data.truncated !== undefined) body.truncated = data.truncated;
 		if (artifact) body.artifact = artifact;
 		if (redacted.ok !== true && redacted.error) {
-			body.error = { code: redacted.error.code, message: redacted.error.message };
+			const failure: Record<string, unknown> = { code: redacted.error.code, message: redacted.error.message };
+			if (typeof redacted.error.suggestion === "string") failure.suggestion = redacted.error.suggestion;
+			body.error = failure;
 		}
 		return JSON.stringify(body, null, 2);
 	}
@@ -219,14 +223,41 @@ function present(envelope: DesktopEnvelope, command: string, secret: string | un
 		ok: redacted.ok === true,
 		command,
 	};
-	if (typeof data.app === "string") body.app = data.app;
-	if (typeof data.snapshot_id === "string") body.snapshot_id = data.snapshot_id;
-	if (disposition?.delivery) body.delivery = disposition.delivery;
-	if (disposition?.retry) body.retry = disposition.retry;
 	if (artifact) body.artifact = artifact;
-	if (typeof data.path === "string") body.artifact = data.path;
+	if (Array.isArray(data)) {
+		body.items = data;
+	} else {
+		if (typeof data.app === "string") body.app = data.app;
+		if (typeof data.snapshot_id === "string") body.snapshot_id = data.snapshot_id;
+		if (disposition?.delivery) body.delivery = disposition.delivery;
+		if (disposition?.retry) body.retry = disposition.retry;
+		if (typeof data.path === "string") body.artifact = data.path;
+		// Surface the vendor data the model asked for (value, result, apps,
+		// text, permissions, ...). Bulk trees are compacted like a snapshot
+		// instead of being copied into the log.
+		const { tree, matches, match, disposition: _disposition, path: _path, ...rest } = data;
+		for (const [key, value] of Object.entries(rest)) {
+			if (!(key in body)) body[key] = value;
+		}
+		// A read-back of a secret-named field (Password, token, ...) must not
+		// land its stored value in the log or the model context. Role, states,
+		// and bounds stay readable.
+		const targetName = typeof data.ref === "string" ? binding?.elements?.[data.ref]?.name : undefined;
+		const readsValue = data.property === "value" || data.property === undefined;
+		if (targetName && SECRET_NAME_KEY.test(targetName) && readsValue && typeof body.value === "string" && body.value) {
+			body.value = "[redacted]";
+		}
+		const embedded = tree ?? matches ?? match;
+		if (embedded !== undefined) {
+			const elements = collectElements(embedded);
+			body.elements = elements;
+			body.ref_count ??= data.ref_count ?? data.total_matches ?? elements.length;
+		}
+	}
 	if (redacted.ok !== true && redacted.error) {
-		body.error = { code: redacted.error.code, message: redacted.error.message };
+		const failure: Record<string, unknown> = { code: redacted.error.code, message: redacted.error.message };
+		if (typeof redacted.error.suggestion === "string") failure.suggestion = redacted.error.suggestion;
+		body.error = failure;
 	}
 	if (isMutating(command) && redacted.ok === true) {
 		body.note = "Snapshot is now stale. Run _desktop snapshot before the next action.";
@@ -519,7 +550,7 @@ export const desktopBuiltinCommand: CliCommandDefinition<DesktopParams> = {
 			session_id: sessionId,
 		};
 		audit(ctx, details);
-		let text = present(envelope, subcommand, secret, artifact);
+		let text = present(envelope, subcommand, secret, artifact, binding);
 		const caveat = platformCaveat();
 		if (subcommand === "status" && caveat) {
 			const body = JSON.parse(text) as Record<string, unknown>;
