@@ -40,6 +40,7 @@ interface StoredRef {
 	app: string;
 	name?: string;
 	role: string;
+	value?: string;
 	stale: boolean;
 }
 
@@ -111,7 +112,7 @@ function assignTree(nodes: SimulatedElement[], snapshotId: string, app: string, 
 	return nodes.map((node) => {
 		counter.n += 1;
 		const ref = `@${snapshotId}:e${counter.n}`;
-		store.set(ref, { app, name: node.name, role: node.role, stale: false });
+		store.set(ref, { app, name: node.name, role: node.role, value: node.value, stale: false });
 		return {
 			role: node.role,
 			name: node.name,
@@ -185,6 +186,11 @@ export function createAgentDesktopSimulator(options?: {
 		if (command === "status") {
 			return envelope("status", {
 				platform: "sim",
+				version: "0.0.0-sim",
+				session_id: null,
+				snapshot_id: null,
+				ref_count: 0,
+				tracing: false,
 				permissions: {
 					accessibility: { state: accessibility },
 					screen_recording: { state: screenRecording },
@@ -209,14 +215,39 @@ export function createAgentDesktopSimulator(options?: {
 				return envelope(command, { code: "APP_NOT_FOUND", message: `No app named ${appName}`, disposition: { delivery: "not_delivered", retry: "safe" } }, false);
 			}
 			const surface = flag(rest, "surface");
-			const nodes = surface && /^(menubar|menu|dock|menu-bar-extras)$/i.test(surface)
+			let nodes = surface && /^(menubar|menu|dock|menu-bar-extras)$/i.test(surface)
 				? app.elements.filter((element) => element.role === "menuitem")
 				: app.elements.filter((element) => element.role !== "menuitem");
+			if (command === "find") {
+				const role = flag(rest, "role");
+				const name = flag(rest, "name");
+				if (role) nodes = nodes.filter((element) => element.role === role);
+				if (name) nodes = nodes.filter((element) => element.name?.toLowerCase().includes(name.toLowerCase()));
+			}
 			snapshotCounter += 1;
 			const snapshotId = `s${snapshotCounter}`;
 			const stored = new Map<string, StoredRef>();
 			const tree = { role: "window", name: app.name, children: assignTree(nodes, snapshotId, app.name, stored) };
 			session?.snapshots.set(snapshotId, stored);
+			if (command === "find") {
+				// The real CLI answers find with a flat matches array, not a tree.
+				const matches = [...stored.entries()].map(([ref_id, element]) => ({
+					ref_id,
+					role: element.role,
+					name: element.name,
+					value: element.value,
+					interactive: true,
+					states: [],
+					path: ["window"],
+				}));
+				return envelope(command, {
+					app: app.name,
+					snapshot_id: snapshotId,
+					total_matches: matches.length,
+					truncated: false,
+					matches,
+				});
+			}
 			return envelope(command, {
 				app: app.name,
 				snapshot_id: snapshotId,
@@ -225,7 +256,32 @@ export function createAgentDesktopSimulator(options?: {
 				tree,
 			});
 		}
+		if (command === "list-apps") {
+			const appName = flag(rest, "app");
+			const list = apps
+				.filter((item) => !appName || item.name.toLowerCase() === appName.toLowerCase())
+				.map((item, index) => ({ name: item.name, bundle_id: `sim.${item.name.toLowerCase()}`, pid: 1000 + index, presentation: "foreground" }));
+			return envelope(command, { apps: list });
+		}
+		if (command === "list-windows" || command === "list-displays") {
+			// The real CLI returns data as a bare array for these commands.
+			if (command === "list-displays") {
+				return envelope(command, [{ id: "1", is_primary: true, scale: 2.0, bounds: { x: 0, y: 0, width: 1728, height: 1117 } }]);
+			}
+			const appName = flag(rest, "app");
+			const windows = apps
+				.filter((item) => !appName || item.name.toLowerCase() === appName.toLowerCase())
+				.map((item, index) => ({ id: `w-${index + 1}`, app_name: item.name, title: item.name, pid: 1000 + index, visible: true, accessible: true, is_focused: false, minimized: false, bounds: { x: 0, y: 0, width: 1200, height: 800 } }));
+			return envelope(command, windows);
+		}
+		if (command === "list-surfaces") {
+			return envelope(command, { pid: 1000, surfaces: ["window", "menubar"] });
+		}
+		if (command === "list-notifications") {
+			return envelope(command, { count: 0, notifications: [] });
+		}
 		const ref = rest.find((token) => token.startsWith("@"));
+		let element: StoredRef | undefined;
 		if (ref && session) {
 			const snapshotId = /^@([A-Za-z0-9]+):e\d+$/.exec(ref)?.[1];
 			const stored = snapshotId ? session.snapshots.get(snapshotId) : undefined;
@@ -236,7 +292,7 @@ export function createAgentDesktopSimulator(options?: {
 					disposition: { delivery: "not_delivered", retry: "safe" },
 				}, false);
 			}
-			const element = stored.get(ref);
+			element = stored.get(ref);
 			if (!element || element.stale) {
 				return envelope(command, {
 					code: "STALE_REF",
@@ -245,10 +301,27 @@ export function createAgentDesktopSimulator(options?: {
 				}, false);
 			}
 		}
+		if (command === "get" || command === "is") {
+			const property = flag(rest, "property") ?? (command === "get" ? "text" : "visible");
+			if (command === "get") {
+				const value = property === "role" ? element?.role : property === "value" ? element?.value : element?.name;
+				return envelope(command, { property, ref, value: value ?? "" });
+			}
+			return envelope(command, { applicable: true, property, ref, result: true });
+		}
 		if (command === "type" || command === "set-value" || command === "clipboard-set") {
+			const text = runOptions.input ?? positionals(rest).at(-1) ?? "";
+			if (text.includes("__action_failed__")) {
+				return envelope(command, {
+					code: "ACTION_FAILED",
+					message: "Post-action state does not match the requested change",
+					suggestion: "Read the field with 'get', then write the full intended value with 'set-value'.",
+					disposition: { delivery: "delivered_unverified", retry: "unsafe" },
+				}, false);
+			}
 			return envelope(command, {
 				action: command,
-				post_state: { value: runOptions.input ?? positionals(rest).at(-1) ?? "" },
+				post_state: { value: text },
 				disposition: { delivery: "delivered_verified", retry: "unsafe" },
 			});
 		}

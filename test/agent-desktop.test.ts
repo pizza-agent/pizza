@@ -383,6 +383,45 @@ describe("agent-desktop simulated CLI", () => {
 		expect(binaryFromPackageRoot(join(root, "empty"))).toBeUndefined();
 	});
 
+	it("surfaces find matches, get/is values, list-* items, status data, and error suggestions", async () => {
+		enable(workspaceA);
+		// The real CLI answers find with a flat matches array, not a tree.
+		const find = await run(workspaceA, "thread-a", ["find", "--app", "Notes", "--role", "textfield"]);
+		expect(find.body.ok).toBe(true);
+		const field = find.body.elements.find((element: { role?: string }) => element.role === "textfield");
+		expect(field?.name).toBe("Password");
+		expect(find.body.ref_count).toBeGreaterThanOrEqual(1);
+
+		const got = await run(workspaceA, "thread-a", ["get", field.ref_id, "--property", "role"]);
+		expect(got.body.ok).toBe(true);
+		expect(got.body.value).toBe("textfield");
+		const secretValue = await run(workspaceA, "thread-a", ["get", field.ref_id, "--property", "value"]);
+		expect(secretValue.body.value).toBe("[redacted]");
+		const visible = await run(workspaceA, "thread-a", ["is", field.ref_id, "--property", "visible"]);
+		expect(visible.body.result).toBe(true);
+
+		const apps = await run(workspaceA, "thread-a", ["list-apps"]);
+		expect(apps.body.apps.some((app: { name: string }) => app.name === "Notes")).toBe(true);
+		// list-windows / list-displays return data as a bare array.
+		const windows = await run(workspaceA, "thread-a", ["list-windows", "--app", "Notes"]);
+		expect(Array.isArray(windows.body.items)).toBe(true);
+		expect(windows.body.items[0].app_name).toBe("Notes");
+		const displays = await run(workspaceA, "thread-a", ["list-displays"]);
+		expect(Array.isArray(displays.body.items)).toBe(true);
+
+		const status = await run(workspaceA, "thread-a", ["status"]);
+		expect(status.body.permissions.accessibility.state).toBe("granted");
+		expect(status.body.platform).toBe("sim");
+
+		// A failed mutation does not spend the snapshot; the vendor's retry
+		// suggestion reaches the model, and the same ref may be retried.
+		const failed = await run(workspaceA, "thread-a", ["type", field.ref_id, "__action_failed__"]);
+		expect(failed.body.error.code).toBe("ACTION_FAILED");
+		expect(failed.body.error.suggestion).toContain("set-value");
+		const retry = await run(workspaceA, "thread-a", ["type", field.ref_id, "plain text"]);
+		expect(retry.body.ok).toBe(true);
+	});
+
 	it("states that Windows and Linux are not the primary path", async () => {
 		expect(platformCaveat("darwin")).toBeUndefined();
 		expect(platformCaveat("win32")).toContain("not the primary path");
