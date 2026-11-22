@@ -1780,7 +1780,7 @@ ${insert}`;
 						<textarea
 							ref={textareaRef}
 							// ARIA role so desktop automation (accessibility tree /
-							// computer-use) can find and drive the composer —
+							// agent-desktop) can find and drive the composer —
 							// WKWebView otherwise collapses the web content into
 							// unlabeled static-text groups.
 							role="textbox"

@@ -26,7 +26,7 @@ import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateTail } fr
  * scanning network mounts ran ~8h in the wild and starved the follow-up
  * queue), so shell commands never run unbounded by default. Pass "timeout: 0"
  * to disable, or an explicit value to extend. Underscore commands are
- * unaffected — those that wait have their own flags (e.g. "_computer_use wait
+ * unaffected — those that wait have their own flags (e.g. "_desktop wait
  * --timeout-ms").
  */
 export const DEFAULT_CLI_SHELL_TIMEOUT_MS = 600_000;

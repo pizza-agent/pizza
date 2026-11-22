@@ -9,22 +9,17 @@ has no model loop, and this extension does not add one.
 Web pages stay on `_browser` / the `agent-browser` built-in. Do not drive
 browser page content through the accessibility tree.
 
-The existing `_computer_use` extension (vendored pi-computer-use) is unchanged.
 
 ## Enable
 
-The extension is **off by default**.
+The extension is **on by default**. Disable it with
+`pizza builtin disable agent-desktop`.
 
 The CLI ships with Pizza (`agent-desktop@1.3.1`, an optional dependency).
 Installing Pizza is enough. Do not run `npm install -g agent-desktop`.
 
-```bash
-pizza builtin enable agent-desktop    # takes effect on the next session
-```
-
-Inside a session that already loaded it: `/desktop enable`, `/desktop status`,
-`/desktop permissions`. `/desktop install` only reports that the binary is
-already part of Pizza.
+Inside a session: `/desktop status`, `/desktop permissions`, `/desktop disable`.
+`/desktop install` only reports that the binary is already part of Pizza.
 
 ### Permissions
 

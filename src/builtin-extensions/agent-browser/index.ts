@@ -199,7 +199,7 @@ const USAGE = `Usage:
 
 export const createAgentBrowserExtension: ExtensionFactory = (pizza: ExtensionAPI) => {
 	// The in-process managed-browser engine: one dynamic command, registered
-	// like computer-use's `_computer_use` (intercepted by the cli tool before
+	// like agent-desktop's `_desktop` (intercepted by the cli tool before
 	// shell fallback; no extra tool schemas in the model context).
 	pizza.registerCliCommand(browserBuiltinCommand);
 

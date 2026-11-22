@@ -15,7 +15,7 @@
  *   _browser downloads
  *   _browser close [t2|all]
  *
- * Like `_computer_use`, this rides the existing cli tool (intercepted before
+ * Like `_desktop`, this rides the existing cli tool (intercepted before
  * shell fallback) so no per-operation tool schemas enter the model context.
  * The engine (playwright-core) imports lazily on first real use.
  */

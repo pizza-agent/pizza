@@ -46,7 +46,7 @@ const { facade, model } = await createSessionFacade({
   // be injected via `resourceLoader` for finer control).
   resourceLoaderOptions: {
     // noExtensions: true,        // skip user/package extension discovery
-    // noBuiltinExtensions: true, // skip built-ins (agent-browser, computer-use, pet, mcp)
+    // noBuiltinExtensions: true, // skip built-ins (agent-browser, agent-desktop, mcp)
     // noBuiltinSkills: true,
     // noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
   },

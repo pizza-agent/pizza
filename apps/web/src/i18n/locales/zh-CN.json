@@ -692,7 +692,7 @@
         "missing": "未开启",
         "openSettings": "打开系统设置",
         "recheck": "重新检测",
-        "afterOpen": "打开设置后,请把 pizza-computer-use 或 Pizza Computer Use 的开关打开,再回到这里重新检测。",
+        "afterOpen": "打开设置后,请把 agent-desktop 或 Pizza 的开关打开,再回到这里重新检测。",
         "stillMissing": "还有权限未开启。请打开对应开关后重新检测。"
       }
     },

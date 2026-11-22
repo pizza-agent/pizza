@@ -23,7 +23,7 @@ const COMMAND_NAME_RE = /^_[a-z][a-z0-9_-]*$/;
 export function validateCliCommand(command: CliCommandDefinition): void {
 	if (!COMMAND_NAME_RE.test(command.name)) {
 		throw new Error(
-			`Invalid cli command name: ${command.name}. Must be an underscore token like "_computer_use" (lowercase letters, digits, - or _).`,
+			`Invalid cli command name: ${command.name}. Must be an underscore token like "_desktop" (lowercase letters, digits, - or _).`,
 		);
 	}
 	if ((BUILTIN_COMMANDS as readonly string[]).includes(command.name)) {

@@ -318,10 +318,10 @@ describe("SettingsManager", () => {
 	});
 
 	describe("disabledBuiltinExtensions", () => {
-		it("defaults to opt-in built-ins disabled and every other built-in enabled", () => {
+		it("enables every built-in by default when none are marked opt-in", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			const disabled = manager.getDisabledBuiltinExtensions();
-			expect([...disabled]).toEqual(["agent-desktop"]);
+			expect([...disabled]).toEqual([]);
 		});
 
 		it("disables and persists a built-in extension id", async () => {
