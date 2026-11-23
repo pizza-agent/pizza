@@ -1246,5 +1246,22 @@
     "answered": "Answered",
     "skipped": "Skipped",
     "expired": "Expired"
+  },
+  "contextInspector": {
+    "title": "Context Inspector",
+    "pins": "GoalPins",
+    "recent": "Recent",
+    "path": "Path",
+    "refresh": "Refresh",
+    "loading": "Loading events…",
+    "empty": "No evidence selected.",
+    "pathPlaceholder": "e.g. src/core/runtime/reactor.ts",
+    "pathHint": "Enter a file path to inspect its long-range evidence.",
+    "eventId": "Event",
+    "events": "{{count}} events",
+    "tokens": "~{{count}} tokens",
+    "copy": "Copy JSON",
+    "copied": "Copied",
+    "preview": "Preview only. This does not change the active model context."
   }
 }
