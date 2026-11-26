@@ -4,19 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Modal } from "@/components/ui";
 import { getEvents } from "@/lib/transport";
 import {
-	selectGoalPins,
-	selectPathContext,
-	selectRecentContext,
+	selectInspectorTab,
+	toInspectorEvents,
 	type ContextSelection,
-} from "../../../../src/core/context/goal-pins";
-
-type ContextEvent = {
-	event_id: string;
-	type: string;
-	sequence: number;
-	thread_id?: string;
-	payload: unknown;
-};
+	type InspectorEvent,
+} from "@/lib/context-inspector";
 
 type Tab = "pins" | "recent" | "path";
 
@@ -43,7 +35,8 @@ export function ContextInspector({
 }) {
 	const { t } = useTranslation();
 	const [tab, setTab] = useState<Tab>("pins");
-	const [events, setEvents] = useState<ContextEvent[]>([]);
+	const [events, setEvents] = useState<InspectorEvent[]>([]);
+	const [pinsEvents, setPinsEvents] = useState<InspectorEvent[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [path, setPath] = useState("");
@@ -53,16 +46,14 @@ export function ContextInspector({
 		setLoading(true);
 		setError(null);
 		try {
-			const rows = await getEvents({ limit: 1000, sessionScoped: true });
-			setEvents(rows
-				.filter((row) => !threadId || row.thread_id === threadId)
-				.map((row, index) => ({
-					event_id: row.event_id,
-					type: row.type,
-					sequence: index + 1,
-					thread_id: row.thread_id,
-					payload: row.payload,
-				})));
+			// Pins need the whole user-message history, not the recent 1000-event
+			// page: early constraints are exactly what GoalPins is meant to keep.
+			const [recentRows, userRows] = await Promise.all([
+				getEvents({ limit: 1000, sessionScoped: true }),
+				getEvents({ eventTypes: ["USER_MESSAGE"], limit: 100000, sessionScoped: true }),
+			]);
+			setEvents(toInspectorEvents(recentRows, threadId));
+			setPinsEvents(toInspectorEvents(userRows, threadId));
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -75,12 +66,10 @@ export function ContextInspector({
 		void loadEvents();
 	}, [open, loadEvents]);
 
-	const selection: ContextSelection | null = useMemo(() => {
-		if (events.length === 0) return null;
-		if (tab === "pins") return selectGoalPins(events as never, { tokenBudget: 1200 });
-		if (tab === "recent") return selectRecentContext(events as never, { tokenBudget: 2000 });
-		return path.trim() ? selectPathContext(events as never, path.trim(), { tokenBudget: 2000 }) : null;
-	}, [events, tab, path]);
+	const selection: ContextSelection | null = useMemo(
+		() => selectInspectorTab(tab, events, pinsEvents, path),
+		[tab, events, pinsEvents, path],
+	);
 
 	const copyJson = async () => {
 		if (!selection) return;
