@@ -11,6 +11,7 @@
  */
 
 import type { EventBase } from "../event-store/types.js";
+import type { PersonalMemoryItem } from "./personal-memory.js";
 import { estimateStringTokens } from "../compaction/token-estimation.js";
 
 export type ContextStrategy = "pins" | "recent" | "path";
@@ -34,6 +35,8 @@ export interface GoalPinsOptions {
 	limit?: number;
 	/** Approximate token budget. Default 1200. */
 	tokenBudget?: number;
+	/** Explicitly saved, user-owned memories to merge ahead of event pins. */
+	memories?: PersonalMemoryItem[];
 }
 
 export interface RecentOptions {
@@ -198,8 +201,15 @@ export function selectGoalPins(events: EventBase[], options: GoalPinsOptions = {
 	const limit = Math.max(1, Math.min(options.limit ?? 8, 20));
 	const budget = Math.max(100, options.tokenBudget ?? 1200);
 	const users = events.filter((event) => event.type === "USER_MESSAGE" && isPinnableUserMessage(summarizeEvent(event)));
+	const memoryEvidence = (options.memories ?? []).map((memory) => ({
+		eventId: `memory:${memory.id}`,
+		type: "MEMORY",
+		sequence: 0,
+		summary: `[${memory.kind}] ${memory.text}`,
+	}));
 	if (users.length === 0) {
-		return { strategy: "pins", markdown: "## GoalPins\n\nNo user messages in this session.", evidence: [] };
+		const evidence = withinBudget(memoryEvidence, budget);
+		return { strategy: "pins", markdown: render("pins", evidence), evidence };
 	}
 	const lastSeq = users[users.length - 1].sequence;
 	const scored = users.map((event, index) => {
@@ -214,7 +224,7 @@ export function selectGoalPins(events: EventBase[], options: GoalPinsOptions = {
 		.slice(0, limit)
 		.sort((a, b) => a.event.sequence - b.event.sequence)
 		.map((item) => toEvidence(item.event));
-	const evidence = withinBudget(selected, budget);
+	const evidence = withinBudget([...memoryEvidence, ...selected], budget);
 	return { strategy: "pins", markdown: render("pins", evidence), evidence };
 }
 

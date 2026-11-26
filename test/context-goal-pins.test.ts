@@ -83,6 +83,23 @@ describe("GoalPins context selectors", () => {
 		expect(selection.markdown).toContain("src/auth.ts");
 	});
 
+	it("keeps memories when there are no pinnable user messages", () => {
+		const selection = selectGoalPins([], {
+			memories: [{
+				id: "mem_1",
+				kind: "constraint",
+				text: "keep the public API stable",
+				scope: "global",
+				confidence: 1,
+				createdAt: 0,
+				updatedAt: 0,
+				createdBy: "user_explicit",
+			}],
+		});
+		expect(selection.evidence).toHaveLength(1);
+		expect(selection.markdown).toContain("keep the public API stable");
+	});
+
 	it("routes constraint questions to pins and default to recent", () => {
 		expect(routeContextQuery("why did we keep the API stable?").strategy).toBe("pins");
 		expect(routeContextQuery("what is the next failing test?").strategy).toBe("recent");
