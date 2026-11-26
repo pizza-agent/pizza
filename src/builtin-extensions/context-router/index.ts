@@ -216,8 +216,12 @@ export const contextCommand: CliCommandDefinition<ContextArgs> = {
 				};
 			}
 			case "forget": {
-				const removed = await memoryStore.forget(params.memoryId!);
-				if (!removed) throw new Error(`Memory not found: ${params.memoryId}`);
+				const removed = await memoryStore.forget(params.memoryId!, {
+					sessionId,
+					workspaceId,
+					includeExpired: true,
+				});
+				if (!removed) throw new Error(`Memory not found in the current session/project: ${params.memoryId}`);
 				return { content: [{ type: "text", text: `Forgot ${params.memoryId}` }] };
 			}
 			case "memories": {
@@ -234,10 +238,13 @@ export const contextCommand: CliCommandDefinition<ContextArgs> = {
 				};
 			}
 			case "export": {
-				const all = await memoryStore.export();
+				// Never export other sessions/workspaces implicitly. This is the
+				// user's current scope only; full backup belongs in a separate,
+				// explicitly privileged maintenance path.
+				const visible = await memoryStore.export({ sessionId, workspaceId, includeExpired: true });
 				return {
-					content: [{ type: "text", text: JSON.stringify(all, null, 2) }],
-					details: all,
+					content: [{ type: "text", text: JSON.stringify(visible, null, 2) }],
+					details: visible,
 				};
 			}
 			default:

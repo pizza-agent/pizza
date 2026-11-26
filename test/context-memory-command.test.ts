@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteEventStore } from "../src/core/event-store/sqlite-store.js";
 import { contextCommand } from "../src/builtin-extensions/context-router/index.js";
+import { PersonalMemoryStore } from "../src/core/context/personal-memory.js";
 import type { ExtensionContext } from "../src/core/extensions/types.js";
 
-describe("_context memory commands", () => {
+describe.sequential("_context memory commands", () => {
 	let dir: string;
 	let previous: string | undefined;
 	let store: SqliteEventStore;
@@ -15,8 +16,8 @@ describe("_context memory commands", () => {
 
 	beforeEach(() => {
 		dir = mkdtempSync(join(tmpdir(), "pizza-context-memory-"));
-		previous = process.env.PIZZA_AGENT_DIR;
-		process.env.PIZZA_AGENT_DIR = dir;
+		previous = process.env.PIZZA_CODING_AGENT_DIR;
+		process.env.PIZZA_CODING_AGENT_DIR = dir;
 		store = new SqliteEventStore("context-memory", ":memory:");
 		const event = store.append({
 			actor_id: "user",
@@ -44,8 +45,8 @@ describe("_context memory commands", () => {
 	});
 
 	afterEach(() => {
-		if (previous === undefined) delete process.env.PIZZA_AGENT_DIR;
-		else process.env.PIZZA_AGENT_DIR = previous;
+		if (previous === undefined) delete process.env.PIZZA_CODING_AGENT_DIR;
+		else process.env.PIZZA_CODING_AGENT_DIR = previous;
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -61,6 +62,31 @@ describe("_context memory commands", () => {
 			memoryId: "mem1",
 		});
 		expect(() => contextCommand.parseArguments?.(["remember"], undefined, {})).toThrow(/event id/);
+	});
+
+	it("exports only the current scope and cannot forget another scope", async () => {
+		const remembered = await contextCommand.execute(
+			"ctx1",
+			{ subcommand: "remember", eventId, scope: "project", kind: "constraint" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const mine = remembered.details as { id: string };
+		const otherStore = new PersonalMemoryStore(dir);
+		const other = await otherStore.remember({ text: "other workspace secret", scope: "project", workspaceId: "ws-other" });
+
+		const exported = await contextCommand.execute("ctx2", { subcommand: "export" }, undefined, undefined, ctx);
+		const exportedText = (exported.content[0] as { text: string }).text;
+		expect(exportedText).toContain(mine.id);
+		expect(exportedText).not.toContain(other.id);
+		expect(exportedText).not.toContain("other workspace secret");
+
+		await expect(
+			contextCommand.execute("ctx3", { subcommand: "forget", memoryId: other.id }, undefined, undefined, ctx),
+		).rejects.toThrow(/current session\/project/);
+		const stillThere = await otherStore.list({ workspaceId: "ws-other" });
+		expect(stillThere.map((item) => item.id)).toContain(other.id);
 	});
 
 	it("remembers an event, merges it into pins, lists it, and forgets it", async () => {

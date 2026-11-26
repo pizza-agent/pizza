@@ -59,6 +59,15 @@ interface MemoryFile {
 	items: PersonalMemoryItem[];
 }
 
+/** Scope visibility is shared by list/export/forget so they cannot diverge. */
+export function isMemoryVisible(item: PersonalMemoryItem, query: MemoryListQuery = {}): boolean {
+	const now = query.now ?? Date.now();
+	if (!query.includeExpired && item.expiresAt !== undefined && item.expiresAt <= now) return false;
+	if (item.scope === "global") return true;
+	if (item.scope === "project") return Boolean(query.workspaceId) && item.workspaceId === query.workspaceId;
+	return Boolean(query.sessionId) && item.sessionId === query.sessionId;
+}
+
 const MAX_TEXT = 4000;
 const KINDS: MemoryKind[] = ["constraint", "preference", "decision", "fact"];
 const SCOPES: MemoryScope[] = ["session", "project", "global"];
@@ -106,15 +115,9 @@ export class PersonalMemoryStore {
 	}
 
 	async list(query: MemoryListQuery = {}): Promise<PersonalMemoryItem[]> {
-		const now = query.now ?? Date.now();
 		const file = await this.read();
 		return file.items
-			.filter((item) => {
-				if (!query.includeExpired && item.expiresAt !== undefined && item.expiresAt <= now) return false;
-				if (item.scope === "global") return true;
-				if (item.scope === "project") return Boolean(query.workspaceId) && item.workspaceId === query.workspaceId;
-				return Boolean(query.sessionId) && item.sessionId === query.sessionId;
-			})
+			.filter((item) => isMemoryVisible(item, query))
 			.sort((a, b) => a.createdAt - b.createdAt);
 	}
 
@@ -127,7 +130,12 @@ export class PersonalMemoryStore {
 		const file = await this.read();
 		const text = input.text.trim();
 		const duplicate = file.items.find(
-			(item) => item.text === text && item.scope === scope && item.sourceEventId === input.sourceEventId,
+			(item) =>
+				item.text === text &&
+				item.scope === scope &&
+				item.sourceEventId === input.sourceEventId &&
+				item.workspaceId === (scope === "project" ? input.workspaceId : undefined) &&
+				item.sessionId === (scope === "session" ? input.sessionId : undefined),
 		);
 		if (duplicate) return duplicate;
 		const item: PersonalMemoryItem = {
@@ -149,16 +157,17 @@ export class PersonalMemoryStore {
 		return item;
 	}
 
-	async forget(id: string): Promise<boolean> {
+	async forget(id: string, query: MemoryListQuery = {}): Promise<boolean> {
 		const file = await this.read();
-		const next = file.items.filter((item) => item.id !== id);
-		if (next.length === file.items.length) return false;
-		await this.write({ ...file, items: next });
+		const target = file.items.find((item) => item.id === id);
+		if (!target || !isMemoryVisible(target, query)) return false;
+		await this.write({ ...file, items: file.items.filter((item) => item.id !== id) });
 		return true;
 	}
 
-	async export(): Promise<PersonalMemoryItem[]> {
-		return (await this.read()).items;
+	/** Scope-filtered export. Callers must pass their session/workspace keys. */
+	async export(query: MemoryListQuery = {}): Promise<PersonalMemoryItem[]> {
+		return this.list(query);
 	}
 }
 

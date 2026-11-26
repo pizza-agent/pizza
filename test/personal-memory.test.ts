@@ -4,19 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PersonalMemoryStore } from "../src/core/context/personal-memory.js";
 
-describe("PersonalMemoryStore", () => {
+describe.sequential("PersonalMemoryStore", () => {
 	let dir: string;
 	let previous: string | undefined;
 
 	beforeEach(() => {
 		dir = mkdtempSync(join(tmpdir(), "pizza-memory-"));
-		previous = process.env.PIZZA_AGENT_DIR;
-		process.env.PIZZA_AGENT_DIR = dir;
+		previous = process.env.PIZZA_CODING_AGENT_DIR;
+		process.env.PIZZA_CODING_AGENT_DIR = dir;
 	});
 
 	afterEach(() => {
-		if (previous === undefined) delete process.env.PIZZA_AGENT_DIR;
-		else process.env.PIZZA_AGENT_DIR = previous;
+		if (previous === undefined) delete process.env.PIZZA_CODING_AGENT_DIR;
+		else process.env.PIZZA_CODING_AGENT_DIR = previous;
 		rmSync(dir, { recursive: true, force: true });
 	});
 
@@ -39,6 +39,20 @@ describe("PersonalMemoryStore", () => {
 		await expect(store.remember({ text: "x", scope: "session" })).rejects.toThrow(/session/);
 	});
 
+	it("scope-filters export and rejects cross-scope forget", async () => {
+		const store = new PersonalMemoryStore(dir);
+		const mine = await store.remember({ text: "mine", scope: "project", workspaceId: "ws-a" });
+		const other = await store.remember({ text: "other", scope: "project", workspaceId: "ws-b" });
+		await store.remember({ text: "global", scope: "global" });
+
+		const visible = await store.export({ workspaceId: "ws-a", includeExpired: true });
+		expect(visible.map((item) => item.text)).toEqual(["mine", "global"]);
+
+		expect(await store.forget(other.id, { workspaceId: "ws-a" })).toBe(false);
+		expect((await store.list({ workspaceId: "ws-b" })).map((item) => item.text)).toEqual(["other", "global"]);
+		expect(await store.forget(mine.id, { workspaceId: "ws-a" })).toBe(true);
+	});
+
 	it("dedupes, expires, forgets, and exports", async () => {
 		const store = new PersonalMemoryStore(dir);
 		const first = await store.remember({ text: "keep API stable", scope: "global", sourceEventId: "e1" });
@@ -51,6 +65,6 @@ describe("PersonalMemoryStore", () => {
 
 		expect(await store.forget(first.id)).toBe(true);
 		expect(await store.forget(first.id)).toBe(false);
-		expect(await store.export()).toHaveLength(1);
+		expect(await store.export({ includeExpired: true })).toHaveLength(1);
 	});
 });

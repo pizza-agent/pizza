@@ -53,8 +53,9 @@ The file is written atomically with mode `0600`. Each item keeps its source even
 - `session` memory is visible only in the session that created it
 - `project` memory is visible in the same workspace
 - `global` memory is visible everywhere
-- `forget` deletes permanently
-- `export` returns all saved items for backup/inspection
+- `forget` deletes permanently, but only for the current session/project scope
+- `export` returns only the current session/project/global-visible items; it never dumps other scopes
+- duplicates are scoped by text + scope + source event + workspace/session keys
 
 ## Non-goals
 
