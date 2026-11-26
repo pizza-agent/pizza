@@ -1246,5 +1246,22 @@
     "answered": "已回答",
     "skipped": "已跳过",
     "expired": "已过期"
+  },
+  "contextInspector": {
+    "title": "上下文检查器",
+    "pins": "GoalPins",
+    "recent": "最近",
+    "path": "文件路径",
+    "refresh": "刷新",
+    "loading": "正在加载事件…",
+    "empty": "没有选中证据。",
+    "pathPlaceholder": "例如 src/core/runtime/reactor.ts",
+    "pathHint": "输入文件路径查看长期证据。",
+    "eventId": "事件",
+    "events": "{{count}} 条事件",
+    "tokens": "约 {{count}} tokens",
+    "copy": "复制 JSON",
+    "copied": "已复制",
+    "preview": "仅预览，不会改变当前模型上下文。"
   }
 }

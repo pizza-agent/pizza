@@ -1529,6 +1529,7 @@ export async function runRpcModeWithFacade(
 				return success(id, "get_events", {
 					events: sliced.map((e) => ({
 						event_id: e.event_id,
+						sequence: e.sequence,
 						type: e.type,
 						timestamp: e.timestamp,
 						actor_id: e.actor_id,

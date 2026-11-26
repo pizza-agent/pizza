@@ -995,6 +995,8 @@ export type RpcHistoryTreeResult =
 /** A raw event projected for the timeline dock. */
 export interface RpcForensicEvent {
 	event_id: string;
+	/** Workspace log sequence; absent on older servers. */
+	sequence?: number;
 	type: string;
 	timestamp: number;
 	actor_id: string;

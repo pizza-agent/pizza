@@ -76,9 +76,11 @@ function formatTokens(n: number): string {
 function ContextRing({
 	contextUsage,
 	tokenUsage,
+	onClick,
 }: {
 	contextUsage?: RpcContextUsage;
 	tokenUsage?: RpcTokenUsage;
+	onClick?: () => void;
 }) {
 	const { t } = useTranslation();
 	const [hover, setHover] = useState(false);
@@ -132,9 +134,19 @@ function ContextRing({
 	return (
 		<div
 			ref={wrapRef}
-			className="relative flex items-center"
+			className={`relative flex items-center ${onClick ? "cursor-pointer" : ""}`}
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
+			onClick={onClick}
+			onKeyDown={(event) => {
+				if (onClick && (event.key === "Enter" || event.key === " ")) {
+					event.preventDefault();
+					onClick();
+				}
+			}}
+			role={onClick ? "button" : undefined}
+			tabIndex={onClick ? 0 : undefined}
+			aria-label={onClick ? t("contextInspector.title") : undefined}
 		>
 			<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
 				<circle
@@ -227,6 +239,7 @@ export function Composer({
 	onSend,
 	onAbort,
 	onRefreshState,
+	onContextClick,
 }: {
 	sidecarReady: boolean;
 	/** Keep the draft editable while the selected conversation is loading. */
@@ -244,6 +257,8 @@ export function Composer({
 	onSend: (message: string, images?: ComposerImage[], files?: LoadedFileAttachment[]) => void;
 	onAbort: () => void;
 	onRefreshState?: () => void;
+	/** Open the read-only context inspector from the context ring. */
+	onContextClick?: () => void;
 }) {
 	const [input, setInput] = useState("");
 	const [images, setImages] = useState<ComposerImage[]>([]);
@@ -2075,6 +2090,7 @@ ${insert}`;
 							<ContextRing
 								contextUsage={state?.contextUsage}
 								tokenUsage={state?.tokenUsage}
+								onClick={onContextClick}
 							/>
 
 							{/* Model selector */}

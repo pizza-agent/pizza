@@ -19,6 +19,7 @@ import { ChatSearch } from "@/components/ChatSearch";
 import { ArrowUp, Search, X } from "lucide-react";
 import { textMatches } from "@/lib/highlight";
 import { Composer, type ComposerImage, type LoadedFileAttachment } from "@/components/Composer";
+import { ContextInspector } from "@/components/ContextInspector";
 import { ExtensionUiHost } from "@/components/ExtensionUiHost";
 import { EmptyState, Spinner } from "@/components/ui";
 import { approveToolCall, rejectToolCall } from "@/lib/transport";
@@ -424,6 +425,7 @@ export default function AgentView({
 	const { t, i18n } = useTranslation();
 	const [items, setItems] = useState<TimelineItem[]>([]);
 	const [error, setError] = useState("");
+	const [contextInspectorOpen, setContextInspectorOpen] = useState(false);
 	// Follow-ups queued while the agent is streaming. These are NOT part of
 	// the conversation yet — they render in a pending strip above the composer
 	// (with a per-item cancel), not as timeline bubbles. An entry leaves the
@@ -1715,6 +1717,12 @@ export default function AgentView({
 				onSend={handleSend}
 				onAbort={handleAbort}
 				onRefreshState={onRefreshState}
+				onContextClick={() => setContextInspectorOpen(true)}
+			/>
+			<ContextInspector
+				open={contextInspectorOpen}
+				onClose={() => setContextInspectorOpen(false)}
+				threadId={state?.threadId}
 			/>
 		</div>
 	);
